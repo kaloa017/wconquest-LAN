@@ -1,4 +1,4 @@
 # wconquest
-Claude Online browser game
+Claude browser game
 
-https://world-conquest.netlify.app/
+Runs on the local internet by running app.py.
