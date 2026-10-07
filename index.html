@@ -521,6 +521,13 @@ body.sheet-open #online-widget{display:none}
   .pv-odds{font-size:34px}
 }
 @media(min-width:768px) and (max-width:1000px){#sidebar{width:320px}}
+.cap-star{font-size:22px;line-height:24px;text-align:center;filter:drop-shadow(0 0 4px #000);pointer-events:none}
+#hover-info{position:absolute;left:50%;transform:translateX(-50%);bottom:12px;z-index:400;background:rgba(10,13,19,.88);border:1px solid var(--border);border-radius:20px;padding:5px 14px;font-size:12px;color:var(--text2);white-space:nowrap;pointer-events:none;max-width:94%;overflow:hidden;text-overflow:ellipsis}
+#tut{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:9000;display:none;align-items:center;justify-content:center;padding:16px}
+#tut.open{display:flex}
+.tut-box{background:var(--panel);border:1px solid var(--accent);border-radius:16px;max-width:440px;width:100%;padding:20px;box-shadow:var(--shadow)}
+.tut-box h2{font-family:'Cinzel',serif;margin:4px 0 8px;font-size:20px}.tut-box p{color:var(--text2);line-height:1.5}
+@media(max-width:767px){#hover-info{bottom:calc(var(--mobile-nav-h) + var(--safe-b) + 10px);font-size:11px}body.sheet-open #hover-info{display:none}}
 
 </style>
 </head>
@@ -591,7 +598,7 @@ body.sheet-open #online-widget{display:none}
 
   <!-- DESKTOP SIDEBAR -->
   <div id="sidebar">
-   <div class="sidebar-tabs"><button class="stab active" data-panel="territory" onclick="showPanel('territory')"><span class="si">🏴</span>Tile<i class="dot"></i></button><button class="stab" data-panel="chat" onclick="showPanel('chat')"><span class="si">💬</span>Chat<i class="dot"></i></button><button class="stab" data-panel="faction" onclick="showPanel('faction')"><span class="si">🚩</span>Faction<i class="dot"></i></button><button class="stab" data-panel="quests" onclick="showPanel('quests')"><span class="si">🎁</span>Quests<i class="dot"></i></button><button class="stab" data-panel="research" onclick="showPanel('research')"><span class="si">🔬</span>Tech<i class="dot"></i></button><button class="stab" data-panel="market" onclick="showPanel('market')"><span class="si">💹</span>Market<i class="dot"></i></button><button class="stab" data-panel="leaderboard" onclick="showPanel('leaderboard')"><span class="si">🏆</span>Ranks<i class="dot"></i></button><button class="stab" data-panel="battles" onclick="showPanel('battles')"><span class="si">⚔</span>Battles<i class="dot"></i></button><button class="stab" data-panel="social" onclick="showPanel('social')"><span class="si">🤝</span>Social<i class="dot"></i></button></div>
+   <div class="sidebar-tabs"><button class="stab active" data-panel="territory" onclick="showPanel('territory')"><span class="si">🏴</span>Tile<i class="dot"></i></button><button class="stab" data-panel="chat" onclick="showPanel('chat')"><span class="si">💬</span>Chat<i class="dot"></i></button><button class="stab" data-panel="faction" onclick="showPanel('faction')"><span class="si">🚩</span>Faction<i class="dot"></i></button><button class="stab" data-panel="quests" onclick="showPanel('quests')"><span class="si">🎁</span>Quests<i class="dot"></i></button><button class="stab" data-panel="empire" onclick="showPanel('empire')"><span class="si">👑</span>Empire<i class="dot"></i></button><button class="stab" data-panel="research" onclick="showPanel('research')"><span class="si">🔬</span>Tech<i class="dot"></i></button><button class="stab" data-panel="market" onclick="showPanel('market')"><span class="si">💹</span>Market<i class="dot"></i></button><button class="stab" data-panel="leaderboard" onclick="showPanel('leaderboard')"><span class="si">🏆</span>Ranks<i class="dot"></i></button><button class="stab" data-panel="battles" onclick="showPanel('battles')"><span class="si">⚔</span>Battles<i class="dot"></i></button><button class="stab" data-panel="social" onclick="showPanel('social')"><span class="si">🤝</span>Social<i class="dot"></i></button></div>
    <div id="panel-territory" class="panel-content active">
     <div id="territory-info"><div class="empty-state"><div class="es-icon">🗺</div><strong>Click any land territory</strong><br>to view details and take action<br><span style="color:var(--text3);font-size:11px">Keybind: <kbd style="background:var(--panel3);border:1px solid var(--border);border-radius:2px;padding:1px 5px;font-size:10px">C</kbd> to claim selected</span></div></div>
     <div id="territory-actions"></div>
@@ -599,6 +606,7 @@ body.sheet-open #online-widget{display:none}
    <div id="panel-chat" class="panel-content chatp"><div id="chat-content"></div></div>
    <div id="panel-faction" class="panel-content"><div id="faction-content"></div></div>
    <div id="panel-quests" class="panel-content"><div id="quests-content"></div></div>
+   <div id="panel-empire" class="panel-content"><div id="empire-content"></div></div>
    <div id="panel-research" class="panel-content"><div id="research-content"></div></div>
    <div id="panel-market" class="panel-content"><div id="market-content"></div></div>
    <div id="panel-leaderboard" class="panel-content"><div id="leaderboard-list"></div></div>
@@ -2451,7 +2459,7 @@ function buildTerritoryPanel(key,t,container){
     // Fleet
     const ports=myTiles().filter(k=>territories[k].building==='port').length,ap=myTiles().filter(k=>territories[k].building==='airport').length;
     if(rs.has('shipyard')){
-      a+=`<div class="army-section"><div class="army-section-title" style="color:#7ab8e8">⚓ Fleet <span class="v4-sub">${u.boats} boats · unlimited range</span></div>
+      a+=`<div class="army-section"><div class="army-section-title" style="color:#7ab8e8">⚓ Fleet <span class="v4-sub">${u.boats} boats · range ${u.boat_range}</span></div>
       ${ports?`<div class="v4-row"><input type="number" class="input-sm" id="boat-amt" value="1" min="1" max="20" style="width:70px"/><span class="grow v4-sub">250💰 + 20🌲 each · carries ${12+(rs.has('navigation')?4:0)} troops</span><button class="btn btn-blue btn-sm" onclick="buildBoats('${key}')">Build</button></div>`:'<div class="v4-sub">Build a ⚓ Port on a coastal tile to construct and launch boats.</div>'}</div>`;
     }
     if(rs.has('airforce')){
@@ -2474,11 +2482,11 @@ function buildTerritoryPanel(key,t,container){
       if(myAdj.length&&(isOwned||!canClaim)){
         a+=atkBlock('land',key,{from:myAdj[0],max:u.army,def:Math.max(1,Math.floor(u.army*.6)),label:'⚔ Land Assault',unit:'troops',color:'var(--red2)',btn:'⚔ Attack'});
       }
-      const boatSrc=myTiles().filter(k=>territories[k].building==='port'&&dist(k,key)>1);
+      const boatSrc=myTiles().filter(k=>territories[k].building==='port'&&dist(k,key)>1&&dist(k,key)<=u.boat_range+(territories[k].blevel-1));
       const planeSrc=myTiles().filter(k=>territories[k].building==='airport'&&dist(k,key)>1&&dist(k,key)<=u.plane_range+(territories[k].blevel-1));
       if(rs.has('shipyard')){
         if(boatSrc.length&&t.coastal&&u.boats>0)a+=atkBlock('naval',key,{from:boatSrc[0],srcs:boatSrc,max:u.boats,def:u.boats,label:'⚓ Naval Landing',unit:'boats',color:'#7ab8e8',btn:'⚓ Land'});
-        else a+=`<div class="v4-card"><h4 style="color:#7ab8e8">⚓ Naval Landing</h4><div class="v4-sub">${!t.coastal?'Target is not on a coast.':!boatSrc.length?`Boats can reach this target from any of your Ports.`:'You have no boats — build some at a Port.'}</div></div>`;
+        else a+=`<div class="v4-card"><h4 style="color:#7ab8e8">⚓ Naval Landing</h4><div class="v4-sub">${!t.coastal?'Target is not on a coast.':!boatSrc.length?`Needs a Port within ${u.boat_range} cells of here.`:'You have no boats — build some at a Port.'}</div></div>`;
       }
       if(rs.has('airforce')){
         if(planeSrc.length&&u.planes>0)a+=atkBlock('air',key,{from:planeSrc[0],srcs:planeSrc,max:u.planes,def:u.planes,label:'✈ Air Strike',unit:'planes',color:'#aaaaff',btn:'✈ Strike'});
@@ -2600,35 +2608,6 @@ async function sendChat(){
 }
 async function adminDelMsg(id){await api('POST','/api/admin/chat_delete',{id});buildChat()}
 
-/* ── FACTION ── */
-async function buildFaction(){
-  const el=document.getElementById('faction-content');if(!el)return;
-  if(!currentUser){el.innerHTML='<div class="empty-state">Log in to join a faction</div>';return}
-  const[inf,list]=await Promise.all([api('GET','/api/faction/info'),api('GET','/api/faction/list')]);
-  const f=inf.faction;
-  if(!f){
-    el.innerHTML=`<div class="v4-card"><h4>🚩 Found a Faction <span class="v4-sub">500💰</span></h4>
-      <input class="form-input" id="fc-name" placeholder="Faction name (3–24)" style="margin-bottom:6px"/><div class="v4-row"><input class="form-input grow" id="fc-tag" placeholder="TAG" maxlength="4"/><button class="btn btn-primary" onclick="factionCreate()">Found</button></div>
-      <div class="v4-sub" style="margin-top:6px">Faction mates can't attack each other, share a private chat, and get +2% yield per extra member (max +15%).</div></div>
-      <div class="v4-card"><h4>Join a faction</h4>${(Array.isArray(list)&&list.length)?list.map(x=>`<div class="v4-row" style="margin-bottom:6px"><span class="grow"><b>[${esc(x.tag)}]</b> ${esc(x.name)}<div class="v4-sub">👥 ${x.members} · 🗺 ${x.territories}</div></span><button class="btn btn-ghost btn-sm" onclick="factionJoin(${x.id})">Join</button></div>`).join(''):'<div class="v4-sub">No factions yet — be the first!</div>'}</div>`;
-    return;
-  }
-  const lead=f.leader_id===currentUser.id;
-  el.innerHTML=`<div class="v4-card"><h4><span>[${esc(f.tag)}] ${esc(f.name)}</span><span class="chip good">+${f.bonus_pct}% yield</span></h4>
-    <div class="v4-row"><span class="chip">👥 ${f.members.length}/12</span><span class="chip">🗺 ${f.territories}</span><span class="chip gold">🏦 ${f.treasury}💰</span></div></div>
-    <div class="v4-card"><h4>Treasury</h4><div class="v4-row"><input type="number" class="input-sm grow" id="fd-amt" min="1" placeholder="Amount"/><button class="btn btn-success btn-sm" onclick="factionDonate()">Donate</button></div>
-      ${lead?`<button class="btn btn-primary btn-full" style="margin-top:8px" onclick="factionRally()">📯 Call Rally — 1500💰 (all members morale → 100)${f.rally_ready_in?` · ${Math.ceil(f.rally_ready_in/60)}m cd`:''}</button>`:''}</div>
-    <div class="v4-card"><h4>Members</h4>${f.members.map(m=>`<div class="v4-row" style="margin-bottom:5px"><span class="owner-dot" style="background:${m.color}"></span><span class="grow">${esc(m.username)}${m.id===f.leader_id?' 👑':''}<span class="v4-sub"> · 🗺 ${m.territories}</span></span>${lead&&m.id!==currentUser.id?`<button class="btn btn-ghost btn-sm" onclick="factionKick(${m.id})">Kick</button>`:''}</div>`).join('')}</div>
-    <button class="btn btn-ghost btn-full" onclick="factionLeave()">Leave faction</button>`;
-}
-async function facDo(path,body){const r=await api('POST',path,body||{});if(r.error)return toast(r.error,'error');toast(r.message,'success');achToast(r);await refreshUser();buildFaction()}
-const factionCreate=()=>facDo('/api/faction/create',{name:document.getElementById('fc-name').value,tag:document.getElementById('fc-tag').value});
-const factionJoin=id=>facDo('/api/faction/join',{faction_id:id});
-const factionLeave=()=>confirm('Leave your faction?')&&facDo('/api/faction/leave');
-const factionKick=id=>confirm('Kick this member?')&&facDo('/api/faction/kick',{user_id:id});
-const factionDonate=()=>facDo('/api/faction/donate',{amount:+document.getElementById('fd-amt').value});
-const factionRally=()=>facDo('/api/faction/rally');
-
 /* ── QUESTS / EVENTS / ACHIEVEMENTS ── */
 async function buildQuests(){
   const el=document.getElementById('quests-content');if(!el)return;
@@ -2695,6 +2674,406 @@ startGame=async function(user){
 const _ss=startSpectatorMode;
 startSpectatorMode=async function(){await _ss();updateHud();setInterval(updateHud,30000)};
 document.addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select'))return;if(e.key==='c'&&selectedKey&&currentUser&&!territories[selectedKey]?.owner_id)claimTerritory(selectedKey)});
+
+/* ═══ v5 ═══════════════════════════════════════════════════════════════ */
+Object.assign(SELL_RATES,{steel:12,uranium:40,gems:60});
+Object.assign(RES_CFG,{steel:{icon:'🔩',label:'Steel'},uranium:{icon:'☢',label:'Uranium'},gems:{icon:'💎',label:'Gems'}});
+Object.assign(NOTIF_ICONS,{loan_request:'🚢',trade_request:'⚖',merge_request:'🧬',faction_ally:'🤝'});
+Object.assign(resIcon,{steel:'🔩',uranium:'☢',gems:'💎'});
+function fmtN(n){n=+n||0;const a=Math.abs(n);if(a>=1e9)return(n/1e9).toFixed(2)+'B';if(a>=1e6)return(n/1e6).toFixed(2)+'M';if(a>=1e4)return(n/1e3).toFixed(1)+'k';return String(Math.round(n))}
+const groupTiles=()=>Object.keys(territories).filter(k=>{const t=territories[k];return t.owner_id===currentUser?.id||(currentUser?.faction&&t.tag&&t.tag===currentUser.faction.tag)});
+const groupAdj=(gl,gg)=>{const s=new Set(groupTiles());return adjKeys(gl,gg).filter(k=>s.has(k))};
+
+/* ── accurate land/water: sample the real map tiles the player is looking at ── */
+const tilePx={},tileOrder=[],landMem={};
+function loadTile(z,x,y){
+  const k=`${z}/${x}/${y}`;if(tilePx[k])return tilePx[k];
+  tileOrder.push(k);if(tileOrder.length>48)delete tilePx[tileOrder.shift()];
+  return tilePx[k]=new Promise(res=>{const im=new Image();im.crossOrigin='anonymous';
+    im.onload=()=>{try{const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d',{willReadFrequently:true});g.drawImage(im,0,0);res(g.getImageData(0,0,256,256).data)}catch(e){res(null)}};
+    im.onerror=()=>res(null);im.src=`https://tile.openstreetmap.org/${k}.png`});
+}
+async function sampleLand(gl,gg){
+  const key=`${gl},${gg}`;if(key in landMem)return landMem[key];
+  const Z=7,N=(2**Z)*256;let land=0,fail=false;
+  for(let i=0;i<3&&!fail;i++)for(let j=0;j<3;j++){
+    const lat=Math.max(-84.9,Math.min(84.9,(gl+(i+.5)/3)*GRID)),lng=(gg+(j+.5)/3)*GRID;
+    const px=(lng+180)/360*N,s=Math.sin(lat*Math.PI/180),py=(0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*N;
+    const d=await loadTile(Z,Math.floor(px/256),Math.floor(py/256));if(!d){fail=true;break}
+    const o=((Math.floor(py)%256)*256+(Math.floor(px)%256))*4;
+    const water=Math.abs(d[o]-170)<=14&&Math.abs(d[o+1]-211)<=14&&Math.abs(d[o+2]-223)<=14;if(!water)land++;
+  }
+  const res=fail?(landGeoJSON?isLand(gl,gg):true):land>=3;landMem[key]=res;return res;
+}
+async function waterMapAsync(key){
+  const[gl,gg]=parseKey(key),cells=[key,...adjKeys(gl,gg)],m={};
+  await Promise.all(cells.map(async k=>{const[a,b]=parseKey(k);m[k]=!(await sampleLand(a,b))}));return m;
+}
+async function reportWater(key){if(currentUser){const w=await waterMapAsync(key);await api('POST','/api/water/report',{water:w})}}
+
+/* ── hover / tap coordinates ── */
+let hoverT=null;
+function hoverInfo(ll){
+  let el=document.getElementById('hover-info');if(!el){el=document.createElement('div');el.id='hover-info';document.getElementById('map').parentElement.appendChild(el)}
+  const gl=Math.floor(ll.lat/GRID),gg=Math.floor(ll.lng/GRID),key=`${gl},${gg}`,t=territories[key];
+  const kind=key in landMem?(landMem[key]?'🏝 land':'🌊 water'):'…';
+  el.innerHTML=`📍 <b>${ll.lat.toFixed(3)}°, ${ll.lng.toFixed(3)}°</b> · cell ${key} · ${kind}${t?` · <span style="color:${t.color}">${esc(t.owner)}</span>${t.capital?' ⭐':''}`:''}`;
+  clearTimeout(hoverT);hoverT=setTimeout(async()=>{if(!(key in landMem)){await sampleLand(gl,gg);hoverInfo(ll)}},180);
+}
+const _omm=onMapMove;onMapMove=function(e){_omm(e);if(!isMobile())hoverInfo(e.latlng)};
+const _omc=onMapClick;onMapClick=function(e){hoverInfo(e.latlng);_omc(e)};
+
+/* ── capital stars + fallout overlay ── */
+let capLayer=null,foLayer=null;
+function drawCaps(){
+  if(!map)return;if(capLayer)map.removeLayer(capLayer);capLayer=L.layerGroup();
+  for(const[k,t] of Object.entries(territories))if(t.capital){const[gl,gg]=parseKey(k);
+    L.marker([(gl+.5)*GRID,(gg+.5)*GRID],{icon:L.divIcon({className:'cap-star',html:'⭐',iconSize:[24,24]}),interactive:false,keyboard:false}).addTo(capLayer)}
+  capLayer.addTo(map);
+}
+const _rtr=renderTerritories;renderTerritories=function(){_rtr();drawCaps()};
+async function drawFallout(){
+  const list=await api('GET','/api/fallout');if(!Array.isArray(list)||!map)return;
+  if(foLayer)map.removeLayer(foLayer);foLayer=L.layerGroup();
+  for(const k of list){const[gl,gg]=parseKey(k);L.rectangle([[gl*GRID,gg*GRID],[(gl+1)*GRID,(gg+1)*GRID]],{renderer:canvasR,color:'#b6ff00',weight:1,fillColor:'#201f00',fillOpacity:.6,interactive:false}).addTo(foLayer)}
+  foLayer.addTo(map);
+}
+
+/* ── HUD ── */
+function updateHud(){
+  const el=document.getElementById('hud-strip');if(!el)return;const u=currentUser;
+  let c=[30,15];try{const m=map.getCenter();c=[m.lat,m.lng]}catch(e){}
+  const wx=weatherFor(curSlot(),Math.floor(c[0]/GRID),Math.floor(c[1]/GRID));
+  let h=`<span class="chip" title="Local weather — changes every 10 min (${WX_FX[wx]})">${WX_ICON[wx]} ${wx} <small>${nextWxMins()}m</small></span>`;
+  if(u){const rs=u.research||[];
+    h=`<span class="chip btnish" onclick="openPanel('territory')" title="${u.faction?'Shared faction army':'Your army — no cap!'}">⚔ ${fmtN(u.army)}${u.faction?' <small>shared</small>':''}</span>`+
+      (rs.includes('shipyard')?`<span class="chip">⚓ ${fmtN(u.boats)}</span>`:'')+(rs.includes('airforce')?`<span class="chip">✈ ${fmtN(u.planes)}</span>`:'')+(u.nukes?`<span class="chip bad">☢ ${u.nukes}</span>`:'')+
+      `<span class="chip ${u.morale>=60?'good':u.morale<30?'bad':''}">${moraleLabel(u.morale)} <small>${u.morale}</small></span><span class="chip" title="Your total population">👥 ${fmtPop(u.population)}</span>`+h;
+    if(u.event){const m=Math.max(1,Math.round((u.event.until-Date.now()/1000)/60));h+=`<span class="chip gold btnish" onclick="openPanel('quests')" title="${esc(u.event.desc)}">${u.event.icon} ${esc(u.event.name)} <small>${m}m</small></span>`}
+    if(u.daily_ready)h+=`<span class="chip good btnish" onclick="openPanel('quests')">🎁 Daily</span>`;}
+  h+=`<span class="chip btnish" onclick="showTutorial(0)">❓ Help</span>`;el.innerHTML=h;
+}
+const _un2=updateNavbar;updateNavbar=function(u){_un2(u);
+  const base=['food','wood','metal','oil','money'],extra=['steel','uranium','gems'].filter(r=>u[r]>0);
+  document.getElementById('resource-bar').innerHTML=[...base,...extra].map(r=>`<div class="res-pill">${RES_CFG[r].icon}<span class="res-val">${fmtN(u[r])}</span></div>`).join('');
+  if(u.color)document.getElementById('player-dot').style.background=u.color;
+};
+
+/* ── panel router additions ── */
+PANELS.empire={c:'empire-content',f:()=>buildEmpire()};
+function mobileNav(tab,panel){
+  if(tab==='map'){closeMobileSheet();return}
+  setMnav(tab);mobileView=tab;
+  const c=document.getElementById('mobile-sheet-content'),sh=document.getElementById('mobile-sheet');
+  sheetPanel=panel||tab;sh.classList.toggle('tall',['chat'].includes(sheetPanel));
+  if(tab==='more'&&!panel){
+    c.innerHTML=`<div class="more-grid">${[['quests','🎁','Quests'],['empire','👑','Empire'],['research','🔬','Research'],['market','💹','Market'],['leaderboard','🏆','Ranks'],['battles','⚔','Battles'],['social','🤝','Social']].map(([id,i,n])=>`<button onclick="mobileNav('more','${id}')"><span>${i}</span>${n}</button>`).join('')}</div>`;
+  }else if(sheetPanel==='territory'){
+    if(selectedKey)fetchAndBuildPanel(selectedKey);else c.innerHTML='<div class="empty-state"><div class="es-icon">🗺</div>Tap a territory on the map</div>';
+  }else{const p=PANELS[sheetPanel];c.innerHTML=`<div id="${p.c}"></div>`;p.f()}
+  sh.classList.add('open');document.body.classList.add('sheet-open');
+}
+
+/* ── TERRITORY PANEL (v5) ── */
+function buildTerritoryPanel(key,t,container){
+  if(container&&sheetPanel!=='territory')return;
+  const host=container||document.getElementById('territory-actions'),ae=document.activeElement;
+  if(!window.__force&&host&&ae&&host.contains(ae)&&/INPUT|SELECT/.test(ae.tagName))return;
+  window.__force=false;
+  const[gl,gg]=parseKey(key),terrain=t.terrain||getTerrainClient(gl,gg),cfg=TERRAIN_CFG[terrain]||{};
+  const isOwned=!!t.owner_id,u=currentUser,isMine=u&&t.owner_id===u.id,rs=new Set(u?.research||[]);
+  const put=(i,a)=>{if(container)container.innerHTML=i+a;else{document.getElementById('territory-info').innerHTML=i;document.getElementById('territory-actions').innerHTML=a}};
+  if(t.water){put('<div class="water-warn">🌊 Open water — nothing to claim. Cross it with ⚓ boats from a Port (they can sail any distance, but every cell costs resources) or ✈ planes from an Airport.</div>','');return}
+  if(t.fallout){put('<div class="water-warn">�role Irradiated land — uninhabitable.</div>'.replace('�role','☢'),'');return}
+  const wx=t.weather||weatherFor(curSlot(),gl,gg),adj=u?groupAdj(gl,gg):[];
+  const tag=t.tag?`<span style="color:var(--text3)">[${esc(t.tag)}]</span> `:'',bInfo=t.building&&BLD[t.building]?BLD[t.building]:null;
+  const info=`<div class="tp-card"><div class="tp-head"><span class="tp-icon">${cfg.icon||'?'}</span><div class="tp-head-info"><div class="tp-name">${t.capital?'⭐ ':''}${cfg.label||terrain}${t.capital?' <span class="v4-sub">Capital</span>':''}</div>
+    ${isOwned?`<div class="tp-owner"><span class="owner-dot" style="background:${t.color}"></span> ${tag}<strong style="color:${t.color}">${esc(t.owner)}</strong>${isMine?' <span style="color:var(--accent2);font-size:11px">(You)</span>':''}</div>`:'<div class="tp-owner" style="color:var(--text3)">Unclaimed</div>'}</div>
+    <div class="tp-yield"><div>${RES_CFG[cfg.res]?.icon||''}+${cfg.rate}</div><div style="font-size:9px;color:var(--text3)">/min</div></div></div>
+    <div class="tp-stats"><div class="tp-stat"><div class="tp-stat-val">${fmtN(t.garrison||0)}</div><div class="tp-stat-label">🛡 Defense</div></div><div class="tp-stat"><div class="tp-stat-val" style="font-size:12px">${fmtPop(t.population)}</div><div class="tp-stat-label">👥 Pop</div></div>
+    ${bInfo?`<div class="tp-stat"><div class="tp-stat-val" style="font-size:13px">${bInfo.icon}</div><div class="tp-stat-label">${bInfo.name} L${t.blevel}</div></div>`:''}</div>
+    <div class="chips" style="padding:0 12px 10px"><span class="chip">${WX_ICON[wx]} ${wx} <small>${WX_FX[wx]}</small></span>${t.coastal?'<span class="chip">🌊 Coastal</span>':''}<span class="chip">📍 ${(gl*GRID).toFixed(2)}°, ${(gg*GRID).toFixed(2)}°</span>${terrain==='mountains'?'<span class="chip good">⛰ +35% def</span>':terrain==='forest'?'<span class="chip good">🌲 +20% def</span>':terrain==='city'?'<span class="chip good">🏙 +25% def</span>':''}</div></div>`;
+  if(!u){put(info,'<div class="tp-actions"><div class="empty-state" style="padding:16px">Log in to claim land and fight.</div></div>');return}
+  let a='';
+  if(isMine){
+    const def=Math.min(10,Math.max(1,Math.floor(u.money/u.troop_cost)));
+    a+=`<div class="army-section"><div class="army-section-title">⚔ ${u.faction?'Faction':'National'} Army <span class="v4-sub">${fmtN(u.army)} · no cap</span></div>
+      <div class="v4-sub" style="margin-bottom:8px">${u.faction?`Shared with all [${esc(u.faction.tag)}] members — they defend and attack for each other.`:'One army defends and attacks for your whole realm.'} Barracks add free troops.</div>
+      <div class="v4-row"><input type="number" id="build-n" class="input-sm" min="1" value="${def}" style="width:96px"/>${[10,100,1000].map(n=>`<button class="btn btn-ghost btn-sm" onclick="setBuildN(${n})">${n}</button>`).join('')}<button class="btn btn-ghost btn-sm" onclick="setBuildN(Math.floor(currentUser.money/currentUser.troop_cost))">Max</button></div>
+      <div class="v4-row" style="margin-top:8px"><span class="grow"><b id="build-cost">${def*u.troop_cost}</b>💰 <span class="v4-sub">(${u.troop_cost}💰 each)</span></span><button class="btn btn-primary" onclick="buildTroops('${key}')">Recruit</button></div></div>`;
+    a+=`<div class="v4-row" style="margin-bottom:10px">${t.capital?'<span class="chip gold grow" style="justify-content:center">⭐ This is your capital</span>':`<button class="btn btn-ghost btn-sm grow" onclick="setCapital('${key}')">⭐ Make capital</button>`}<button class="btn btn-ghost btn-sm grow" onclick="sellTile('${key}',${Math.floor((t.invested||0)*.5)})">💰 Sell tile (+${fmtN((t.invested||0)*.5)})</button></div>`;
+    const cur=t.building?BLD[t.building]:null;
+    if(cur){const nl=t.blevel+1,cost=nl<=3?bldCost(t.building,nl):null;
+      a+=`<div class="army-section"><div class="army-section-title">${cur.icon} ${cur.name} <span class="v4-sub">Lv${t.blevel}/3</span></div><div class="v4-sub" style="margin-bottom:8px">${cur.desc}</div><div class="v4-row">${cost?`<button class="btn btn-primary btn-sm grow" onclick="bldAct('${key}','${t.building}')">⬆ Upgrade · ${fmtCost(cost)}</button>`:'<span class="grow v4-sub">Max level</span>'}<button class="btn btn-ghost btn-sm" onclick="bldDemolish('${key}')">Demolish</button></div></div>`}
+    else a+=`<div class="army-section"><div class="army-section-title">🏗 Build</div><div class="bld-grid">${Object.entries(BLD).map(([id,b])=>{
+      const need=b.needs&&!rs.has(b.needs)?`🔒 ${RESEARCH_TREE[b.needs]?.name||b.needs}`:(b.coastal&&!t.coastal?'🔒 Coast only':(b.terrain&&!b.terrain.includes(terrain)?`🔒 ${b.terrain.join('/')} only`:''));
+      return`<button class="bld-opt" ${need?'disabled':''} onclick="bldAct('${key}','${id}')"><b>${b.icon} ${b.name}</b><span>${need||fmtCost(bldCost(id,1))}</span><span style="display:block;margin-top:2px">${b.desc}</span></button>`}).join('')}</div></div>`;
+    const gt=groupTiles(),ports=gt.filter(k=>territories[k].building==='port').length,ap=gt.filter(k=>territories[k].building==='airport').length;
+    if(rs.has('shipyard'))a+=`<div class="army-section"><div class="army-section-title" style="color:#7ab8e8">⚓ Fleet <span class="v4-sub">${fmtN(u.boats)} boats · unlimited range</span></div>${ports?`<div class="v4-row"><input type="number" class="input-sm" id="boat-amt" value="1" min="1" style="width:80px"/><span class="grow v4-sub">250💰 20🌲 each · carries ${12+(rs.has('navigation')?4:0)} troops. Voyages cost 40💰 5🌲 per boat per cell.</span><button class="btn btn-blue btn-sm" onclick="buildBoats('${key}')">Build</button></div>`:'<div class="v4-sub">Build a ⚓ Port on the coast to build and launch boats.</div>'}</div>`;
+    if(rs.has('airforce'))a+=`<div class="army-section"><div class="army-section-title" style="color:#aaaaff">✈ Air Wing <span class="v4-sub">${fmtN(u.planes)} planes · range ${u.plane_range}</span></div>${ap?`<div class="v4-row"><input type="number" class="input-sm" id="plane-amt" value="1" min="1" style="width:80px"/><span class="grow v4-sub">700💰 40⚙ 30🛢 · carries 5 paratroops</span><button class="btn btn-blue btn-sm" onclick="buildPlanes('${key}')">Build</button></div>`:'<div class="v4-sub">Build an 🛫 Airport to build and launch planes.</div>'}</div>`;
+  }else{
+    const sameFac=u.faction&&t.tag&&u.faction.tag===t.tag,allyE=myAlliances.find(x=>x.ally_id===t.owner_id&&x.status==='active');
+    const claim=t.claim||{money:u.claim_cost},canClaim=!isOwned&&(adj.length>0||myTiles().length===0);
+    if(canClaim)a+=`<div class="claim-block"><button class="btn btn-primary btn-full claim-btn" onclick="claimTerritory('${key}')">🏴 Claim — ${fmtCost(claim)} <span class="keybind-hint">C</span></button><div class="claim-info">${cfg.icon} ${RES_CFG[cfg.res]?.icon||''} ${cfg.rate}/min · 👥 ${fmtPop(t.population)} · price scales with your income</div></div>`;
+    if(sameFac||allyE)a+=`<div class="ally-territory-label">🤝 ${sameFac?'Faction mate':'Allied'} — ${esc(t.owner)}</div>`;
+    else{
+      const gt=groupTiles();let firstAtk=true;
+      if(adj.length&&(isOwned||!canClaim)){a+=atkBlock('land',key,{from:adj[0],max:u.army,def:Math.max(1,Math.floor(u.army*.6)),label:'⚔ Land Assault',unit:'troops',color:'var(--red2)',btn:'⚔ Attack',hk:firstAtk});firstAtk=false}
+      const boatSrc=gt.filter(k=>territories[k].building==='port'&&dist(k,key)>1),planeSrc=gt.filter(k=>territories[k].building==='airport'&&dist(k,key)>1&&dist(k,key)<=u.plane_range+(territories[k].blevel-1));
+      if(rs.has('shipyard')){
+        if(boatSrc.length&&t.coastal&&u.boats>0){a+=atkBlock('naval',key,{from:boatSrc.sort((x,y)=>dist(x,key)-dist(y,key))[0],srcs:boatSrc,max:u.boats,def:u.boats,label:'⚓ Naval Landing',unit:'boats',color:'#7ab8e8',btn:'⚓ Land',hk:firstAtk});firstAtk=false}
+        else a+=`<div class="v4-card"><h4 style="color:#7ab8e8">⚓ Naval Landing</h4><div class="v4-sub">${!t.coastal?'Target is not on a coast (no port needed there, but it must touch water).':!boatSrc.length?'You (or a faction mate) need a coastal Port.':'You have no boats — build some at a Port.'}</div></div>`}
+      if(rs.has('airforce')){
+        if(planeSrc.length&&u.planes>0){a+=atkBlock('air',key,{from:planeSrc[0],srcs:planeSrc,max:u.planes,def:u.planes,label:'✈ Air Strike',unit:'planes',color:'#aaaaff',btn:'✈ Strike',hk:firstAtk});firstAtk=false}
+        else a+=`<div class="v4-card"><h4 style="color:#aaaaff">✈ Air Strike</h4><div class="v4-sub">${!planeSrc.length?`Needs an Airport within ${u.plane_range} cells.`:'You have no planes — build some.'}</div></div>`}
+      const silos=gt.filter(k=>territories[k].building==='silo'&&dist(k,key)<=40);
+      if(u.nukes>0&&silos.length)a+=`<div class="v4-card" style="border-color:var(--red2)"><h4 style="color:var(--red2)">☢ Nuclear Strike</h4><div class="v4-sub" style="margin-bottom:8px">Random blast radius 3–10 cells. Erases ownership of EVERYONE inside it (even you), leaves fallout for 6h, and cripples every country hit.</div><button class="btn btn-danger btn-full" onclick="launchNuke('${silos[0]}','${key}')">☢ LAUNCH (${u.nukes} warhead${u.nukes>1?'s':''})</button></div>`;
+      if(!adj.length&&!rs.has('shipyard')&&!rs.has('airforce'))a+=`<div class="empty-state" style="padding:14px 8px"><div class="es-icon">🌊</div>No land route. Research ⚓ Shipbuilding or ✈ Air Force.</div>`;
+      if(isOwned&&u.faction?.is_leader)a+=`<div class="v4-card"><h4>🏛 Diplomacy</h4><div class="v4-sub">Factions replace alliances: declare war or propose a faction alliance from the Faction tab.</div></div>`;
+    }
+  }
+  put(info,`<div class="tp-actions">${a}</div>`);
+  const bn=document.getElementById('build-n');if(bn)bn.oninput=()=>{document.getElementById('build-cost').textContent=(Math.max(1,+bn.value||1))*u.troop_cost};
+  document.querySelectorAll('[data-pv]').forEach(el=>{const kind=el.dataset.pv,sl=document.getElementById('sl-'+kind),sel=document.getElementById('src-'+kind),go=()=>previewBattle(kind,key);
+    if(sl)sl.oninput=()=>{document.getElementById('sv-'+kind).textContent=sl.value;clearTimeout(sl._t);sl._t=setTimeout(go,200)};if(sel)sel.onchange=go;go()});
+}
+const setBuildN=n=>{const e=document.getElementById('build-n');if(e){e.value=Math.max(1,n);e.oninput&&e.oninput()}};
+function atkBlock(kind,key,o){
+  const opts=o.srcs&&o.srcs.length>1?`<select class="input-sm" id="src-${kind}" style="width:100%;margin-bottom:6px">${o.srcs.map(k=>{const[a,b]=parseKey(k);return`<option value="${k}">${(a*GRID).toFixed(1)}°, ${(b*GRID).toFixed(1)}° · ${dist(k,key)} cells${territories[k]?.owner_id!==currentUser.id?' · '+esc(territories[k].owner):''}</option>`}).join('')}</select>`:`<input type="hidden" id="src-${kind}" value="${o.from}"/>`;
+  const d0=Math.max(1,Math.min(o.max,o.def));
+  return`<div class="v4-card" data-pv="${kind}"><h4 style="color:${o.color}">${o.label}</h4>${opts}<input type="range" id="sl-${kind}" min="1" max="${Math.max(1,o.max)}" value="${d0}"/>
+    <div class="v4-row"><span class="grow"><b id="sv-${kind}">${d0}</b> ${o.unit} <span class="v4-sub">of ${fmtN(o.max)}</span></span></div><div id="pv-${kind}" style="margin:8px 0"><div class="v4-sub">Scouting…</div></div>
+    <button class="btn btn-danger btn-full atk-btn" ${o.hk?'data-hk="1"':''} onclick="doAttack('${kind}','${key}')">${o.btn}${o.hk?' <span class="keybind-hint">A</span>':''}</button></div>`;
+}
+async function previewBattle(kind,key){
+  const sl=document.getElementById('sl-'+kind),src=document.getElementById('src-'+kind),el=document.getElementById('pv-'+kind);if(!sl||!el)return;
+  const p=await api('POST','/api/combat/preview',{target_key:key,from_key:src?.value,amount:+sl.value,kind});
+  if(p.error){el.innerHTML=`<div class="v4-sub">${esc(p.error)}</div>`;return}
+  const pct=p.odds,col=pct==null?'var(--text2)':pct>=62?'var(--green2)':pct>=42?'var(--accent2)':'var(--red2)';
+  el.innerHTML=`<div class="pv-odds" style="color:${col}">${pct!=null?pct+'%':`${p.odds_est[0]}–${p.odds_est[1]}%`}</div><div class="v4-bar"><i style="width:${pct??((p.odds_est[0]+p.odds_est[1])/2)}%"></i></div>
+    <div class="pv-nums"><span>Your force <b>${p.attack}</b></span><span>${p.defense!=null?`Enemy <b>${p.defense}</b>`:`Enemy ≈ <b>${p.defense_est[0]}–${p.defense_est[1]}</b>`}</span></div>
+    ${p.blocked?`<div class="v4-sub" style="color:var(--red2);margin-top:4px">${esc(p.blocked)}</div>`:''}${p.voyage?`<div class="v4-sub" style="margin-top:4px">⛵ Voyage of ${p.voyage.cells} cells costs <b>${p.voyage.money}💰 ${p.voyage.wood}🌲</b></div>`:''}
+    ${chipsOf(p.atk_mods)}${p.def_mods?`<div class="v4-sub" style="margin-top:6px">Defender</div>${chipsOf(p.def_mods.map(([n,m])=>[n,1/m]))}`:'<div class="v4-sub" style="margin-top:6px">🕵 Espionage (or a faction with Intel Sharing) shows exact enemy numbers.</div>'}`;
+}
+async function doAttack(kind,key){
+  if(!requireLogin())return;
+  const sl=document.getElementById('sl-'+kind),src=document.getElementById('src-'+kind)?.value;if(!sl||!src)return;
+  const n=+sl.value;let body,path;
+  if(kind==='land'){path='/api/attack';body={from_key:src,target_key:key,troops:n}}
+  else{const w={...await waterMapAsync(src),...await waterMapAsync(key)};
+    if(kind==='naval'){path='/api/boats/attack';body={from_key:src,target_key:key,boats:n,water:w}}else{path='/api/planes/attack';body={from_key:src,target_key:key,planes:n,water:w}}}
+  const r=await api('POST',path,body);if(r.error)return toast(r.error,'error');
+  showBattleReport(r);achToast(r);await refreshAll();window.__force=true;await fetchAndBuildPanel(key);loadBattleLog();
+}
+async function claimTerritory(key){
+  if(!requireLogin())return;
+  const r=await api('POST','/api/territory/claim',{grid_key:key,water:await waterMapAsync(key)});
+  if(r.error)return toast(r.error,'error');selectTerritory(key);afterAct(r,key);
+}
+async function buildTroops(key){if(!requireLogin())return;afterAct(await api('POST','/api/troops/build',{grid_key:key,amount:Math.max(1,+document.getElementById('build-n')?.value||1)}),key)}
+async function bldAct(key,type){afterAct(await api('POST','/api/building/build',{grid_key:key,type,water:await waterMapAsync(key)}),key)}
+async function setCapital(key){afterAct(await api('POST','/api/capital/set',{grid_key:key}),key)}
+async function sellTile(key,v){if(!confirm(`Sell this tile for ${v}💰? You lose it and any building on it.`))return;afterAct(await api('POST','/api/territory/sell',{grid_key:key}),key)}
+async function launchNuke(fk,tk){
+  if(!confirm('☢ Launch a nuclear missile? The blast radius is random (3–10 cells) and may hit your own land.'))return;
+  if(!confirm('Are you absolutely sure? This cannot be undone.'))return;
+  const r=await api('POST','/api/nuke/launch',{from_key:fk,target_key:tk});if(r.error)return toast(r.error,'error');
+  toast(r.message,'success');achToast(r);await refreshAll();drawFallout();window.__force=true;fetchAndBuildPanel(tk);
+}
+document.addEventListener('keydown',e=>{
+  if(e.target.matches('input,textarea,select')||e.ctrlKey||e.metaKey||e.altKey)return;
+  if(e.key==='a'||e.key==='A'){const b=document.querySelector('.atk-btn[data-hk="1"]')||document.querySelector('.atk-btn');if(b){e.preventDefault();b.click()}}
+});
+
+/* ── MARKET + income menu ── */
+function buildMarket(){
+  const el=document.getElementById('market-content');if(!el)return;
+  if(!currentUser){el.innerHTML='<div class="empty-state">Login to sell</div>';return}
+  const u=currentUser,all=['food','wood','metal','oil','steel','uranium','gems'];
+  el.innerHTML=`<div class="v4-card"><h4>💹 Market <button class="btn btn-primary btn-sm" onclick="sellEverything()">💰 Sell ALL</button></h4>
+    <div class="v4-sub">Total stock value: <b>${fmtN(all.reduce((s,r)=>s+(u[r]||0)*SELL_RATES[r],0))}💰</b></div></div>`+
+    all.filter(r=>(u[r]||0)>0||['food','wood','metal','oil'].includes(r)).map(r=>{const have=u[r]||0;
+      return`<div class="sell-card"><div class="sell-hdr"><span>${RES_CFG[r].icon} <strong>${RES_CFG[r].label}</strong> <span class="v4-sub">${SELL_RATES[r]}💰 each</span></span><span class="sell-have">${fmtN(have)} stored</span></div>
+      <div class="input-row"><input type="number" class="input-sm" id="sell-${r}" value="${Math.floor(have/2)}" min="1" style="max-width:90px"/><span style="font-size:11px;color:var(--text3)">→ <span id="sell-earn-${r}">${Math.floor(have/2)*SELL_RATES[r]}</span>💰</span>
+      <button class="btn btn-primary btn-sm" onclick="doSell('${r}')">Sell</button><button class="btn btn-ghost btn-sm" onclick="sellAll('${r}')">All</button></div></div>`}).join('')+
+    `<div class="v4-card"><h4>📈 Income <span class="v4-sub" id="inc-sub"></span></h4><div class="v4-row" style="margin-bottom:8px">${[[10,'10 min'],[60,'1 hour'],[360,'6 hours'],[1440,'24 hours'],[10080,'7 days']].map(([m,l])=>`<button class="btn btn-ghost btn-sm" onclick="loadIncome(${m})">${l}</button>`).join('')}</div><div id="inc-body"><div class="v4-sub">Loading…</div></div></div>`;
+  all.forEach(r=>{const i=document.getElementById('sell-'+r);if(i)i.oninput=()=>{document.getElementById('sell-earn-'+r).textContent=(parseInt(i.value)||0)*SELL_RATES[r]}});
+  loadIncome(window.__incMin||60);
+}
+async function loadIncome(m){
+  window.__incMin=m;const d=await api('GET','/api/income?minutes='+m),b=document.getElementById('inc-body');if(!b||d.error)return;
+  const rows=Object.entries(d.totals).filter(([k,v])=>v>0);
+  document.getElementById('inc-sub').textContent=`${d.tiles} tiles · ≈${fmtN(d.value_per_min)}💰-value/min`;
+  b.innerHTML=(rows.length?`<div class="quest-grid">${rows.map(([k,v])=>`<div class="ach done"><b>${RES_CFG[k]?.icon||''} +${fmtN(v)}</b>${k} <span class="v4-sub">(${d.rates[k]}/min)</span></div>`).join('')}</div>`:'<div class="v4-sub">No income yet — claim some land!</div>')+
+    (d.troops_per_min?`<div class="v4-sub" style="margin-top:6px">🏕 +${fmtN(d.troops_per_min*m)} troops from barracks</div>`:'')+(d.mults.length?chipsOf(d.mults):'')+`<div class="v4-sub" style="margin-top:6px">Tile prices are based on this income, so rich empires pay more per tile.</div>`;
+}
+async function sellAll(r){const x=await api('POST','/api/resources/sell_all',{resource:r});if(x.error)return toast(x.error,'error');toast(x.message,'success');await refreshUser();buildMarket()}
+async function sellEverything(){if(!confirm('Sell ALL resources (food, wood, metal, oil, steel, uranium, gems)?'))return;const x=await api('POST','/api/resources/sell_all',{});if(x.error)return toast(x.error,'error');toast(x.message,'success');achToast(x);await refreshUser();buildMarket()}
+
+/* ── leaderboard with population ── */
+async function loadLeaderboard(){
+  const el=document.getElementById('leaderboard-list');if(!el)return;
+  const[list,w]=await Promise.all([api('GET','/api/leaderboard'),api('GET','/api/world')]);
+  if(!list||list.error){el.innerHTML='<div class="empty-state">Error loading</div>';return}
+  window.__players=list;
+  el.innerHTML=`<div class="v4-sub" style="margin-bottom:8px">🌍 World: ${fmtPop(w.population)} people on ${w.territories} claimed tiles</div>`+list.map((p,i)=>{const me=currentUser&&p.username===currentUser.username;
+    return`<div class="lb-row"><span class="lb-rank ${i<3?'top'+(i+1):''}">#${i+1}</span><span class="lb-col" style="background:${p.color}"></span><span class="lb-name${me?' me':''}">${p.tag?`<span style="color:var(--text3)">[${esc(p.tag)}]</span> `:''}${esc(p.username)}${p.is_admin?' ⭐':''}</span>
+    <span class="lb-sub">🗺${p.territories}</span><span class="lb-sub">👥${fmtPop(p.total_pop)}</span><span class="lb-sub">🏅${p.wins||0}</span></div>`}).join('')||'<div class="empty-state">No players yet</div>';
+}
+
+/* ── notifications with action buttons ── */
+const NOTIF_ACTS={};
+function showNextNotif(){
+  if(!notifPopupQueue.length){notifShowing=false;return}
+  notifShowing=true;const n=notifPopupQueue.shift(),icon=NOTIF_ICONS[n.type]||'📬',container=document.getElementById('notif-container'),div=document.createElement('div');
+  div.className=`notif-popup type-${n.type}`;div.style.position='relative';let acts='';const A=n.data?.actions;
+  if(n.type==='alliance_invite'&&n.data?.alliance_id)acts=`<div class="notif-actions"><button class="btn btn-success btn-sm" onclick="respondAllianceNotif(${n.data.alliance_id},true,${n.id},this)">✓ Accept</button><button class="btn btn-danger btn-sm" onclick="respondAllianceNotif(${n.data.alliance_id},false,${n.id},this)">✕ Decline</button></div>`;
+  else if(A){NOTIF_ACTS[n.id]=A;acts=`<div class="notif-actions">${A.map((a,i)=>`<button class="btn ${a.cls||'btn-primary'} btn-sm" onclick="notifAct(${n.id},${i},this)">${esc(a.label)}</button>`).join('')}</div>`}
+  div.innerHTML=`<button class="notif-close" onclick="dismissNotifPopup(${n.id},this.parentElement)">✕</button><div class="notif-msg">${icon} ${esc(n.message)}</div><div class="notif-time">${n.created_at?n.created_at.slice(0,16):''}</div>${acts}`;
+  container.appendChild(div);div._timer=setTimeout(()=>dismissNotifPopup(n.id,div),(A||n.type==='alliance_invite')?45000:7000);setTimeout(showNextNotif,500);
+}
+async function notifAct(id,i,btn){const a=NOTIF_ACTS[id][i];const r=await api('POST',a.path,a.body);toast(r.error||r.message||'Done',r.error?'error':'success');dismissNotifPopup(id,btn.closest('.notif-popup'));refreshAll()}
+
+/* ── CHAT (admin edit / send-as, konami) ── */
+let admUsers=[];
+function chatLine(m){const t=new Date(m.ts*1000),hh=String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0');
+  return`<div class="cm"><b style="color:${m.color||'#ccc'}">${esc(m.user)}</b><span id="cm-${m.id}">${esc(m.text)}</span>${m.edited?'<small class="v4-sub"> (edited)</small>':''}<time>${hh}</time>${currentUser?.is_admin?`<span class="del" onclick="adminEditMsg(${m.id})">✎</span><span class="del" onclick="adminDelMsg(${m.id})">✕</span>`:''}</div>`}
+async function adminEditMsg(id){const cur=document.getElementById('cm-'+id)?.textContent||'';const t=prompt('Edit message:',cur);if(t===null)return;const r=await api('POST','/api/admin/chat_edit',{id,text:t});if(r.error)return toast(r.error,'error');buildChat()}
+const _bc=buildChat;buildChat=async function(){
+  _bc();
+  if(currentUser?.is_admin){const inr=document.querySelector('.chat-in');if(inr&&!document.getElementById('chat-as')){
+    if(!admUsers.length){const l=await api('GET','/api/admin/users');admUsers=Array.isArray(l)?l:(l.users||[])}
+    inr.insertAdjacentHTML('beforebegin',`<select class="input-sm" id="chat-as" style="margin-top:6px;width:100%"><option value="">💬 Send as myself</option>${admUsers.map(u=>`<option value="${u.id}">🎭 as ${esc(u.username)}</option>`).join('')}</select>`)}}
+};
+const KONAMI='uuddlrlrba';
+async function sendChat(){
+  const inp=document.getElementById('chat-input'),m=inp?.value.trim();if(!m)return;inp.value='';
+  const norm=m.toLowerCase().replace(/↑/g,'u').replace(/↓/g,'d').replace(/←/g,'l').replace(/→/g,'r').replace(/\b(up)\b/g,'u').replace(/\b(down)\b/g,'d').replace(/\b(left)\b/g,'l').replace(/\b(right)\b/g,'r').replace(/[^a-z]/g,'');
+  if(norm===KONAMI){await api('POST','/api/konami');toast('🎮 Secret unlocked! Look in the Faction menu…','success');await refreshUser();return}
+  const as=document.getElementById('chat-as')?.value;
+  const r=as?await api('POST','/api/admin/chat_as',{user_id:+as,channel:chatCh,message:m}):await api('POST','/api/chat/send',{channel:chatCh,message:m});
+  if(r.error)return toast(r.error,'error');achToast(r);pollChat();
+}
+
+/* ── FACTION (v5) ── */
+async function buildFaction(){
+  const el=document.getElementById('faction-content');if(!el)return;
+  if(!currentUser){el.innerHTML='<div class="empty-state">Log in to join a faction</div>';return}
+  const[inf,list]=await Promise.all([api('GET','/api/faction/info'),api('GET','/api/faction/list')]);const f=inf.faction;
+  const merge=inf.konami?`<div class="v4-card" style="border-color:#b46bff"><h4 style="color:#b46bff">🧬 Country Merge <span class="v4-sub">secret</span></h4><div class="v4-sub" style="margin-bottom:6px">Fuse two accounts into one. The player you invite is absorbed into YOUR country (land, resources, research, wonders…) and their account disappears.</div><div class="v4-row"><input class="form-input grow" id="mg-name" placeholder="Username to merge with"/><button class="btn btn-primary" onclick="mergeReq()">Propose</button></div></div>`:'';
+  if(!f){
+    el.innerHTML=`<div class="v4-card"><h4>🚩 Found a Faction <span class="v4-sub">500💰</span></h4><input class="form-input" id="fc-name" placeholder="Faction name (3–24)" style="margin-bottom:6px"/><div class="v4-row"><input class="form-input grow" id="fc-tag" placeholder="TAG" maxlength="4"/><button class="btn btn-primary" onclick="factionCreate()">Found</button></div>
+      <div class="v4-sub" style="margin-top:6px">Factions share ONE army & fleet, ports & airports, a colour and a treasury. Members can't fight each other; factions fight via declared wars.</div></div>
+      <div class="v4-card"><h4>Join a faction</h4>${(Array.isArray(list)&&list.length)?list.map(x=>`<div class="v4-row" style="margin-bottom:8px"><span class="owner-dot" style="background:${x.color}"></span><span class="grow"><b>[${esc(x.tag)}]</b> ${esc(x.name)} <span class="chip" style="font-size:10px">${x.mode==='open'?'🟢 open':x.mode==='invite'?'✉ invite':'🔒 closed'}</span><div class="v4-sub">👥 ${x.members} · 🗺 ${x.territories}${x.descr?' · '+esc(x.descr):''}</div></span>${x.mode==='closed'?'':`<button class="btn btn-ghost btn-sm" onclick="factionJoin(${x.id},'${x.mode}')">${x.mode==='invite'?'Request':'Join'}</button>`}</div>`).join(''):'<div class="v4-sub">No factions yet — be the first!</div>'}</div>`+merge;return}
+  const lead=f.leader_id===currentUser.id,others=(Array.isArray(list)?list:[]).filter(x=>x.id!==f.id);
+  const relBlock=f.rels.map(r=>`<div class="v4-row" style="margin-bottom:6px"><span class="chip ${r.kind==='war'?'bad':'good'}">${r.kind==='war'?'⚔ WAR':'🤝 ALLY'}${r.status==='pending'?' (pending)':''}</span><span class="grow"><b>[${esc(r.tag)}]</b> ${esc(r.other)}${r.kind==='war'?` <span class="v4-sub">${r.mine}–${r.theirs} (first to 25 wins)</span>`:''}</span>${lead?(r.kind==='war'?`<button class="btn btn-ghost btn-sm" onclick="facDo('/api/faction/war/end',{rel_id:${r.id}})">End</button>`:r.incoming?`<button class="btn btn-success btn-sm" onclick="facDo('/api/faction/rel/respond',{rel_id:${r.id},accept:true})">Accept</button>`:`<button class="btn btn-ghost btn-sm" onclick="facDo('/api/faction/rel/break',{rel_id:${r.id}})">Break</button>`):''}</div>`).join('')||'<div class="v4-sub">At peace with everyone.</div>';
+  el.innerHTML=`<div class="v4-card" style="border-color:${f.color}"><h4><span>[${esc(f.tag)}] ${esc(f.name)}</span><span class="chip good">+${f.bonus_pct}% yield</span></h4>${f.descr?`<div class="v4-sub" style="margin-bottom:6px">${esc(f.descr)}</div>`:''}
+    <div class="v4-row"><span class="chip">👥 ${f.members.length}/12</span><span class="chip">🗺 ${f.territories}</span><span class="chip">🧑 ${fmtPop(f.population)}</span><span class="chip gold">🏦 ${fmtN(f.treasury)}</span></div>
+    <div class="v4-row" style="margin-top:6px"><span class="chip">⚔ ${fmtN(f.army)} shared</span><span class="chip">⚓ ${fmtN(f.boats)}</span><span class="chip">✈ ${fmtN(f.planes)}</span></div></div>
+    <div class="v4-card"><h4>🏦 Treasury <span class="v4-sub">pays ${f.rate}% to members / 10 min</span></h4><div class="v4-row"><input type="number" class="input-sm grow" id="fd-amt" min="1" placeholder="Donate amount"/><button class="btn btn-success btn-sm" onclick="factionDonate()">Donate</button></div>
+      ${lead?`<button class="btn btn-primary btn-full" style="margin-top:8px" onclick="factionRally()">📯 Rally — 1500💰 (morale → 100)${f.rally_ready_in?` · ${Math.ceil(f.rally_ready_in/60)}m`:''}</button>`:''}</div>
+    <div class="v4-card"><h4>🔬 Faction Research <span class="v4-sub">paid from treasury</span></h4>${Object.entries(f.catalog).map(([id,t])=>{const own=f.techs.includes(id);return`<div class="v4-row" style="margin-bottom:6px"><span style="font-size:20px">${t.icon}</span><span class="grow"><b>${t.name}</b><div class="v4-sub">${t.desc}</div></span>${own?'<span class="chip good">✓</span>':lead?`<button class="btn btn-ghost btn-sm" onclick="facDo('/api/faction/research',{tech:'${id}'})">${fmtN(t.cost)}💰</button>`:`<span class="v4-sub">${fmtN(t.cost)}💰</span>`}</div>`}).join('')}</div>
+    <div class="v4-card"><h4>⚔ Diplomacy</h4>${relBlock}${lead&&others.length?`<div class="v4-row" style="margin-top:8px"><select class="input-sm grow" id="dip-target">${others.map(x=>`<option value="${x.id}">[${esc(x.tag)}] ${esc(x.name)}</option>`).join('')}</select><button class="btn btn-danger btn-sm" onclick="dipDo('war')">War</button><button class="btn btn-success btn-sm" onclick="dipDo('ally')">Ally</button></div>`:''}</div>
+    ${lead?`<div class="v4-card"><h4>⚙ Settings</h4><select class="input-sm" id="fs-mode" style="width:100%;margin-bottom:6px"><option value="open" ${f.mode==='open'?'selected':''}>🟢 Open — anyone can join</option><option value="invite" ${f.mode==='invite'?'selected':''}>✉ Invite only — join requests</option><option value="closed" ${f.mode==='closed'?'selected':''}>🔒 Closed — nobody can join</option></select>
+      <input class="form-input" id="fs-desc" maxlength="140" placeholder="Description" value="${esc(f.descr)}" style="margin-bottom:6px"/><div class="v4-row"><span class="v4-sub">Faction colour</span><input type="color" id="fs-col" value="${f.color}" style="width:50px;height:34px;border:none;background:none"/><button class="btn btn-primary btn-sm grow" onclick="factionSettings()">Save</button></div></div>
+      ${(f.requests||[]).length?`<div class="v4-card"><h4>✉ Join requests</h4>${f.requests.map(r=>`<div class="v4-row" style="margin-bottom:6px"><span class="grow"><b>${esc(r.username)}</b><div class="v4-sub">${esc(r.message||'')}</div></span><button class="btn btn-success btn-sm" onclick="facDo('/api/faction/request_respond',{request_id:${r.id},accept:true})">✓</button><button class="btn btn-danger btn-sm" onclick="facDo('/api/faction/request_respond',{request_id:${r.id},accept:false})">✕</button></div>`).join('')}</div>`:''}`:''}
+    <div class="v4-card"><h4>Members</h4>${f.members.map(m=>`<div class="v4-row" style="margin-bottom:5px"><span class="owner-dot" style="background:${m.color}"></span><span class="grow">${esc(m.username)}${m.id===f.leader_id?' 👑':''}<span class="v4-sub"> · 🗺 ${m.territories} · 👥 ${fmtPop(m.pop)}</span></span>${lead&&m.id!==currentUser.id?`<button class="btn btn-ghost btn-sm" onclick="factionKick(${m.id})">Kick</button>`:''}</div>`).join('')}</div>${merge}
+    <button class="btn btn-ghost btn-full" onclick="factionLeave()">Leave faction</button>`;
+}
+async function facDo(path,body){const r=await api('POST',path,body||{});if(r.error)return toast(r.error,'error');toast(r.message,'success');achToast(r);await refreshUser();await refreshAll();buildFaction()}
+const factionCreate=()=>facDo('/api/faction/create',{name:document.getElementById('fc-name').value,tag:document.getElementById('fc-tag').value});
+const factionLeave=()=>confirm('Leave your faction? You take your share of the army and fleet.')&&facDo('/api/faction/leave');
+const factionKick=id=>confirm('Kick this member? They cannot rejoin until tomorrow.')&&facDo('/api/faction/kick',{user_id:id});
+const factionDonate=()=>facDo('/api/faction/donate',{amount:+document.getElementById('fd-amt').value});
+const factionRally=()=>facDo('/api/faction/rally');
+const factionJoin=(id,mode)=>facDo('/api/faction/join',{faction_id:id,message:mode==='invite'?(prompt('Message to the leader (optional):')||''):''});
+const factionSettings=()=>facDo('/api/faction/settings',{mode:document.getElementById('fs-mode').value,descr:document.getElementById('fs-desc').value,color:document.getElementById('fs-col').value});
+const dipDo=k=>{const id=+document.getElementById('dip-target').value;if(k==='war'&&!confirm('Declare WAR? Both factions will be notified.'))return;facDo(k==='war'?'/api/faction/war/declare':'/api/faction/ally/propose',{faction_id:id})};
+const mergeReq=()=>facDo('/api/merge/request',{username:document.getElementById('mg-name').value});
+
+/* ── EMPIRE panel ── */
+async function buildEmpire(){
+  const el=document.getElementById('empire-content');if(!el)return;
+  if(!currentUser){el.innerHTML='<div class="empty-state">Log in to rule an empire</div>';return}
+  const u=currentUser;
+  const[w,emb,lb,research]=await Promise.all([api('GET','/api/wonders'),api('GET','/api/embassy/list'),api('GET','/api/leaderboard'),Promise.resolve(0)]);
+  const players=(Array.isArray(lb)?lb:[]).filter(p=>p.id!==u.id&&!p.is_admin);window.__players=players;
+  const opts=players.map(p=>`<option value="${p.id}">${esc(p.username)}</option>`).join('');
+  const partners=[...new Set([...(emb.owned||[]).map(x=>x.host_id),...(emb.hosted||[]).map(x=>x.owner_id)])].map(id=>players.find(p=>p.id===id)).filter(Boolean);
+  const popts=(u.faction?players.filter(p=>p.tag===u.faction.tag):[]).concat(partners).filter((p,i,a)=>a.findIndex(q=>q.id===p.id)===i).map(p=>`<option value="${p.id}">${esc(p.username)}</option>`).join('');
+  const resOpts=['money','food','wood','metal','oil','steel','uranium','gems'].map(r=>`<option value="${r}">${resIcon[r]||RES_CFG[r]?.icon||''} ${r}</option>`).join('');
+  const rs=new Set(u.research||[]);
+  el.innerHTML=`<div class="v4-card"><h4>🎨 Country colour</h4><div class="v4-row"><input type="color" id="pc-col" value="${u.base_color||u.color}" style="width:54px;height:38px;border:none;background:none"/><span class="grow v4-sub">${u.faction?'While in a faction you use the faction colour; this one returns when you leave.':'Pick any colour you like.'}</span><button class="btn btn-primary btn-sm" onclick="saveColor()">Save</button></div></div>
+  <div class="v4-card"><h4>🚩 Ideology <span class="v4-sub">${u.ideology?'change: 2000💰, once/24h':'first pick is free'}</span></h4>${Object.entries(IDEO).map(([id,i])=>`<div class="v4-row" style="margin-bottom:6px"><span style="font-size:22px">${i.icon}</span><span class="grow"><b>${i.name}</b><div class="v4-sub">${i.desc}</div></span>${u.ideology===id?'<span class="chip good">Active</span>':`<button class="btn btn-ghost btn-sm" onclick="empAct('/api/ideology/set',{id:'${id}'})">Adopt</button>`}</div>`).join('')}</div>
+  <div class="v4-card"><h4>⭐ Capital</h4><div class="v4-sub">${u.capital_key?`Your capital is at cell ${u.capital_key}. Embassies of other countries gather there.`:'Select one of your tiles and press “Make capital”.'}</div>${u.capital_key?`<button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="flyTo('${u.capital_key}')">📍 Show on map</button>`:''}</div>
+  <div class="v4-card"><h4>🗿 Wonders <span class="v4-sub">money sinks for the rich</span></h4>${w.map(x=>`<div class="v4-row" style="margin-bottom:8px"><span style="font-size:24px">${x.icon}</span><span class="grow"><b>${x.name}</b><div class="v4-sub">${x.desc} · ${fmtCost(x.cost)}</div></span>${x.owner?`<span class="chip gold">${esc(x.owner)}</span>`:`<button class="btn btn-primary btn-sm" onclick="empAct('/api/wonders/buy',{key:'${x.key}'})">Build</button>`}</div>`).join('')}</div>
+  <div class="v4-card"><h4>🏳 Embassies ${rs.has('diplomacy')?'':'<span class="v4-sub">needs Diplomacy tech</span>'}</h4>
+    <div class="v4-sub">Yours: ${(emb.owned||[]).map(x=>esc(x.name)).join(', ')||'none'}<br>In your capital: ${(emb.hosted||[]).map(x=>esc(x.name)).join(', ')||'none'}</div>
+    ${rs.has('diplomacy')?`<div class="v4-row" style="margin-top:8px"><select class="input-sm grow" id="emb-t">${opts}</select><button class="btn btn-primary btn-sm" onclick="empAct('/api/embassy/build',{host_id:+document.getElementById('emb-t').value})">Open · 400💰</button></div>`:''}</div>
+  <div class="v4-card"><h4>⚖ Trade deals</h4>${(emb.trades||[]).map(t=>`<div class="v4-row" style="margin-bottom:6px"><span class="grow v4-sub"><b>${esc(t.from_name)}</b> gives ${fmtN(t.give_amt)}${resIcon[t.give_res]||RES_CFG[t.give_res]?.icon} ⇄ <b>${esc(t.to_name)}</b> gives ${fmtN(t.get_amt)}${resIcon[t.get_res]||RES_CFG[t.get_res]?.icon} / 10 min ${t.status==='pending'?'(pending)':''}</span><button class="btn btn-ghost btn-sm" onclick="empAct('/api/trade/cancel',{trade_id:${t.id}})">✕</button></div>`).join('')||'<div class="v4-sub">No deals yet.</div>'}
+    ${popts?`<div class="v4-sub" style="margin-top:8px">Propose a standing deal — you send, they send back:</div><select class="input-sm" id="tr-to" style="width:100%;margin:4px 0">${popts}</select><div class="v4-row"><input type="number" class="input-sm" id="tr-ga" value="50" style="width:78px"/><select class="input-sm" id="tr-gr">${resOpts}</select></div><div class="v4-row" style="margin-top:4px"><span class="v4-sub">they send</span><input type="number" class="input-sm" id="tr-ta" value="50" style="width:78px"/><select class="input-sm" id="tr-tr">${resOpts.replace('value="money"','value="money"').replace(/selected/,'')}</select></div><button class="btn btn-primary btn-full" style="margin-top:6px" onclick="proposeTrade()">Propose</button>`:'<div class="v4-sub" style="margin-top:6px">Trade needs an embassy (either way) or a shared faction.</div>'}</div>
+  <div class="v4-card"><h4>🚢 Borrow boats / planes</h4>${(emb.loans||[]).map(l=>`<div class="v4-row" style="margin-bottom:6px"><span class="grow v4-sub">${esc(l.lender)} → ${esc(l.borrower)}: ${l.amount} ${l.unit} (${l.status})</span>${l.status==='active'?`<button class="btn btn-ghost btn-sm" onclick="empAct('/api/loan/return',{loan_id:${l.id}})">Return</button>`:''}</div>`).join('')}
+    <select class="input-sm" id="ln-to" style="width:100%;margin:4px 0">${opts}</select><div class="v4-row"><select class="input-sm" id="ln-u"><option value="boats">⚓ boats</option><option value="planes">✈ planes</option></select><input type="number" class="input-sm" id="ln-a" value="1" min="1" style="width:70px"/></div><input class="form-input" id="ln-m" maxlength="200" placeholder="Custom message (optional)" style="margin:6px 0"/><button class="btn btn-primary btn-full" onclick="empAct('/api/loan/request',{to_id:+document.getElementById('ln-to').value,unit:document.getElementById('ln-u').value,amount:+document.getElementById('ln-a').value,message:document.getElementById('ln-m').value})">Ask to borrow</button><div class="v4-sub" style="margin-top:4px">Faction mates share their fleet automatically.</div></div>
+  <div class="v4-card" style="border-color:var(--red2)"><h4 style="color:var(--red2)">☢ Nuclear programme</h4>${nukeChecklist(u,rs)}</div>
+  <div class="v4-card" style="border-color:var(--red2)"><h4 style="color:var(--red2)">⚠ Danger zone</h4><div class="v4-sub" style="margin-bottom:8px">Moving to a new place? Abandon every territory (no refund; you keep resources & army).</div><button class="btn btn-danger btn-full" onclick="abandonAll()">Abandon ALL my territories</button></div>`;
+}
+const IDEO={capitalism:{name:'Capitalism',icon:'🏦',desc:'+12% money, claims -10% price, troops +10% cost'},communism:{name:'Communism',icon:'☭',desc:'+6% all yields, troops -15% cost, money -8%'},militarism:{name:'Militarism',icon:'🎖',desc:'+10% attack, troops -10% cost, yields -5%'},democracy:{name:'Democracy',icon:'🗳',desc:'Research -15% cost, +5% defense, -3% attack'},theocracy:{name:'Theocracy',icon:'⛪',desc:'+10% defense, morale floor 35, casualties -10%, money -5%'}};
+function nukeChecklist(u,rs){
+  const gt=groupTiles(),has=b=>gt.some(k=>territories[k].building===b),row=(ok,t)=>`<div class="v4-sub">${ok?'✅':'⬜'} ${t}</div>`;
+  const ready=['nuclear_physics','rocketry','manhattan'].every(t=>rs.has(t))&&['uranium_mine','enrichment','nuclear_plant'].every(has);
+  return row(rs.has('nuclear_physics'),'Nuclear Physics')+row(rs.has('rocketry'),'Rocketry')+row(rs.has('manhattan'),'Manhattan Project')+row(has('uranium_mine'),'Uranium Mine')+row(has('enrichment'),'Enrichment Plant')+row(has('nuclear_plant'),'Nuclear Plant ⚛ (tiny meltdown risk — a meltdown permanently ruins its surroundings!)')+row(has('silo'),'Missile Silo (to launch)')+
+    `<div class="v4-sub" style="margin:6px 0">Warhead: <b>${fmtN(u.nuke_cost)}💰</b> + 300☢ + 3000🔩 · you hold <b>${u.nukes}</b></div><button class="btn btn-danger btn-full" ${ready?'':'disabled'} onclick="empAct('/api/nuke/build',{})">☢ Build warhead</button>${u.faction?.is_leader?`<button class="btn btn-ghost btn-full" style="margin-top:6px" ${ready?'':'disabled'} onclick="empAct('/api/nuke/build',{from_treasury:true})">…paid from faction treasury</button>`:''}`;
+}
+async function empAct(path,body){const r=await api('POST',path,body);if(r.error)return toast(r.error,'error');toast(r.message||'Done','success');achToast(r);await refreshUser();await refreshAll();buildEmpire()}
+async function saveColor(){const r=await api('POST','/api/profile/color',{color:document.getElementById('pc-col').value});if(r.error)return toast(r.error,'error');toast(r.message,'success');await refreshUser();await refreshAll();buildEmpire()}
+const proposeTrade=()=>empAct('/api/trade/propose',{to_id:+document.getElementById('tr-to').value,give_res:document.getElementById('tr-gr').value,give_amt:+document.getElementById('tr-ga').value,get_res:document.getElementById('tr-tr').value,get_amt:+document.getElementById('tr-ta').value});
+function flyTo(key){const[gl,gg]=parseKey(key);map.setView([(gl+.5)*GRID,(gg+.5)*GRID],7);if(isMobile())closeMobileSheet()}
+async function abandonAll(){
+  if(!confirm('Abandon ALL your territories?'))return;
+  if(!confirm('Really? Every tile and building you own will become wilderness. This cannot be undone.'))return;
+  if(prompt('Type your username to continue:')!==currentUser.username)return toast('Username did not match','error');
+  const pw=prompt('Enter your password:');if(pw===null)return;
+  if(prompt('Final step — type DELETE ALL MY TERRITORIES')!=='DELETE ALL MY TERRITORIES')return toast('Cancelled','error');
+  const r=await api('POST','/api/territory/abandon_all',{password:pw,confirm:'DELETE ALL MY TERRITORIES'});if(r.error)return toast(r.error,'error');toast(r.message,'success');await refreshAll();buildEmpire();
+}
+
+/* ── TUTORIAL ── */
+const TUT=[
+ ['🌍 Welcome to World Conquest!','The map is divided into small cells. Tap or click any cell to inspect it. Hover (or tap) shows exact coordinates and whether it is land or water.'],
+ ['🏴 Claim your first tile','Pick a land tile and press <b>Claim</b> (hotkey <b>C</b>). Your first tile is cheap. Later tiles cost money <i>and</i> resources, scaled to how much you earn — rich empires pay more.'],
+ ['💰 Resources & income','Every tile produces a resource per minute. The Market tab shows exactly how much you make per 10 min / hour / day, and lets you sell everything with one button.'],
+ ['⚔ Your army','Recruit troops on any tile you own — there is <b>no cap</b>. One army defends all your land and is what you attack with. Mountains, forests, weather, morale, Fortresses and your capital all change the odds. Press <b>A</b> to attack the selected tile.'],
+ ['🏗 Buildings','Barracks make free troops, Markets money, Workshops boost a tile, Mines make Steel, Uranium and Gems. Fortresses and Hospitals keep you alive. Research unlocks more.'],
+ ['⚓ Boats & ✈ planes','Ports (coast only) launch boats that can cross any distance — each cell sailed costs resources — and land on any coast. Airports launch planes within a limited range.'],
+ ['🚩 Factions','Found or join a faction: shared army, fleet, ports, colour and treasury (1% is paid out to members every 10 min). Spend the treasury on faction research. Declare war on other factions to fight them — or ally with them.'],
+ ['👑 Your empire','Choose an ideology, set a capital ⭐, open embassies to trade, build wonders with spare cash, and in the endgame… ☢ the Manhattan Project.'],
+ ['💬 Have fun!','Chat with everyone, grab your daily reward in Quests, collect achievements. You can reopen this tutorial any time via ❓ Help.'],
+];
+function showTutorial(i){
+  let ov=document.getElementById('tut');if(!ov){ov=document.createElement('div');ov.id='tut';document.body.appendChild(ov)}
+  if(i>=TUT.length){ov.classList.remove('open');localStorage.setItem('wc_tut','1');return}
+  const[t,b]=TUT[i];ov.classList.add('open');
+  ov.innerHTML=`<div class="tut-box"><div class="v4-sub">Step ${i+1} / ${TUT.length}</div><h2>${t}</h2><p>${b}</p><div class="v4-row" style="margin-top:14px"><button class="btn btn-ghost" onclick="showTutorial(${TUT.length})">Skip</button><span class="grow"></span>${i?`<button class="btn btn-ghost" onclick="showTutorial(${i-1})">Back</button>`:''}<button class="btn btn-primary" onclick="showTutorial(${i+1})">${i===TUT.length-1?'Let\'s play!':'Next'}</button></div></div>`;
+}
+
+/* ── admin extras ── */
+function injectAdmin2(){
+  const gr=document.getElementById('adm-gr');if(gr&&!gr.dataset.v5){gr.dataset.v5=1;['steel','uranium','gems','nukes'].forEach(r=>gr.insertAdjacentHTML('beforeend',`<option>${r}</option>`))}
+  const w=document.getElementById('admin-world');if(w&&!document.getElementById('adm-nuke')){
+    w.firstElementChild.insertAdjacentHTML('beforeend',`<div class="tc"><div class="section-label">☢ Nukes & fallout</div><div class="input-row" style="margin-top:6px"><span class="v4-sub">Warhead cost</span><input class="input-sm" id="adm-nuke" type="number" style="max-width:130px"/><button class="btn btn-ghost btn-sm" onclick="admSet('nuke_cost',document.getElementById('adm-nuke').value)">Set</button><button class="btn btn-danger btn-sm" onclick="if(confirm('Clear ALL fallout, including permanent?'))admRun('/api/admin/clear_fallout',{},()=>drawFallout())">Clear all fallout</button></div></div>`)}
+}
+const _lw=loadAdmWorld;loadAdmWorld=async function(){await _lw();injectAdmin2();const s=await api('GET','/api/admin/stats');const n=document.getElementById('adm-nuke');if(n)n.value=s.settings?.nuke_cost??100000000};
+
+/* ── bootstrap v5 ── */
+const _sg2=startGame;
+startGame=async function(user){
+  await _sg2(user);
+  api('GET','/api/research').then(r=>{if(r&&r.tree)Object.assign(RESEARCH_TREE,r.tree)});
+  api('GET','/api/buildings').then(b=>{if(b&&!b.error)BLD=b});
+  drawFallout();setInterval(drawFallout,60000);
+  const pc=document.querySelector('.stab[data-panel="empire"]');
+  if(!localStorage.getItem('wc_tut')&&(currentUser?.territory_count||0)===0)setTimeout(()=>showTutorial(0),900);
+};
 
 </script>
 </body>

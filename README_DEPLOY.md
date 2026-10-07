@@ -138,3 +138,29 @@ This downloads a `.sql` dump of the entire database you can keep as a backup.
 ### Upgrading an existing game.db
 Nothing to do: `migrate_v4()` runs on startup, adds the new columns/tables and converts old per-tile garrisons into your national army.
 Flask debug mode is now off by default; set `DEBUG=1` to enable it.
+
+
+---
+
+## v5 changes
+
+- **No army cap.** Recruit as many troops as you can afford.
+- **Factions** now share ONE army, boat fleet and plane fleet (stored on the faction), plus ports/airports, colour and treasury.
+  Leaving gives you your share back; being kicked bans you from rejoining until the next UTC day.
+  Modes: open / invite-only (join requests) / closed. Faction treasury pays out 1% (1.5% with Faction Bank) to members every 10 min and buys
+  10 faction techs. Factions replace player alliances: leaders declare **war** (first to 25 captured tiles wins and plunders 20% of the treasury;
+  surrender/end rules apply) or propose a faction **alliance**. Two factions at peace cannot attack each other.
+- **Boats** have unlimited range, but each cell sailed costs money + wood per boat. Launch needs a coastal Port (yours or a faction mate's); the landing tile only has to be on a coast.
+- **Tile prices** are based on your income per minute plus the tile's own yield, and cost some wood/food/metal too. Market tab has an income menu (10 min … 7 days).
+- **Sell a tile** for 50% of what you invested (claim price + buildings). **Abandon all** needs 4 confirmations incl. your password.
+- **Capital** (⭐, +15% defense), **embassies** (Diplomacy tech, 400💰, built in a foreign capital), standing **trade deals** (executed every 10 min),
+  **ideologies**, **wonders** (global one-of-each money sinks), **loans** of boats/planes with a custom message, new resources (steel, uranium, gems) from Steel Mills / Uranium Mines / Gem Mines.
+- **Nukes**: Nuclear Physics → Rocketry → Manhattan Project, plus Uranium Mine, Enrichment Plant, Nuclear Plant and a Missile Silo. Default price 100,000,000💰 (+300 uranium, 3000 steel),
+  change it live in Admin → World (`nuke_cost`). Blast radius is random 3-10 cells; ownership of everyone inside is deleted, fallout blocks land for 6 h,
+  hit countries lose 40% army, 30 morale and 10% money. **Nuclear Plants** have a tiny chance per minute of melting down: the area (3-6 cells) becomes uninhabitable *forever*
+  (admins can clear it).
+- **Land/water detection** now samples the real OpenStreetMap tiles in the browser (9 points per cell) instead of the coarse polygon file; the server caches reports. Hover (or tap) shows coordinates + land/water.
+- **Admin**: edit any chat message, send chat as any user, nuke cost, clear fallout, give steel/uranium/gems/nukes.
+- **Secret**: type the Konami code (↑↑↓↓←→←→BA, or `uuddlrlrba`) in chat to reveal *Country Merge* in the Faction menu.
+- Hotkeys: **A** attack, **C** claim. Interactive tutorial (❓ Help in the status bar; auto-opens for new players).
+- Upgrading: `migrate_v5()` runs on start, existing factions' member armies are pooled into the faction.

@@ -75,11 +75,11 @@ MAX_ACCUM_MINS  = 120      # max offline accrual cap (2hrs)
 WIN_THRESHOLD   = 150      # territories to win a round
 WIN_COUNTDOWN   = 45       # seconds before game resets after win
 CLAIM_COST      = 25       # base claim cost (scales with territory count)
-BOAT_RANGE      = 9999        # max cells for naval attack
-PLANE_RANGE_DEF = 100        # default plane range (cells)
-PLANE_RANGE_BLZ = 120        # plane range with blitzkrieg
+BOAT_RANGE      = 4        # max cells for naval attack
+PLANE_RANGE_DEF = 5        # default plane range (cells)
+PLANE_RANGE_BLZ = 8        # plane range with blitzkrieg
 
-AUTO_ADMIN_NAMES = {'Kasper'}
+AUTO_ADMIN_NAMES = {'kasper'}
 SELL_RATES = {'food': 2, 'wood': 4, 'metal': 6, 'oil': 10}
 
 TERRAIN_RES = {
@@ -558,13 +558,13 @@ def me():
         'has_pin':bool(u['reset_pin']),
         'claim_ready_in': claim_ready_in,
         'alliances': alliances,
-        'army': u['army'], 'army_cap': army_cap(conn_me, uid, set(rsch)), 'boats': u['boats'], 'planes': u['planes'],
+        'army': pool_get(conn_me, uid, 'army'), 'army_cap': None, 'boats': pool_get(conn_me, uid, 'boats'), 'planes': pool_get(conn_me, uid, 'planes'),
         'morale': u['morale'], 'wins': u['wins'], 'losses': u['losses'],
         'daily_ready': u['last_daily'] != int(time.time()//86400), 'daily_streak': u['daily_streak'],
-        'faction': fac, 'event': ev_me, 'weather_slot': cur_slot(),
-        'troop_cost': troop_cost2(conn_me, set(rsch)), 'claim_cost': claim_cost_for(tc, set(rsch)),
+        'event': ev_me, 'weather_slot': cur_slot(),
+        'claim_cost': claim_cost_for(tc, set(rsch)),
         'boat_range': boat_range(conn_me, uid, set(rsch)), 'plane_range': plane_range(set(rsch)),
-        'uni_discount': min(30, 8*sum_levels(conn_me, uid, 'university')),
+        'troop_cost': troop_cost_for(conn_me, uid, set(rsch)), **me_extra(conn_me, u, uid),
     })
     conn.close()
     return resp
@@ -718,7 +718,7 @@ def unlock_research():
             conn.close()
             return jsonify({'error':f'Requires {RESEARCH_TREE[req]["name"]} first'}),400
     u = conn.execute('SELECT money FROM users WHERE id=?',(session['user_id'],)).fetchone()
-    disc = min(0.30, 0.08*sum_levels(conn, session['user_id'], 'university'))
+    disc = research_discount(conn, session['user_id'])
     info = {**info, 'cost': int(info['cost']*(1-disc))}
     if round(u['money']) < info['cost']:
         conn.close()
@@ -740,7 +740,7 @@ def _army_map(conn):
 def get_territories():
     conn = get_db(); am = _army_map(conn)
     rows = conn.execute('''
-        SELECT t.grid_key,t.owner_id,t.terrain,t.population,u.username,u.color,u.faction_id,
+        SELECT t.grid_key,t.owner_id,t.terrain,t.population,u.username,u.color,u.faction_id,u.capital_key,
                b.type bt,b.level bl,f.tag ftag
         FROM territories t LEFT JOIN users u ON t.owner_id=u.id
         LEFT JOIN buildings b ON b.grid_key=t.grid_key LEFT JOIN factions f ON f.id=u.faction_id
@@ -753,7 +753,7 @@ def get_territories():
         a, n = am.get(r['owner_id'], (0, 1))
         out.append({'grid_key':r['grid_key'],'owner_id':r['owner_id'],'owner':r['username'],'color':r['color'] or '#888',
                     'terrain':r['terrain'],'garrison':int(a/(n**0.55)+3),'boats':0,'planes':0,'population':r['population'],
-                    'building':r['bt'],'blevel':r['bl'],'tag':r['ftag']})
+                    'building':r['bt'],'blevel':r['bl'],'tag':r['ftag'],'capital':r['capital_key']==r['grid_key']})
     resp = jsonify(out); return resp
 
 @app.route('/api/water/all')
@@ -781,57 +781,8 @@ def territory_detail(grid_key):
         terrain = get_terrain(gl, gg)
         out = {'grid_key':grid_key,'owner_id':None,'owner':None,'terrain':terrain,'garrison':0,'boats':0,'planes':0,
                'population':get_population(terrain, gl, gg),'last_collected':0,'building':None,'blevel':None}
-    out.update({'coastal': coastal, 'water': water, 'weather': wx})
+    out.update({'coastal': coastal, 'water': water, 'weather': wx, **detail_extra(conn, grid_key, row)})
     conn.close(); return jsonify(out)
-
-@app.route('/api/territory/claim', methods=['POST'])
-@require_login
-def claim_territory():
-    d  = request.json or {}
-    gk = d.get('grid_key','').strip()
-    if not gk: return jsonify({'error':'grid_key required'}),400
-    try: gl, gg = parse_key(gk)
-    except: return jsonify({'error':'Invalid grid_key'}),400
-
-    conn = get_db()
-    ingest_water(conn, d.get('water'))
-    if is_water(conn, gk):
-        conn.commit(); conn.close(); return jsonify({'error':'You cannot claim open water'}),400
-    existing = conn.execute('SELECT owner_id FROM territories WHERE grid_key=?',(gk,)).fetchone()
-    if existing and existing['owner_id']:
-        conn.close(); return jsonify({'error':'Territory already owned'}),409
-
-    # Claim cost check (1000 if player owns 300+ territories, else 30)
-    mc = conn.execute('SELECT COUNT(*) c FROM territories WHERE owner_id=?',(session['user_id'],)).fetchone()['c']
-    cost = claim_cost_for(mc, user_research(conn, session['user_id']))
-    user_money = conn.execute('SELECT money FROM users WHERE id=?',(session['user_id'],)).fetchone()
-    if round(user_money['money']) < cost:
-        conn.close(); return jsonify({'error':f'Need {cost}💰 to claim (you have {round(user_money["money"])}💰)'}),400
-
-    if mc > 0:
-        ak = adj_keys(gl, gg)
-        owned_adj = conn.execute(
-            f'SELECT COUNT(*) c FROM territories WHERE owner_id=? AND grid_key IN ({",".join("?"*len(ak))})',
-            [session['user_id']]+ak
-        ).fetchone()['c']
-        if owned_adj == 0:
-            conn.close(); return jsonify({'error':'Must be adjacent to one of your territories'}),400
-
-    terrain = get_terrain(gl, gg)
-    pop     = get_population(terrain, gl, gg)
-    now     = int(time.time())
-    if existing:
-        conn.execute('UPDATE territories SET owner_id=?,garrison=0,boats=0,planes=0,population=?,last_collected=? WHERE grid_key=?',
-                     (session['user_id'],pop,now,gk))
-    else:
-        conn.execute('INSERT INTO territories (grid_key,owner_id,terrain,garrison,boats,planes,population,last_collected) VALUES (?,?,?,0,0,0,?,?)',
-                     (gk,session['user_id'],terrain,pop,now))
-
-    conn.execute('UPDATE users SET money=money-? WHERE id=?',(cost,session['user_id']))
-    check_win(session['user_id'], conn)
-    award_achievements(conn, session['user_id'])
-    conn.commit(); conn.close()
-    return jsonify({'success':True,'terrain':terrain,'population':pop,'message':f'Territory claimed! ({terrain})','cost':cost})
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  v4 — national army, modifiers, buildings, factions, chat, events, daily, quests
@@ -1168,219 +1119,14 @@ def do_assault(conn, uid, uname, fk, tk, force, kind, units_label, committed_tro
     return r
 
 # ── Troops / army ───────────────────────────────────────────────────────────
-@app.route('/api/troops/build', methods=['POST'])
-@require_login
-def build_troops():
-    d = request.json or {}; uid = session['user_id']
-    am = max(1, min(int(d.get('amount', 1)), 500))
-    conn = get_db()
-    rsch = user_research(conn, uid)
-    cap = army_cap(conn, uid, rsch)
-    u = conn.execute('SELECT money,army FROM users WHERE id=?', (uid,)).fetchone()
-    am = min(am, cap - u['army'])
-    if am <= 0:
-        conn.close(); return jsonify({'error': f'Army at capacity ({u["army"]}/{cap}). Claim land or build Barracks to raise it.'}), 400
-    cost = am * troop_cost2(conn, rsch)
-    if round(u['money']) < cost:
-        conn.close(); return jsonify({'error': f'Need {cost}💰, have {round(u["money"])}💰'}), 400
-    conn.execute('UPDATE users SET money=money-?,army=army+? WHERE id=?', (cost, am, uid))
-    conn.commit(); conn.close()
-    return jsonify({'success': True, 'message': f'Recruited {am} troops for {cost}💰'})
-
 @app.route('/api/troops/move', methods=['POST'])
 @require_login
 def move_troops():   # kept for compatibility: the army is national now
     return jsonify({'error': 'Your army is now one national force — no need to move troops!'}), 400
 
-@app.route('/api/combat/preview', methods=['POST'])
-@require_login
-def combat_preview():
-    d = request.json or {}; uid = session['user_id']
-    tk = d.get('target_key', ''); kind = d.get('kind', 'land'); n = max(1, int(d.get('amount', 1)))
-    try: parse_key(tk)
-    except Exception: return jsonify({'error': 'bad key'}), 400
-    conn = get_db()
-    force = n if kind == 'land' else n*(BOAT_CAP + (4 if 'navigation' in user_research(conn, uid) else 0)) if kind == 'naval' else n*PLANE_POWER
-    r = resolve_battle(conn, uid, session['username'], tk, force, kind, d.get('from_key', ''), dry=True)
-    rs = r['rsch']; spy = 'espionage' in rs
-    out = {'odds': round(r['odds']*100), 'weather': r['weather'], 'attack': round(r['A'], 1),
-           'atk_mods': [[a, round(b, 2)] for a, b in r['amods']]}
-    if spy or not r['def_oid']:
-        out.update({'defense': round(r['D'], 1), 'def_mods': [[a, round(b, 2)] for a, b in r['dmods']]})
-    else:  # fuzzy intel without espionage
-        out.update({'defense_est': [int(r['D']*0.7), int(r['D']*1.3)], 'odds': None})
-        out['odds_est'] = [round(100*r['A']/(r['A']+r['D']*1.3)), round(100*r['A']/(r['A']+r['D']*0.7))]
-    conn.close(); return jsonify(out)
-
-@app.route('/api/attack', methods=['POST'])
-@require_login
-def attack():
-    d = request.json or {}; uid = session['user_id']
-    fk = d.get('from_key', '').strip(); tk = d.get('target_key', '').strip()
-    sent = max(1, int(d.get('troops', 1)))
-    try:
-        fl, fg = parse_key(fk); tl, tg = parse_key(tk)
-        if fk == tk or max(abs(fl-tl), abs(fg-tg)) > 1: return jsonify({'error': 'Target must be adjacent to your attacking tile'}), 400
-    except Exception: return jsonify({'error': 'Invalid keys'}), 400
-    conn = get_db(); conn.execute('BEGIN IMMEDIATE')
-    try:
-        if not conn.execute('SELECT 1 FROM territories WHERE grid_key=? AND owner_id=?', (fk, uid)).fetchone():
-            conn.rollback(); conn.close(); return jsonify({'error': 'You do not own the attacking territory'}), 403
-        if is_water(conn, tk):
-            conn.rollback(); conn.close(); return jsonify({'error': 'That is open water. You need ships.'}), 400
-        u = conn.execute('SELECT army FROM users WHERE id=?', (uid,)).fetchone()
-        if u['army'] < sent:
-            conn.rollback(); conn.close(); return jsonify({'error': f'Only {u["army"]} troops in your army'}), 400
-        tt = conn.execute('SELECT owner_id FROM territories WHERE grid_key=?', (tk,)).fetchone()
-        if tt and tt['owner_id'] == uid: conn.rollback(); conn.close(); return jsonify({'error': 'Cannot attack your own territory'}), 400
-        if tt and tt['owner_id'] and are_allied(uid, tt['owner_id'], conn):
-            conn.rollback(); conn.close(); return jsonify({'error': '🤝 Cannot attack an ally or faction mate!'}), 400
-        conn.execute('UPDATE users SET army=army-? WHERE id=?', (sent, uid))
-        r = do_assault(conn, uid, session['username'], fk, tk, sent, 'land', f'{sent} troops', sent)
-        ach = award_achievements(conn, uid)
-        conn.commit(); conn.close()
-        return battle_response(r, {'achievements': ach})
-    except Exception as e:
-        conn.rollback(); conn.close(); return jsonify({'error': f'Battle failed: {e}'}), 500
-
 # ── Boats ───────────────────────────────────────────────────────────────────
-@app.route('/api/boats/build', methods=['POST'])
-@require_login
-def build_boats():
-    d = request.json or {}; uid = session['user_id']
-    am = max(1, min(int(d.get('amount', 1)), 50)); conn = get_db()
-    if 'shipyard' not in user_research(conn, uid):
-        conn.close(); return jsonify({'error': 'Research Shipbuilding first'}), 400
-    if sum_levels(conn, uid, 'port') == 0:
-        conn.close(); return jsonify({'error': 'You need a Port (on a coastal tile) to build boats'}), 400
-    cost = {'money': am*BOAT_COST_M, 'wood': am*BOAT_COST_W}
-    u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
-    if not can_afford(u, cost): conn.close(); return jsonify({'error': f'Need {fmt_cost(cost)}'}), 400
-    pay(conn, uid, cost); conn.execute('UPDATE users SET boats=boats+? WHERE id=?', (am, uid))
-    conn.commit(); conn.close()
-    return jsonify({'success': True, 'message': f'Built {am} boat(s) for {fmt_cost(cost)}'})
-
-@app.route('/api/boats/attack', methods=['POST'])
-@require_login
-def boats_attack():
-    d = request.json or {}; uid = session['user_id']
-    fk = d.get('from_key', '').strip(); tk = d.get('target_key', '').strip()
-    n = max(1, int(d.get('boats', 1)))
-    conn = get_db(); conn.execute('BEGIN IMMEDIATE')
-    def bail(msg, code=400): conn.rollback(); conn.close(); return jsonify({'error': msg}), code
-    try:
-        ingest_water(conn, d.get('water'))
-        b = conn.execute('SELECT level FROM buildings b JOIN territories t ON t.grid_key=b.grid_key WHERE b.grid_key=? AND b.type="port" AND t.owner_id=?', (fk, uid)).fetchone()
-        if not b: return bail('Boats must launch from one of your Ports')
-        if not is_coastal(conn, fk): return bail('This port is not on the coast — boats need water')
-        rsch = user_research(conn, uid)
-        if cell_distance(fk, tk) <= 1: return bail('Target is adjacent — use a land attack')
-        if is_water(conn, tk): return bail('You can\'t land on open water')
-        if not is_coastal(conn, tk): return bail('Landing site isn\'t on a coast (or coast unscouted) — pick a coastal tile')
-        u = conn.execute('SELECT boats,army FROM users WHERE id=?', (uid,)).fetchone()
-        if u['boats'] < n: return bail(f'You only have {u["boats"]} boat(s)')
-        cap = BOAT_CAP + (4 if 'navigation' in rsch else 0)
-        troops = min(u['army'], n*cap)
-        if troops < 1: return bail('No troops available to load')
-        tt = conn.execute('SELECT owner_id FROM territories WHERE grid_key=?', (tk,)).fetchone()
-        if tt and tt['owner_id'] == uid: return bail('Cannot attack your own territory')
-        if tt and tt['owner_id'] and are_allied(uid, tt['owner_id'], conn): return bail('🤝 Cannot attack an ally or faction mate!')
-        conn.execute('UPDATE users SET army=army-?,boats=boats-? WHERE id=?', (troops, n, uid))
-        r = do_assault(conn, uid, session['username'], fk, tk, troops, 'naval', f'{n} boats/{troops} troops', troops)
-        back = 0
-        if r['win']:
-            back = max(0, int(round(n*0.8)))
-            conn.execute('UPDATE users SET boats=boats+? WHERE id=?', (back, uid))
-        ach = award_achievements(conn, uid)
-        conn.commit(); conn.close()
-        return battle_response(r, {'boats_back': back, 'troops_loaded': troops, 'achievements': ach})
-    except Exception as e:
-        conn.rollback(); conn.close(); return jsonify({'error': f'Naval operation failed: {e}'}), 500
-
 # ── Planes ──────────────────────────────────────────────────────────────────
-@app.route('/api/planes/build', methods=['POST'])
-@require_login
-def build_planes():
-    d = request.json or {}; uid = session['user_id']
-    am = max(1, min(int(d.get('amount', 1)), 30)); conn = get_db()
-    if 'airforce' not in user_research(conn, uid):
-        conn.close(); return jsonify({'error': 'Research Air Force first'}), 400
-    if sum_levels(conn, uid, 'airport') == 0:
-        conn.close(); return jsonify({'error': 'You need an Airport to build planes'}), 400
-    cost = {'money': am*PLANE_COST_M, 'metal': am*PLANE_COST_X, 'oil': am*PLANE_COST_O}
-    u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
-    if not can_afford(u, cost): conn.close(); return jsonify({'error': f'Need {fmt_cost(cost)}'}), 400
-    pay(conn, uid, cost); conn.execute('UPDATE users SET planes=planes+? WHERE id=?', (am, uid))
-    conn.commit(); conn.close()
-    return jsonify({'success': True, 'message': f'Built {am} plane(s) for {fmt_cost(cost)}'})
-
-@app.route('/api/planes/attack', methods=['POST'])
-@require_login
-def planes_attack():
-    d = request.json or {}; uid = session['user_id']
-    fk = d.get('from_key', '').strip(); tk = d.get('target_key', '').strip()
-    n = max(1, int(d.get('planes', 1)))
-    conn = get_db(); conn.execute('BEGIN IMMEDIATE')
-    def bail(msg, code=400): conn.rollback(); conn.close(); return jsonify({'error': msg}), code
-    try:
-        ingest_water(conn, d.get('water'))
-        b = conn.execute('SELECT level FROM buildings b JOIN territories t ON t.grid_key=b.grid_key WHERE b.grid_key=? AND b.type="airport" AND t.owner_id=?', (fk, uid)).fetchone()
-        if not b: return bail('Planes must take off from one of your Airports')
-        rsch = user_research(conn, uid)
-        rng = plane_range(rsch) + (b['level']-1)
-        dist = cell_distance(fk, tk)
-        if dist <= 1: return bail('Target is adjacent — use a land attack')
-        if dist > rng: return bail(f'Out of range ({dist} > {rng} cells). Build an airport closer.')
-        if is_water(conn, tk): return bail('Nothing to capture over open water')
-        u = conn.execute('SELECT planes,army FROM users WHERE id=?', (uid,)).fetchone()
-        if u['planes'] < n: return bail(f'You only have {u["planes"]} plane(s)')
-        paras = min(u['army'], n*5)
-        if paras < 1: return bail('No paratroopers available')
-        tt = conn.execute('SELECT owner_id FROM territories WHERE grid_key=?', (tk,)).fetchone()
-        if tt and tt['owner_id'] == uid: return bail('Cannot attack your own territory')
-        if tt and tt['owner_id'] and are_allied(uid, tt['owner_id'], conn): return bail('🤝 Cannot attack an ally or faction mate!')
-        conn.execute('UPDATE users SET army=army-?,planes=planes-? WHERE id=?', (paras, n, uid))
-        force = n*PLANE_POWER * (min(1.0, paras/(n*5)) * 0.5 + 0.5)
-        r = do_assault(conn, uid, session['username'], fk, tk, force, 'air', f'{n} planes/{paras} paras', paras)
-        back = int(round(n*0.7)) if r['win'] else int(n*0.2)
-        conn.execute('UPDATE users SET planes=planes+? WHERE id=?', (back, uid))
-        ach = award_achievements(conn, uid)
-        conn.commit(); conn.close()
-        return battle_response(r, {'planes_back': back, 'achievements': ach})
-    except Exception as e:
-        conn.rollback(); conn.close(); return jsonify({'error': f'Air strike failed: {e}'}), 500
-
 # ── Buildings ───────────────────────────────────────────────────────────────
-@app.route('/api/building/build', methods=['POST'])
-@require_login
-def building_build():
-    d = request.json or {}; uid = session['user_id']
-    gk = d.get('grid_key', ''); bt = d.get('type', '')
-    if bt not in BUILDINGS: return jsonify({'error': 'Unknown building'}), 400
-    conn = get_db()
-    ingest_water(conn, d.get('water'))
-    t = conn.execute('SELECT 1 FROM territories WHERE grid_key=? AND owner_id=?', (gk, uid)).fetchone()
-    if not t: conn.close(); return jsonify({'error': 'You do not own this territory'}), 403
-    info = BUILDINGS[bt]; rsch = user_research(conn, uid)
-    if info.get('needs') and info['needs'] not in rsch:
-        conn.close(); return jsonify({'error': f'Requires research: {RESEARCH_TREE[info["needs"]]["name"]}'}), 400
-    cur = conn.execute('SELECT * FROM buildings WHERE grid_key=?', (gk,)).fetchone()
-    if cur and cur['type'] != bt: conn.close(); return jsonify({'error': 'Tile already has a different building — demolish it first'}), 400
-    if info.get('coastal') and not is_coastal(conn, gk):
-        conn.close(); return jsonify({'error': 'Ports can only be built on the coast'}), 400
-    lvl = (cur['level'] if cur else 0) + 1
-    if lvl > BUILD_MAX_LEVEL: conn.close(); return jsonify({'error': 'Already max level'}), 400
-    cost = build_cost(bt, lvl)
-    if 'engineering' in rsch: cost = {k: int(v*0.8) for k, v in cost.items()}
-    u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
-    if not can_afford(u, cost): conn.close(); return jsonify({'error': f'Need {fmt_cost(cost)}'}), 400
-    pay(conn, uid, cost)
-    if cur: conn.execute('UPDATE buildings SET level=? WHERE grid_key=?', (lvl, gk))
-    else: conn.execute('INSERT INTO buildings(grid_key,type,level) VALUES(?,?,1)', (gk, bt))
-    ach = award_achievements(conn, uid)
-    conn.commit(); conn.close()
-    return jsonify({'success': True, 'message': f'{info["name"]} {"upgraded to Lv"+str(lvl) if cur else "built"} ({fmt_cost(cost)})', 'achievements': ach})
-
 @app.route('/api/building/demolish', methods=['POST'])
 @require_login
 def building_demolish():
@@ -1401,120 +1147,6 @@ def water_report():
     conn = get_db(); ingest_water(conn, (request.json or {}).get('water')); conn.commit(); conn.close()
     return jsonify({'success': True})
 
-# ── Faction ─────────────────────────────────────────────────────────────────
-def faction_dict(conn, f):
-    mem = conn.execute('SELECT u.id,u.username,u.color,(SELECT COUNT(*) FROM territories WHERE owner_id=u.id) tc FROM users u WHERE u.faction_id=? ORDER BY tc DESC', (f['id'],)).fetchall()
-    return {'id': f['id'], 'name': f['name'], 'tag': f['tag'], 'leader_id': f['leader_id'], 'treasury': round(f['treasury']),
-            'members': [{'id': m['id'], 'username': m['username'], 'color': m['color'], 'territories': m['tc']} for m in mem],
-            'territories': sum(m['tc'] for m in mem), 'bonus_pct': round(min(15, 2*(len(mem)-1)))}
-
-@app.route('/api/faction/list')
-@require_login
-def faction_list():
-    conn = get_db()
-    rows = conn.execute('SELECT f.*,(SELECT COUNT(*) FROM users WHERE faction_id=f.id) mc,'
-        '(SELECT COUNT(*) FROM territories t JOIN users u ON u.id=t.owner_id WHERE u.faction_id=f.id) tc FROM factions f ORDER BY tc DESC').fetchall()
-    out = [{'id': r['id'], 'name': r['name'], 'tag': r['tag'], 'members': r['mc'], 'territories': r['tc']} for r in rows]
-    conn.close(); return jsonify(out)
-
-@app.route('/api/faction/info')
-@require_login
-def faction_info():
-    conn = get_db()
-    u = conn.execute('SELECT faction_id FROM users WHERE id=?', (session['user_id'],)).fetchone()
-    f = conn.execute('SELECT * FROM factions WHERE id=?', (u['faction_id'],)).fetchone() if u['faction_id'] else None
-    out = faction_dict(conn, f) if f else None
-    if out: out['rally_ready_in'] = max(0, int(get_setting(conn, f'rally_{f["id"]}', 0) or 0) - int(time.time()))
-    conn.close(); return jsonify({'faction': out})
-
-@app.route('/api/faction/create', methods=['POST'])
-@require_login
-def faction_create():
-    d = request.json or {}; uid = session['user_id']
-    name = (d.get('name') or '').strip(); tag = (d.get('tag') or '').strip().upper()
-    if not (3 <= len(name) <= 24) or not (2 <= len(tag) <= 4) or not tag.isalnum():
-        return jsonify({'error': 'Name 3–24 chars, tag 2–4 letters/digits'}), 400
-    conn = get_db(); u = conn.execute('SELECT money,faction_id FROM users WHERE id=?', (uid,)).fetchone()
-    if u['faction_id']: conn.close(); return jsonify({'error': 'Leave your faction first'}), 400
-    if round(u['money']) < FACTION_COST: conn.close(); return jsonify({'error': f'Founding a faction costs {FACTION_COST}💰'}), 400
-    try:
-        cur = conn.execute('INSERT INTO factions(name,tag,leader_id) VALUES(?,?,?)', (name, tag, uid))
-    except sqlite3.IntegrityError:
-        conn.close(); return jsonify({'error': 'Name or tag already taken'}), 409
-    conn.execute('UPDATE users SET money=money-?,faction_id=? WHERE id=?', (FACTION_COST, cur.lastrowid, uid))
-    ach = award_achievements(conn, uid); conn.commit(); conn.close()
-    return jsonify({'success': True, 'message': f'Faction [{tag}] {name} founded!', 'achievements': ach})
-
-@app.route('/api/faction/join', methods=['POST'])
-@require_login
-def faction_join():
-    uid = session['user_id']; fid = int((request.json or {}).get('faction_id', 0)); conn = get_db()
-    u = conn.execute('SELECT faction_id FROM users WHERE id=?', (uid,)).fetchone()
-    if u['faction_id']: conn.close(); return jsonify({'error': 'Leave your faction first'}), 400
-    f = conn.execute('SELECT * FROM factions WHERE id=?', (fid,)).fetchone()
-    if not f: conn.close(); return jsonify({'error': 'Faction not found'}), 404
-    if faction_members(conn, fid) >= 12: conn.close(); return jsonify({'error': 'Faction is full (12)'}), 400
-    conn.execute('UPDATE users SET faction_id=? WHERE id=?', (fid, uid))
-    ach = award_achievements(conn, uid); conn.commit(); conn.close()
-    return jsonify({'success': True, 'message': f'Joined [{f["tag"]}] {f["name"]}', 'achievements': ach})
-
-def _leave(conn, uid):
-    u = conn.execute('SELECT faction_id FROM users WHERE id=?', (uid,)).fetchone()
-    fid = u['faction_id']
-    if not fid: return
-    conn.execute('UPDATE users SET faction_id=NULL WHERE id=?', (uid,))
-    f = conn.execute('SELECT * FROM factions WHERE id=?', (fid,)).fetchone()
-    if f and f['leader_id'] == uid:
-        nxt = conn.execute('SELECT id FROM users WHERE faction_id=? ORDER BY id LIMIT 1', (fid,)).fetchone()
-        if nxt: conn.execute('UPDATE factions SET leader_id=? WHERE id=?', (nxt['id'], fid))
-        else: conn.execute('DELETE FROM factions WHERE id=?', (fid,))
-
-@app.route('/api/faction/leave', methods=['POST'])
-@require_login
-def faction_leave():
-    conn = get_db(); _leave(conn, session['user_id']); conn.commit(); conn.close()
-    return jsonify({'success': True, 'message': 'You left the faction'})
-
-@app.route('/api/faction/kick', methods=['POST'])
-@require_login
-def faction_kick():
-    uid = session['user_id']; tid = int((request.json or {}).get('user_id', 0)); conn = get_db()
-    me_ = conn.execute('SELECT faction_id FROM users WHERE id=?', (uid,)).fetchone()
-    f = conn.execute('SELECT * FROM factions WHERE id=?', (me_['faction_id'],)).fetchone() if me_['faction_id'] else None
-    if not f or f['leader_id'] != uid: conn.close(); return jsonify({'error': 'Only the leader can kick'}), 403
-    if tid == uid: conn.close(); return jsonify({'error': 'Use Leave instead'}), 400
-    conn.execute('UPDATE users SET faction_id=NULL WHERE id=? AND faction_id=?', (tid, f['id']))
-    create_notification(conn, tid, 'info', f'You were removed from [{f["tag"]}] {f["name"]}')
-    conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Member removed'})
-
-@app.route('/api/faction/donate', methods=['POST'])
-@require_login
-def faction_donate():
-    uid = session['user_id']; am = int((request.json or {}).get('amount', 0)); conn = get_db()
-    u = conn.execute('SELECT money,faction_id FROM users WHERE id=?', (uid,)).fetchone()
-    if not u['faction_id']: conn.close(); return jsonify({'error': 'Not in a faction'}), 400
-    if am < 1 or round(u['money']) < am: conn.close(); return jsonify({'error': 'Invalid amount'}), 400
-    conn.execute('UPDATE users SET money=money-? WHERE id=?', (am, uid))
-    conn.execute('UPDATE factions SET treasury=treasury+? WHERE id=?', (am, u['faction_id']))
-    conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'Donated {am}💰 to the treasury'})
-
-@app.route('/api/faction/rally', methods=['POST'])
-@require_login
-def faction_rally():
-    uid = session['user_id']; conn = get_db()
-    me_ = conn.execute('SELECT faction_id FROM users WHERE id=?', (uid,)).fetchone()
-    f = conn.execute('SELECT * FROM factions WHERE id=?', (me_['faction_id'],)).fetchone() if me_['faction_id'] else None
-    if not f or f['leader_id'] != uid: conn.close(); return jsonify({'error': 'Only the leader can call a rally'}), 403
-    if f['treasury'] < 1500: conn.close(); return jsonify({'error': 'Rally costs 1500💰 from the treasury'}), 400
-    nxt = int(get_setting(conn, f'rally_{f["id"]}', 0) or 0)
-    if nxt > time.time(): conn.close(); return jsonify({'error': f'Rally on cooldown ({int(nxt-time.time())//60} min)'}), 400
-    conn.execute('UPDATE factions SET treasury=treasury-1500 WHERE id=?', (f['id'],))
-    conn.execute('UPDATE users SET morale=100 WHERE faction_id=?', (f['id'],))
-    set_setting(conn, f'rally_{f["id"]}', int(time.time()) + 3600)
-    for m in conn.execute('SELECT id FROM users WHERE faction_id=?', (f['id'],)).fetchall():
-        create_notification(conn, m['id'], 'info', f'📯 [{f["tag"]}] rally! Your morale is at maximum.')
-    conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Rally called — every member is at 100 morale!'})
-
 # ── Chat ────────────────────────────────────────────────────────────────────
 def _channel(conn, uid, ch):
     if ch == 'global': return 'global'
@@ -1530,7 +1162,7 @@ def chat_get():
     if since: rows = conn.execute('SELECT * FROM chat WHERE channel=? AND id>? ORDER BY id LIMIT 100', (key, since)).fetchall()
     else: rows = list(reversed(conn.execute('SELECT * FROM chat WHERE channel=? ORDER BY id DESC LIMIT 60', (key,)).fetchall()))
     conn.close()
-    msgs = [{'id': r['id'], 'user': r['username'], 'color': r['color'], 'text': r['message'], 'ts': r['ts'], 'uid': r['user_id']} for r in rows]
+    msgs = [{'id': r['id'], 'user': r['username'], 'color': r['color'], 'text': r['message'], 'ts': r['ts'], 'uid': r['user_id'], 'edited': r['edited']} for r in rows]
     return jsonify({'messages': msgs, 'last_id': msgs[-1]['id'] if msgs else since})
 
 _last_chat = {}
@@ -1581,19 +1213,6 @@ def achievements_list():
     conn.close()
     return jsonify([{'key': k, **v, 'done': k in have} for k, v in ACHIEVEMENTS.items()])
 
-@app.route('/api/daily/claim', methods=['POST'])
-@require_login
-def daily_claim():
-    uid = session['user_id']; day = int(time.time() // 86400); conn = get_db()
-    u = conn.execute('SELECT last_daily,daily_streak FROM users WHERE id=?', (uid,)).fetchone()
-    if u['last_daily'] == day: conn.close(); return jsonify({'error': 'Already claimed today — come back tomorrow!'}), 400
-    streak = (u['daily_streak'] + 1) if u['last_daily'] == day-1 else 1
-    s = min(streak, 7); money = 100 + 50*s; extra = {'food': 30*s, 'wood': 30*s, 'metal': 15*s, 'oil': 8*s}
-    conn.execute('UPDATE users SET last_daily=?,daily_streak=?,money=money+?,food=food+?,wood=wood+?,metal=metal+?,oil=oil+?,army=army+? WHERE id=?',
-                 (day, streak, money, extra['food'], extra['wood'], extra['metal'], extra['oil'], 2*s, uid))
-    ach = award_achievements(conn, uid); conn.commit(); conn.close()
-    return jsonify({'success': True, 'message': f'Day {streak} reward: {money}💰 + supplies + {2*s} troops!', 'achievements': ach})
-
 @app.route('/api/weather')
 def weather_api():  # optional helper: same as client's local computation
     lat = float(request.args.get('lat', 0)); lng = float(request.args.get('lng', 0))
@@ -1624,26 +1243,6 @@ def admin_event():
         set_setting(conn, 'event', json.dumps({'type': t, 'until': int(time.time()) + mins*60, **EVENTS[t]}))
     else: conn.close(); return jsonify({'error': 'Unknown event'}), 400
     conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Event updated'})
-
-@app.route('/api/admin/set_setting', methods=['POST'])
-@require_admin
-def admin_set_setting():
-    d = request.json or {}; k = d.get('key')
-    if k not in ('income_mult', 'troop_cost_mult', 'events_enabled'): return jsonify({'error': 'Bad key'}), 400
-    v = d.get('value'); 
-    if k != 'events_enabled':
-        try: v = max(0.1, min(float(v), 20))
-        except Exception: return jsonify({'error': 'Bad value'}), 400
-    conn = get_db(); set_setting(conn, k, v); conn.commit(); conn.close()
-    return jsonify({'success': True, 'message': f'{k} = {v}'})
-
-@app.route('/api/admin/give_resource', methods=['POST'])
-@require_admin
-def admin_give_resource():
-    d = request.json or {}; r = d.get('resource'); 
-    if r not in ('money', 'food', 'wood', 'metal', 'oil', 'army', 'boats', 'planes'): return jsonify({'error': 'Bad resource'}), 400
-    conn = get_db(); conn.execute(f'UPDATE users SET {r}=MAX(0,{r}+?) WHERE id=?', (int(d.get('amount', 0)), int(d.get('user_id', 0))))
-    conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'Gave {d.get("amount")} {r}'})
 
 @app.route('/api/admin/mute', methods=['POST'])
 @require_admin
@@ -1895,7 +1494,7 @@ def leaderboard():
     rows = conn.execute('''
         SELECT u.username,u.color,u.is_admin,
                COUNT(t.id) territories,
-               COALESCE(SUM(t.population),0) total_pop, u.money, u.army, u.wins, f.tag
+               COALESCE(SUM(t.population),0) total_pop, u.id, u.money, u.army, u.wins, f.tag
         FROM users u LEFT JOIN territories t ON t.owner_id=u.id LEFT JOIN factions f ON f.id=u.faction_id
         WHERE u.is_banned=0
         GROUP BY u.id ORDER BY territories DESC LIMIT 20
@@ -2106,7 +1705,1394 @@ def export_db():
 
 # ── Run ───────────────────────────────────────────────────────────────────────
 
-init_db(); migrate_v4()
+import re
+# ══════════════════════════════════════════════════════════════════════════════
+#  v5 — faction pools/research/wars, embassies, trade, wonders, ideologies, nukes, merges…
+# ══════════════════════════════════════════════════════════════════════════════
+FOREVER = 4102444800
+SELL_RATES.update({'steel': 12, 'uranium': 40, 'gems': 60})
+RATE_VAL = {'money': 1, 'food': 2, 'wood': 4, 'metal': 6, 'oil': 10, 'steel': 12, 'uranium': 40, 'gems': 60}
+RES_EMOJI = {'money': '💰', 'wood': '🌲', 'metal': '⚙', 'oil': '🛢', 'food': '🌾', 'steel': '🔩', 'uranium': '☢', 'gems': '💎'}
+NUKE_RANGE, NUKE_COOLDOWN, NUKE_URANIUM, NUKE_STEEL = 40, 3600, 300, 3000
+NUCLEAR_MELTDOWN_P = 0.000004          # per minute, per plant level (~0.6%/day) — extremely slim
+VOYAGE_MONEY, VOYAGE_WOOD = 40, 5       # per boat, per cell sailed
+POOLS = ('army', 'boats', 'planes')
+
+BUILDINGS.update({
+  'steel_mill':   {'name':'Steel Mill','icon':'🔩','desc':'+4 steel/min per level','cost':{'money':400,'metal':150,'wood':60},'needs':'metallurgy'},
+  'gem_mine':     {'name':'Gem Mine','icon':'💎','desc':'+1.5 gems/min per level (mountains only)','cost':{'money':500,'metal':100},'needs':'mining','terrain':['mountains']},
+  'uranium_mine': {'name':'Uranium Mine','icon':'☢','desc':'+1.2 uranium/min per level (mountains/tundra/desert)','cost':{'money':1500,'metal':300,'steel':50},'needs':'nuclear_physics','terrain':['mountains','tundra','desert']},
+  'nuclear_plant':{'name':'Nuclear Plant','icon':'⚛','desc':'+40💰/min per level. Required for nukes. Tiny meltdown risk: permanently ruins the area!','cost':{'money':8000,'steel':300,'uranium':20},'needs':'nuclear_physics'},
+  'enrichment':   {'name':'Enrichment Plant','icon':'🧪','desc':'Required for nukes','cost':{'money':20000,'steel':500,'uranium':50},'needs':'nuclear_physics'},
+  'silo':         {'name':'Missile Silo','icon':'🚀','desc':'Nukes launch from here','cost':{'money':50000,'steel':1000},'needs':'rocketry'},
+})
+def build_cost(btype, level):
+    mult = {1: 1, 2: 2.2, 3: 4.5}[level]
+    return {k: int(v*mult) for k, v in BUILDINGS[btype]['cost'].items()}
+def fmt_cost(cost): return ' '.join(f'{v}{RES_EMOJI[k]}' for k, v in cost.items())
+
+RESEARCH_TREE['logistics'].update({'desc': 'Troops cost -10%'})
+RESEARCH_TREE.update({
+ 'masonry':    {'name':'Masonry','icon':'🧱','cost':160,'branch':'military','requires':['castle'],'desc':'+15% defense'},
+ 'cavalry':    {'name':'Cavalry','icon':'🐎','cost':150,'branch':'military','requires':['iron'],'desc':'+8% attack'},
+ 'artillery':  {'name':'Artillery','icon':'💣','cost':400,'branch':'military','requires':['gunpowder'],'desc':'+12% land attack'},
+ 'conscription':{'name':'Conscription','icon':'📜','cost':300,'branch':'military','requires':['logistics'],'desc':'Troops cost -15%'},
+ 'fortification':{'name':'Fortification','icon':'🏰','cost':380,'branch':'military','requires':['masonry'],'desc':'Fortress bonus 25% → 32% per level'},
+ 'propaganda': {'name':'Propaganda','icon':'📢','cost':320,'branch':'military','requires':['tactics'],'desc':'Victories give +4 extra morale'},
+ 'irrigation': {'name':'Irrigation','icon':'💧','cost':170,'branch':'economy','requires':['agri'],'desc':'+20% food'},
+ 'metallurgy': {'name':'Metallurgy','icon':'🔥','cost':320,'branch':'economy','requires':['industry'],'desc':'+20% metal; unlocks Steel Mills'},
+ 'refining':   {'name':'Oil Refining','icon':'🛢','cost':320,'branch':'economy','requires':['industry'],'desc':'+20% oil'},
+ 'mining':     {'name':'Deep Mining','icon':'⛏','cost':420,'branch':'economy','requires':['metallurgy'],'desc':'+15% metal; unlocks Gem Mines'},
+ 'global_trade':{'name':'Global Trade','icon':'🌐','cost':520,'branch':'economy','requires':['banking'],'desc':'+10% money'},
+ 'scientific': {'name':'Scientific Method','icon':'🔭','cost':380,'branch':'economy','requires':['trade'],'desc':'-10% research cost'},
+ 'diplomacy':  {'name':'Diplomacy','icon':'🕊','cost':280,'branch':'economy','requires':['trade'],'desc':'Unlocks Embassies & trade deals'},
+ 'shipping':   {'name':'Merchant Marine','icon':'🚢','cost':450,'branch':'naval','requires':['navigation'],'desc':'Boat voyage costs -25%'},
+ 'stealth':    {'name':'Stealth Tech','icon':'🛸','cost':900,'branch':'naval','requires':['radar','jets'],'desc':'Planes +25% power'},
+ 'nuclear_physics':{'name':'Nuclear Physics','icon':'⚛','cost':2500,'branch':'military','requires':['industry','scientific'],'desc':'Unlocks Uranium, Nuclear Plants, Enrichment'},
+ 'rocketry':   {'name':'Rocketry','icon':'🚀','cost':4000,'branch':'military','requires':['jets','nuclear_physics'],'desc':'Unlocks Missile Silos'},
+ 'manhattan':  {'name':'Manhattan Project','icon':'☢','cost':8000,'branch':'military','requires':['rocketry'],'desc':'Allows building nuclear weapons'},
+})
+
+FACTION_TECH = {
+ 'f_unity':  {'name':'National Unity','icon':'🤝','cost':3000,'desc':'+5% yield for every member'},
+ 'f_warcry': {'name':'War Cry','icon':'📯','cost':4000,'desc':'+6% attack for every member'},
+ 'f_bulwark':{'name':'Bulwark','icon':'🛡','cost':4000,'desc':'+8% defense for every member'},
+ 'f_logi':   {'name':'Joint Logistics','icon':'📦','cost':3000,'desc':'Troops cost -10%'},
+ 'f_academy':{'name':'Faction Academy','icon':'🎓','cost':5000,'desc':'-10% research cost'},
+ 'f_bank':   {'name':'Faction Bank','icon':'🏦','cost':6000,'desc':'Treasury payout 1% → 1.5% per 10 min'},
+ 'f_navy':   {'name':'Combined Fleet','icon':'⚓','cost':4000,'desc':'Boat voyage costs -25%'},
+ 'f_air':    {'name':'Joint Air Command','icon':'✈','cost':6000,'desc':'Planes +20% power'},
+ 'f_spy':    {'name':'Intel Sharing','icon':'🕵','cost':5000,'desc':'Everyone gets Espionage'},
+ 'f_medic':  {'name':'Field Hospitals','icon':'🏥','cost':5000,'desc':'Casualties -15%'},
+}
+IDEOLOGIES = {
+ 'capitalism':{'name':'Capitalism','icon':'🏦','desc':'+12% money, claims -10% price, troops +10% cost','money':1.12,'claim':0.9,'troop':1.1},
+ 'communism': {'name':'Communism','icon':'☭','desc':'+6% all yields, troops -15% cost, money -8%','yield':1.06,'troop':0.85,'money':0.92},
+ 'militarism':{'name':'Militarism','icon':'🎖','desc':'+10% attack, troops -10% cost, yields -5%','atk':1.10,'troop':0.9,'yield':0.95},
+ 'democracy': {'name':'Democracy','icon':'🗳','desc':'Research -15% cost, +5% defense, -3% attack','research':0.85,'def':1.05,'atk':0.97},
+ 'theocracy': {'name':'Theocracy','icon':'⛪','desc':'+10% defense, morale floor 35, casualties -10%, money -5%','def':1.10,'floor':35,'casualty':0.9,'money':0.95},
+}
+WONDERS = {
+ 'pyramids':     {'name':'Great Pyramid','icon':'🔺','cost':{'money':250000},'desc':'+8% all yields'},
+ 'colossus':     {'name':'Colossus','icon':'🗿','cost':{'money':400000,'metal':2000},'desc':'+10% defense everywhere'},
+ 'great_library':{'name':'Great Library','icon':'📚','cost':{'money':1000000,'gems':50},'desc':'Research -20% cost'},
+ 'statue':       {'name':'Statue of Liberty','icon':'🗽','cost':{'money':2500000,'steel':500},'desc':'+5% attack, morale floor 40'},
+ 'space_program':{'name':'Space Program','icon':'🚀','cost':{'money':10000000,'steel':2000,'gems':200},'desc':'+15% money'},
+ 'dyson':        {'name':'Dyson Sphere','icon':'🌞','cost':{'money':50000000,'steel':10000,'gems':1000,'uranium':500},'desc':'+25% ALL yields. Ultimate flex.'},
+}
+ACHIEVEMENTS.update({
+ 'land_150':{'name':'Conqueror','icon':'🌍','desc':'Own 150 territories','reward':5000},
+ 'wins_100':{'name':'Legend','icon':'🏆','desc':'Win 100 battles','reward':3000},
+ 'builder_20':{'name':'Architect','icon':'🏛','desc':'Own 20 buildings','reward':1200},
+ 'scholar_15':{'name':'Professor','icon':'🎓','desc':'Research 15 technologies','reward':1500},
+ 'scholar_25':{'name':'Nobel','icon':'🧪','desc':'Research 25 technologies','reward':4000},
+ 'rich_100k':{'name':'Millionaire-ish','icon':'💰','desc':'Hold 100,000💰','reward':2000},
+ 'rich_1m':{'name':'Billionaire','icon':'🤑','desc':'Hold 1,000,000💰','reward':10000},
+ 'capital':{'name':'Seat of Power','icon':'⭐','desc':'Choose a capital','reward':200},
+ 'ideology':{'name':'True Believer','icon':'🚩','desc':'Adopt an ideology','reward':200},
+ 'embassy':{'name':'Ambassador','icon':'🏳','desc':'Open an embassy','reward':400},
+ 'trader':{'name':'Merchant Prince','icon':'⚖','desc':'Have an active trade deal','reward':500},
+ 'wonder':{'name':'Wonder Builder','icon':'🗿','desc':'Own a wonder','reward':3000},
+ 'nuke':{'name':'Doomsday','icon':'☢','desc':'Launch a nuclear missile','reward':2000},
+ 'daily_30':{'name':'Devoted','icon':'🔥','desc':'30-day login streak','reward':3000},
+ 'chat_100':{'name':'Orator','icon':'📣','desc':'Send 100 chat messages','reward':500},
+ 'war_hero':{'name':'War Hero','icon':'🎗','desc':'Capture 10 tiles in a faction war','reward':1500},
+})
+
+def migrate_v5():
+    conn = get_db(); c = conn.cursor()
+    def cols(t): return {r['name'] for r in c.execute(f'PRAGMA table_info({t})')}
+    u = cols('users')
+    for n, d in [('base_color','TEXT'),('ideology','TEXT'),('ideology_ts','INTEGER DEFAULT 0'),('capital_key','TEXT'),('capital_ts','INTEGER DEFAULT 0'),
+                 ('steel','REAL DEFAULT 0'),('uranium','REAL DEFAULT 0'),('gems','REAL DEFAULT 0'),('nukes','INTEGER DEFAULT 0'),
+                 ('konami','INTEGER DEFAULT 0'),('last_nuke','INTEGER DEFAULT 0')]:
+        if n not in u: c.execute(f'ALTER TABLE users ADD COLUMN {n} {d}')
+    c.execute('UPDATE users SET base_color=color WHERE base_color IS NULL')
+    t = cols('territories')
+    if 'invested' not in t:
+        c.execute('ALTER TABLE territories ADD COLUMN invested REAL DEFAULT 25')
+    if 'edited' not in cols('chat'): c.execute('ALTER TABLE chat ADD COLUMN edited INTEGER DEFAULT 0')
+    f = cols('factions'); fresh = 'army' not in f
+    for n, d in [('color','TEXT'),('mode',"TEXT DEFAULT 'open'"),('army','INTEGER DEFAULT 0'),('boats','INTEGER DEFAULT 0'),
+                 ('planes','INTEGER DEFAULT 0'),('last_tick','INTEGER DEFAULT 0'),('descr','TEXT DEFAULT ""')]:
+        if n not in f: c.execute(f'ALTER TABLE factions ADD COLUMN {n} {d}')
+    if fresh:
+        for k in POOLS:
+            c.execute(f'UPDATE factions SET {k}=COALESCE((SELECT SUM({k}) FROM users WHERE faction_id=factions.id),0)')
+        c.execute('UPDATE factions SET color=(SELECT color FROM users WHERE id=factions.leader_id) WHERE color IS NULL')
+        c.execute('UPDATE users SET color=(SELECT color FROM factions WHERE id=users.faction_id) WHERE faction_id IS NOT NULL')
+    c.executescript('''
+      CREATE TABLE IF NOT EXISTS faction_research(faction_id INTEGER, tech TEXT, PRIMARY KEY(faction_id,tech));
+      CREATE TABLE IF NOT EXISTS faction_rel(id INTEGER PRIMARY KEY AUTOINCREMENT, a INTEGER, b INTEGER, kind TEXT, status TEXT, ts INTEGER, score_a INTEGER DEFAULT 0, score_b INTEGER DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS faction_requests(id INTEGER PRIMARY KEY AUTOINCREMENT, faction_id INTEGER, user_id INTEGER, message TEXT, ts INTEGER);
+      CREATE TABLE IF NOT EXISTS faction_bans(faction_id INTEGER, user_id INTEGER, until INTEGER, PRIMARY KEY(faction_id,user_id));
+      CREATE TABLE IF NOT EXISTS fallout(grid_key TEXT PRIMARY KEY, until INTEGER, reason TEXT);
+      CREATE TABLE IF NOT EXISTS embassies(host_id INTEGER, owner_id INTEGER, ts INTEGER, PRIMARY KEY(host_id,owner_id));
+      CREATE TABLE IF NOT EXISTS trades(id INTEGER PRIMARY KEY AUTOINCREMENT, from_id INTEGER, to_id INTEGER, give_res TEXT, give_amt INTEGER, get_res TEXT, get_amt INTEGER, status TEXT, last_run INTEGER DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS loans(id INTEGER PRIMARY KEY AUTOINCREMENT, lender_id INTEGER, borrower_id INTEGER, unit TEXT, amount INTEGER, message TEXT, status TEXT, ts INTEGER);
+      CREATE TABLE IF NOT EXISTS wonders(key TEXT PRIMARY KEY, owner_id INTEGER, ts INTEGER);
+      CREATE TABLE IF NOT EXISTS merges(id INTEGER PRIMARY KEY AUTOINCREMENT, from_id INTEGER, to_id INTEGER, status TEXT, ts INTEGER);
+    ''')
+    conn.commit(); conn.close()
+
+# ── groups / pools ───────────────────────────────────────────────────────────
+def _in(ids): return ','.join('?'*len(ids))
+def fac_id(conn, uid):
+    r = conn.execute('SELECT faction_id FROM users WHERE id=?', (uid,)).fetchone()
+    return r['faction_id'] if r else None
+def group_ids(conn, uid):
+    f = fac_id(conn, uid)
+    return [x['id'] for x in conn.execute('SELECT id FROM users WHERE faction_id=?', (f,))] if f else [uid]
+def group_levels(conn, uid, btype):
+    ids = group_ids(conn, uid)
+    return conn.execute(f'SELECT COALESCE(SUM(b.level),0) s FROM buildings b JOIN territories t ON t.grid_key=b.grid_key WHERE t.owner_id IN ({_in(ids)}) AND b.type=?', ids+[btype]).fetchone()['s']
+def pool_get(conn, uid, kind):
+    assert kind in POOLS
+    r = conn.execute(f'SELECT faction_id,{kind} v FROM users WHERE id=?', (uid,)).fetchone()
+    if not r: return 0
+    if r['faction_id']:
+        f = conn.execute(f'SELECT {kind} v FROM factions WHERE id=?', (r['faction_id'],)).fetchone()
+        if f: return f['v']
+    return r['v']
+def pool_add(conn, uid, kind, d):
+    assert kind in POOLS
+    f = fac_id(conn, uid)
+    if f: conn.execute(f'UPDATE factions SET {kind}=MAX(0,{kind}+?) WHERE id=?', (int(d), f))
+    else: conn.execute(f'UPDATE users SET {kind}=MAX(0,{kind}+?) WHERE id=?', (int(d), uid))
+def ftechs(conn, uid):
+    f = fac_id(conn, uid)
+    return {x['tech'] for x in conn.execute('SELECT tech FROM faction_research WHERE faction_id=?', (f,))} if f else set()
+def ideo(conn, uid):
+    r = conn.execute('SELECT ideology FROM users WHERE id=?', (uid,)).fetchone()
+    return IDEOLOGIES.get(r['ideology'] if r else None, {})
+def my_wonders(conn, uid): return {r['key'] for r in conn.execute('SELECT key FROM wonders WHERE owner_id=?', (uid,))}
+def army_cap(conn, uid, rsch=None): return 10**9
+def fallout_active(conn, k):
+    r = conn.execute('SELECT until FROM fallout WHERE grid_key=?', (k,)).fetchone()
+    return bool(r and r['until'] > time.time())
+def announce(conn, msg): conn.execute("INSERT INTO announcements(message,author) VALUES(?, 'System')", (msg,))
+def notify_actions(conn, uid, ntype, msg, actions):
+    create_notification(conn, uid, ntype, msg, {'actions': actions})
+def uname(conn, uid):
+    r = conn.execute('SELECT username FROM users WHERE id=?', (uid,)).fetchone(); return r['username'] if r else '?'
+def leader_of(conn, fid):
+    r = conn.execute('SELECT leader_id FROM factions WHERE id=?', (fid,)).fetchone(); return r['leader_id'] if r else None
+
+# ── economy ──────────────────────────────────────────────────────────────────
+def yield_ctx(conn, uid):
+    rs = user_research(conn, uid); ft = ftechs(conn, uid); ide = ideo(conn, uid); w = my_wonders(conn, uid)
+    base = faction_bonus(conn, uid) * float(get_setting(conn, 'income_mult', 1) or 1) * ide.get('yield', 1.0)
+    if 'f_unity' in ft: base *= 1.05
+    if 'pyramids' in w: base *= 1.08
+    if 'dyson' in w: base *= 1.25
+    return {'rs': rs, 'ft': ft, 'ide': ide, 'w': w, 'ev': ev_type(conn), 'base': base}
+def res_mult2(rt, c):
+    rs = c['rs']; m = c['base']; ev = c['ev']
+    if rt == 'food': m *= (1.25 if 'agri' in rs else 1) * (1.2 if 'irrigation' in rs else 1) * (1.5 if ev == 'harvest' else 1)
+    if rt == 'wood': m *= (1.25 if 'agri' in rs else 1) * (1.5 if ev == 'harvest' else 1)
+    if rt == 'money':
+        m *= (1.15 if 'trade' in rs else 1) * (1.10 if 'banking' in rs else 1) * (1.10 if 'global_trade' in rs else 1)
+        m *= c['ide'].get('money', 1.0) * (1.15 if 'space_program' in c['w'] else 1) * (1.5 if ev == 'gold_rush' else 1)
+    if rt == 'metal': m *= (1.25 if 'industry' in rs else 1) * (1.2 if 'metallurgy' in rs else 1) * (1.15 if 'mining' in rs else 1) * (1.5 if ev == 'mining' else 1)
+    if rt == 'oil': m *= (1.25 if 'industry' in rs else 1) * (1.2 if 'refining' in rs else 1) * (1.5 if ev == 'mining' else 1)
+    return m
+def tile_yield(c, terrain, bt, bl):
+    rt, rate = TERRAIN_RES[terrain]; bl = bl or 0
+    m = res_mult2(rt, c) * ((1 + 0.25*bl) if bt == 'workshop' else 1)
+    out = {rt: rate*m}; gold = res_mult2('money', c)
+    if bt == 'market': out['money'] = out.get('money', 0) + 6*bl*gold
+    if bt == 'nuclear_plant': out['money'] = out.get('money', 0) + 40*bl*gold
+    if bt == 'steel_mill': out['steel'] = 4*bl*c['base']
+    if bt == 'uranium_mine': out['uranium'] = 1.2*bl*c['base']
+    if bt == 'gem_mine': out['gems'] = 1.5*bl*c['base']
+    return out
+def income_rates(conn, uid):
+    c = yield_ctx(conn, uid); rates = {k: 0.0 for k in RATE_VAL}; troops = 0
+    for r in conn.execute('SELECT t.terrain,b.type bt,b.level bl FROM territories t LEFT JOIN buildings b ON b.grid_key=t.grid_key WHERE t.owner_id=?', (uid,)):
+        for k, v in tile_yield(c, r['terrain'], r['bt'], r['bl']).items(): rates[k] += v
+        if r['bt'] == 'barracks': troops += 3*r['bl']
+    return rates, troops, c
+def claim_price(conn, uid, terrain):
+    mc = conn.execute('SELECT COUNT(*) c FROM territories WHERE owner_id=?', (uid,)).fetchone()['c']
+    if mc == 0: return {'money': CLAIM_COST}
+    rates, _, c = income_rates(conn, uid)
+    inc = sum(rates[k]*RATE_VAL[k] for k in rates)
+    rt, rate = TERRAIN_RES[terrain]
+    price = (CLAIM_COST + 0.8*rate*RATE_VAL[rt] + 1.2*inc) * c['ide'].get('claim', 1.0) * (0.8 if 'banking' in c['rs'] else 1.0)
+    price = max(CLAIM_COST, int(price))
+    cost = {'money': price, 'wood': max(1, int(price*0.12/4)), 'food': max(1, int(price*0.08/2))}
+    if mc >= 15: cost['metal'] = max(1, int(price*0.05/6))
+    return cost
+def cost_value(cost): return sum(v*RATE_VAL.get(k, 1) for k, v in cost.items())
+def research_discount(conn, uid):
+    c = yield_ctx(conn, uid); d = min(0.30, 0.08*sum_levels(conn, uid, 'university'))
+    if 'scientific' in c['rs']: d += 0.10
+    if 'f_academy' in c['ft']: d += 0.10
+    if 'great_library' in c['w']: d += 0.20
+    d += 1 - c['ide'].get('research', 1.0)
+    return min(0.7, d)
+
+def troop_cost2(conn, rsch):
+    return troop_cost_for(conn, None, rsch)
+def troop_cost_for(conn, uid, rsch):
+    c = TROOP_COST
+    if 'gunpowder' in rsch: c *= 0.75
+    if 'logistics' in rsch: c *= 0.9
+    if 'conscription' in rsch: c *= 0.85
+    if uid:
+        if 'f_logi' in ftechs(conn, uid): c *= 0.9
+        c *= ideo(conn, uid).get('troop', 1.0)
+    if ev_type(conn) == 'conscription': c *= 0.6
+    c *= float(get_setting(conn, 'troop_cost_mult', 1) or 1)
+    return max(1, int(round(c)))
+
+def casualty_mult(conn, uid, rsch):
+    m = 1.0
+    if 'medicine' in rsch: m *= 0.75
+    if 'f_medic' in ftechs(conn, uid): m *= 0.85
+    m *= ideo(conn, uid).get('casualty', 1.0)
+    m *= 1 - min(0.30, 0.10*sum_levels(conn, uid, 'hospital'))
+    return m
+
+def auto_collect(uid, conn):
+    now = int(time.time()); c = yield_ctx(conn, uid)
+    rows = conn.execute('SELECT t.grid_key,t.terrain,t.last_collected,b.type bt,b.level bl FROM territories t LEFT JOIN buildings b ON b.grid_key=t.grid_key WHERE t.owner_id=?', (uid,)).fetchall()
+    totals = {k: 0.0 for k in RATE_VAL}; troops = 0.0; upd = []; plants = []
+    for r in rows:
+        el = now - (r['last_collected'] or 0)
+        if el < AUTO_COLLECT_CD: continue
+        mins = min(el/60., MAX_ACCUM_MINS)
+        for k, v in tile_yield(c, r['terrain'], r['bt'], r['bl']).items(): totals[k] += v*mins
+        if r['bt'] == 'barracks': troops += 3*r['bl']*mins
+        if r['bt'] == 'nuclear_plant': plants.append((r['grid_key'], r['bl'], mins))
+        upd.append(r['grid_key'])
+    if upd:
+        for k in upd: conn.execute('UPDATE territories SET last_collected=? WHERE grid_key=?', (now, k))
+        sets = ','.join(f'{r}={r}+?' for r in totals)
+        conn.execute(f'UPDATE users SET {sets} WHERE id=?', list(totals.values())+[uid])
+        if troops >= 1: pool_add(conn, uid, 'army', int(troops))
+        for gk, bl, mins in plants:
+            if random.random() < 1 - (1 - NUCLEAR_MELTDOWN_P*bl)**mins: meltdown(conn, gk)
+    run_trades(conn, uid)
+    f = fac_id(conn, uid)
+    if f: faction_tick(conn, f)
+
+def devastate(conn, gl, gg, R, until, reason):
+    keys = [f'{gl+a},{gg+b}' for a in range(-R, R+1) for b in range(-R, R+1) if a*a+b*b <= R*R]
+    q = _in(keys)
+    rows = conn.execute(f'SELECT grid_key,owner_id FROM territories WHERE owner_id IS NOT NULL AND grid_key IN ({q})', keys).fetchall()
+    owners = {}
+    for r in rows: owners[r['owner_id']] = owners.get(r['owner_id'], 0) + 1
+    conn.execute(f'UPDATE territories SET owner_id=NULL,garrison=0 WHERE grid_key IN ({q})', keys)
+    conn.execute(f'DELETE FROM buildings WHERE grid_key IN ({q})', keys)
+    conn.execute(f'UPDATE users SET capital_key=NULL WHERE capital_key IN ({q})', keys)
+    conn.executemany('INSERT OR REPLACE INTO fallout(grid_key,until,reason) VALUES(?,?,?)', [(k, until, reason) for k in keys])
+    return owners, len(keys)
+
+def meltdown(conn, gk):
+    gl, gg = parse_key(gk); R = random.randint(3, 6)
+    owners, n = devastate(conn, gl, gg, R, FOREVER, 'meltdown')
+    announce(conn, f'☢ NUCLEAR MELTDOWN near {gl*GRID:.1f}°, {gg*GRID:.1f}°! A reactor exploded — a {R}-tile radius is uninhabitable forever.')
+    for o, cnt in owners.items(): create_notification(conn, o, 'info', f'☢ A nuclear plant melted down! You lost {cnt} tiles to permanent fallout.')
+
+# ── trades ────────────────────────────────────────────────────────────────────
+def run_trades(conn, uid):
+    now = int(time.time())
+    for t in conn.execute("SELECT * FROM trades WHERE status='active' AND (from_id=? OR to_id=?)", (uid, uid)).fetchall():
+        last = t['last_run'] or now
+        n = min(6, (now - last)//600)
+        if n <= 0:
+            if not t['last_run']: conn.execute('UPDATE trades SET last_run=? WHERE id=?', (now, t['id']))
+            continue
+        for _ in range(n):
+            a = conn.execute(f'SELECT {t["give_res"]} v FROM users WHERE id=?', (t['from_id'],)).fetchone()
+            b = conn.execute(f'SELECT {t["get_res"]} v FROM users WHERE id=?', (t['to_id'],)).fetchone()
+            if not a or not b or a['v'] < t['give_amt'] or b['v'] < t['get_amt']: break
+            conn.execute(f'UPDATE users SET {t["give_res"]}={t["give_res"]}-? WHERE id=?', (t['give_amt'], t['from_id']))
+            conn.execute(f'UPDATE users SET {t["give_res"]}={t["give_res"]}+? WHERE id=?', (t['give_amt'], t['to_id']))
+            conn.execute(f'UPDATE users SET {t["get_res"]}={t["get_res"]}-? WHERE id=?', (t['get_amt'], t['to_id']))
+            conn.execute(f'UPDATE users SET {t["get_res"]}={t["get_res"]}+? WHERE id=?', (t['get_amt'], t['from_id']))
+        conn.execute('UPDATE trades SET last_run=? WHERE id=?', (last + n*600, t['id']))
+
+# ── faction treasury / relations ──────────────────────────────────────────────
+def faction_tick(conn, fid):
+    f = conn.execute('SELECT * FROM factions WHERE id=?', (fid,)).fetchone()
+    if not f: return
+    now = int(time.time())
+    if not f['last_tick']: conn.execute('UPDATE factions SET last_tick=? WHERE id=?', (now, fid)); return
+    n = min(144, (now - f['last_tick'])//600)
+    if n <= 0: return
+    rate = 0.015 if conn.execute("SELECT 1 FROM faction_research WHERE faction_id=? AND tech='f_bank'", (fid,)).fetchone() else 0.01
+    t = f['treasury']; paid = 0.0
+    for _ in range(n): p = t*rate; t -= p; paid += p
+    mem = [x['id'] for x in conn.execute('SELECT id FROM users WHERE faction_id=?', (fid,))]
+    if mem and paid > 0: conn.execute(f'UPDATE users SET money=money+? WHERE id IN ({_in(mem)})', [paid/len(mem)] + mem)
+    conn.execute('UPDATE factions SET treasury=?,last_tick=? WHERE id=?', (t, f['last_tick'] + n*600, fid))
+
+def rel_between(conn, fa, fb, kind=None, status='active'):
+    if not fa or not fb or fa == fb: return None
+    q = 'SELECT * FROM faction_rel WHERE status=? AND ((a=? AND b=?) OR (a=? AND b=?))'; p = [status, fa, fb, fb, fa]
+    if kind: q += ' AND kind=?'; p.append(kind)
+    return conn.execute(q, p).fetchone()
+def war_between(conn, u1, u2): return rel_between(conn, fac_id(conn, u1), fac_id(conn, u2), 'war')
+def attack_block(conn, uid, oid):
+    if not oid: return None
+    if are_allied(uid, oid, conn): return '🤝 Cannot attack an ally or faction mate!'
+    fa, fb = fac_id(conn, uid), fac_id(conn, oid)
+    if fa and fb:
+        if rel_between(conn, fa, fb, 'ally'): return '🤝 Your factions are allied!'
+        if not rel_between(conn, fa, fb, 'war'): return '🕊 Your factions are at peace. A faction leader must declare war first.'
+    return None
+def war_score(conn, uid, oid):
+    r = war_between(conn, uid, oid)
+    if not r: return
+    fa = fac_id(conn, uid); col = 'score_a' if r['a'] == fa else 'score_b'
+    conn.execute(f'UPDATE faction_rel SET {col}={col}+1 WHERE id=?', (r['id'],))
+    r2 = conn.execute('SELECT * FROM faction_rel WHERE id=?', (r['id'],)).fetchone()
+    if r2[col] >= 25:
+        loser = r['b'] if r['a'] == fa else r['a']
+        lt = conn.execute('SELECT treasury FROM factions WHERE id=?', (loser,)).fetchone()['treasury']
+        spoil = lt*0.2
+        conn.execute('UPDATE factions SET treasury=treasury-? WHERE id=?', (spoil, loser)); conn.execute('UPDATE factions SET treasury=treasury+? WHERE id=?', (spoil, fa))
+        conn.execute("UPDATE faction_rel SET status='ended' WHERE id=?", (r['id'],))
+        wn = conn.execute('SELECT name FROM factions WHERE id=?', (fa,)).fetchone()['name']; ln = conn.execute('SELECT name FROM factions WHERE id=?', (loser,)).fetchone()['name']
+        announce(conn, f'🏁 {wn} has WON the war against {ln} and plundered {int(spoil)}💰 from their treasury!')
+
+def morale_update(conn, uid, win):
+    bonus = 4 if (win and 'propaganda' in user_research(conn, uid)) else 0
+    conn.execute('UPDATE users SET morale=MAX(5,MIN(100,morale+?)),wins=wins+?,losses=losses+? WHERE id=?',
+                 ((8 + bonus) if win else -12, 1 if win else 0, 0 if win else 1, uid))
+
+# ── combat core (v5) ─────────────────────────────────────────────────────────
+def defense_of(conn, owner_id, gk, terrain):
+    if not owner_id:
+        return {'base': 3 + random.Random(simple_hash(*parse_key(gk))).randint(0, 4), 'mods': [], 'mult': 1.0, 'owner_army': 0}
+    army = pool_get(conn, owner_id, 'army')
+    ids = group_ids(conn, owner_id)
+    n = max(1, conn.execute(f'SELECT COUNT(*) c FROM territories WHERE owner_id IN ({_in(ids)})', ids).fetchone()['c'])
+    rs = user_research(conn, owner_id); ft = ftechs(conn, owner_id); ide = ideo(conn, owner_id); w = my_wonders(conn, owner_id)
+    base = army / (n ** 0.55) + 3
+    mods = []; x = def_bonus(rs); mods.append(('Home ground' + (' + Castle Walls' if 'castle' in rs else ''), x))
+    def add(label, v):
+        if v != 1.0: mods.append((label, v))
+    add(f'Terrain ({terrain})', TERRAIN_DEF.get(terrain, 1.0))
+    if 'masonry' in rs: add('Masonry', 1.15)
+    b = conn.execute('SELECT level FROM buildings WHERE grid_key=? AND type="fort"', (gk,)).fetchone()
+    if b: add(f'Fortress Lv{b["level"]}', 1 + (0.32 if 'fortification' in rs else 0.25)*b['level'])
+    if 'f_bulwark' in ft: add('Bulwark', 1.08)
+    if 'colossus' in w: add('Colossus', 1.10)
+    add('Ideology', ide.get('def', 1.0))
+    cap = conn.execute('SELECT 1 FROM users WHERE id=? AND capital_key=?', (owner_id, gk)).fetchone()
+    if cap: add('Capital', 1.15)
+    mult = 1.0
+    for _, m in mods: mult *= m
+    return {'base': base, 'mods': mods, 'mult': mult, 'owner_army': army}
+
+def attack_mods(conn, uid, rsch, kind, tgl, tgg, def_oid=None):
+    mods = []; ft = ftechs(conn, uid); ide = ideo(conn, uid); w = my_wonders(conn, uid)
+    if 'iron' in rsch: mods.append(('Iron Weapons', 1.2))
+    if 'gunpowder' in rsch: mods.append(('Gunpowder', 1.3))
+    if 'tactics' in rsch: mods.append(('Tactics', 1.05))
+    if 'cavalry' in rsch and kind == 'land': mods.append(('Cavalry', 1.08))
+    if 'artillery' in rsch and kind == 'land': mods.append(('Artillery', 1.12))
+    if kind == 'air' and 'blitz' in rsch: mods.append(('Blitzkrieg', 1.2))
+    if kind == 'air' and 'stealth' in rsch: mods.append(('Stealth', 1.25))
+    if kind == 'air' and 'f_air' in ft: mods.append(('Joint Air Command', 1.2))
+    if kind == 'naval' and 'navigation' in rsch: mods.append(('Navigation', 1.1))
+    if 'f_warcry' in ft: mods.append(('War Cry', 1.06))
+    if 'statue' in w: mods.append(('Statue of Liberty', 1.05))
+    if ide.get('atk'): mods.append(('Ideology', ide['atk']))
+    wx = weather_for(cur_slot(), tgl, tgg)
+    wf = WEATHER_FX[wx][1 if kind == 'air' else 0]
+    if wf != 1.0: mods.append((f'Weather ({wx})', wf))
+    morale = conn.execute('SELECT morale FROM users WHERE id=?', (uid,)).fetchone()['morale']
+    floor = max(30 if 'tactics' in rsch else 0, ide.get('floor', 0), 40 if 'statue' in w else 0)
+    morale = max(morale, floor)
+    mods.append((f'Morale ({morale})', round(0.90 + 0.25*(morale/100.0), 3)))
+    e = ev_type(conn)
+    if e == 'war_fever': mods.append(('War Fever', 1.15))
+    if e == 'cold_snap': mods.append(('Cold Snap', 0.88))
+    fb = faction_bonus(conn, uid)
+    if fb > 1.0: mods.append(('Faction unity', round(1 + (fb-1)/2, 3)))
+    if def_oid and war_between(conn, uid, def_oid): mods.append(('Faction war', 1.10))
+    if kind == 'naval': mods.append(('Amphibious landing', 0.9))
+    return mods, wx
+
+def resolve_battle(conn, uid, uname_, target_key, force, kind, from_key, carried_units=0, dry=False):
+    tgl, tgg = parse_key(target_key)
+    tt = conn.execute('SELECT * FROM territories WHERE grid_key=?', (target_key,)).fetchone()
+    terrain = tt['terrain'] if tt else get_terrain(tgl, tgg)
+    def_oid = tt['owner_id'] if tt else None
+    rsch = user_research(conn, uid)
+    amods, weather = attack_mods(conn, uid, rsch, kind, tgl, tgg, def_oid)
+    d = defense_of(conn, def_oid, target_key, terrain); dmods = list(d['mods'])
+    if kind == 'air' and def_oid and 'radar' in user_research(conn, def_oid): dmods.append(('Radar', 1.3))
+    A = force; D = d['base']
+    for _, m in amods: A *= m
+    for _, m in dmods: D *= m
+    if not dry: A *= random.uniform(0.92, 1.08); D *= random.uniform(0.92, 1.08)
+    return {'A': A, 'D': D, 'odds': A/(A+D) if A+D > 0 else 1, 'weather': weather, 'terrain': terrain, 'def_oid': def_oid,
+            'def_force': d['base'], 'amods': amods, 'dmods': dmods, 'tt': tt, 'rsch': rsch, 'owner_army': d['owner_army']}
+
+def apply_victory(conn, uid, tk, terrain, tt, tgl, tgg):
+    pop = tt['population'] if tt else get_population(terrain, tgl, tgg); now = int(time.time())
+    if tt:
+        conn.execute('UPDATE territories SET owner_id=?,garrison=0,boats=0,planes=0,last_collected=?,invested=25 WHERE grid_key=?', (uid, now, tk))
+        conn.execute('DELETE FROM buildings WHERE grid_key=? AND random()%3=0', (tk,))
+    else:
+        conn.execute('INSERT INTO territories (grid_key,owner_id,terrain,garrison,boats,planes,population,last_collected,invested) VALUES (?,?,?,0,0,0,?,?,25)', (tk, uid, terrain, pop, now))
+    conn.execute('UPDATE users SET capital_key=NULL WHERE capital_key=? AND id!=?', (tk, uid))
+
+def do_assault(conn, uid, uname_, fk, tk, force, kind, units_label, committed_troops, fleet_back=0.0):
+    tgl, tgg = parse_key(tk)
+    r = resolve_battle(conn, uid, uname_, tk, force, kind, fk)
+    rsch = r['rsch']; cm = casualty_mult(conn, uid, rsch); win = r['A'] > r['D']
+    def_name = 'wilderness'
+    if r['def_oid']: def_name = uname(conn, r['def_oid'])
+    ratio = r['D'] / max(r['A'], 0.01)
+    if win:
+        lost = min(committed_troops-1, int(committed_troops*min(0.8, (0.12 + 0.55*min(1.0, ratio))*cm))) if committed_troops > 1 else 0
+        survivors = max(1, committed_troops - lost) if committed_troops else 0
+        pool_add(conn, uid, 'army', survivors)
+        apply_victory(conn, uid, tk, r['terrain'], r['tt'], tgl, tgg)
+        if r['def_oid']:
+            pool_add(conn, r['def_oid'], 'army', -int(r['owner_army']*min(0.25, 0.04 + 0.05*(r['A']/max(r['D'], 1)))))
+            war_score(conn, uid, r['def_oid'])
+        msg = f"Victory! Took {def_name}'s tile. Lost {lost}, {survivors} troops hold the line."
+    else:
+        retreat = int(committed_troops*max(0.0, 0.25 - 0.2*min(1.0, ratio-1))*(2-cm)) if committed_troops else 0
+        retreat = max(0, min(committed_troops-1, retreat)) if committed_troops > 1 else 0
+        pool_add(conn, uid, 'army', retreat); lost = committed_troops - retreat
+        if r['def_oid']: pool_add(conn, r['def_oid'], 'army', -int(r['owner_army']*min(0.12, 0.02 + 0.04*(r['A']/max(r['D'], 1)))))
+        msg = f'Defeat! {def_name} held. {lost} troops lost, {retreat} retreated.'
+    morale_update(conn, uid, win)
+    conn.execute('INSERT INTO battle_log (attacker,defender,grid_key,result,mode,details) VALUES (?,?,?,?,?,?)',
+                 (uname_, def_name, tk, 'victory' if win else 'defeat', kind, f'{units_label}: {round(r["A"])} vs {round(r["D"])} · {r["weather"]} · {r["terrain"]}'))
+    if r['def_oid']:
+        create_notification(conn, r['def_oid'], 'attack', f'⚔ {uname_} {"captured" if win else "attacked"} your {r["terrain"]} tile ({tk}) by {kind} — {"you lost it!" if win else "you held!"}')
+    if win: check_win(uid, conn)
+    r.update({'win': win, 'msg': msg, 'lost': lost}); return r
+
+def do_game_reset(conn):
+    conn.execute('UPDATE territories SET owner_id=NULL,garrison=0,boats=0,planes=0')
+    for t in ('buildings', 'fallout', 'embassies', 'trades', 'loans', 'wonders', 'faction_rel', 'faction_research', 'faction_requests', 'merges'):
+        conn.execute(f'DELETE FROM {t}')
+    conn.execute('UPDATE users SET army=10,boats=0,planes=0,morale=50,steel=0,uranium=0,gems=0,nukes=0,capital_key=NULL')
+    conn.execute('UPDATE factions SET army=10,boats=0,planes=0,treasury=0')
+    conn.execute("UPDATE users SET food=100,wood=100,metal=100,oil=25,money=200,research='[]'")
+    conn.execute("DELETE FROM game_settings WHERE key IN ('winner_id','winner_name','win_time')")
+    conn.execute('DELETE FROM battle_log')
+    conn.execute("INSERT OR IGNORE INTO announcements (message,author) VALUES ('🌍 A new round has started! Claim territories and conquer the world!','System')")
+
+def _army_map(conn):
+    out = {}
+    for r in conn.execute('SELECT id,faction_id FROM users'):
+        ids = group_ids(conn, r['id']) if r['faction_id'] else [r['id']]
+        n = conn.execute(f'SELECT COUNT(*) c FROM territories WHERE owner_id IN ({_in(ids)})', ids).fetchone()['c']
+        out[r['id']] = (pool_get(conn, r['id'], 'army'), max(1, n))
+    return out
+
+def award_achievements(conn, uid):
+    u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
+    tc = conn.execute('SELECT COUNT(*) c FROM territories WHERE owner_id=?', (uid,)).fetchone()['c']
+    nb = conn.execute('SELECT COUNT(*) c FROM buildings b JOIN territories t ON t.grid_key=b.grid_key WHERE t.owner_id=?', (uid,)).fetchone()['c']
+    nr = len(json.loads(u['research'] or '[]'))
+    last = conn.execute("SELECT mode FROM battle_log WHERE attacker=? AND result='victory' ORDER BY id DESC LIMIT 1", (u['username'],)).fetchone()
+    nukes = conn.execute("SELECT COUNT(*) c FROM battle_log WHERE attacker=? AND mode='nuke'", (u['username'],)).fetchone()['c']
+    wonder = conn.execute('SELECT COUNT(*) c FROM wonders WHERE owner_id=?', (uid,)).fetchone()['c']
+    emb = conn.execute('SELECT COUNT(*) c FROM embassies WHERE owner_id=?', (uid,)).fetchone()['c']
+    trd = conn.execute("SELECT COUNT(*) c FROM trades WHERE status='active' AND (from_id=? OR to_id=?)", (uid, uid)).fetchone()['c']
+    have = {r['key'] for r in conn.execute('SELECT key FROM achievements WHERE user_id=?', (uid,))}
+    m = u['money']
+    checks = {'first_blood': u['wins'] >= 1, 'wins_10': u['wins'] >= 10, 'wins_50': u['wins'] >= 50, 'wins_100': u['wins'] >= 100,
+              'land_10': tc >= 10, 'land_30': tc >= 30, 'land_75': tc >= 75, 'land_150': tc >= 150, 'builder': nb >= 5, 'builder_20': nb >= 20,
+              'scholar': nr >= 6, 'scholar_15': nr >= 15, 'scholar_25': nr >= 25, 'admiral': bool(last and last['mode'] == 'naval'),
+              'ace': bool(last and last['mode'] == 'air'), 'rich': m >= 10000, 'rich_100k': m >= 100000, 'rich_1m': m >= 1000000,
+              'faction': bool(u['faction_id']), 'chatty': u['chat_count'] >= 10, 'chat_100': u['chat_count'] >= 100,
+              'daily_7': u['daily_streak'] >= 7, 'daily_30': u['daily_streak'] >= 30, 'capital': bool(u['capital_key']),
+              'ideology': bool(u['ideology']), 'embassy': emb > 0, 'trader': trd > 0, 'wonder': wonder > 0, 'nuke': nukes > 0,
+              'war_hero': False}
+    new = []
+    for k, ok in checks.items():
+        if ok and k not in have and k in ACHIEVEMENTS:
+            conn.execute('INSERT OR IGNORE INTO achievements(user_id,key,ts) VALUES(?,?,?)', (uid, k, int(time.time())))
+            conn.execute('UPDATE users SET money=money+? WHERE id=?', (ACHIEVEMENTS[k]['reward'], uid))
+            create_notification(conn, uid, 'info', f'🏅 Achievement: {ACHIEVEMENTS[k]["name"]} (+{ACHIEVEMENTS[k]["reward"]}💰)')
+            new.append({'key': k, **ACHIEVEMENTS[k]})
+    return new
+
+def can_afford(u, cost): return all(round(u[k]) >= v for k, v in cost.items())
+
+def ingest_and_check_target(conn, tk):
+    if is_water(conn, tk): return 'That is open water.'
+    if fallout_active(conn, tk): return '☢ That land is irradiated and uninhabitable.'
+    return None
+
+# ── ROUTES: combat ────────────────────────────────────────────────────────────
+@app.route('/api/troops/build', methods=['POST'])
+@require_login
+def build_troops():
+    d = request.json or {}; uid = session['user_id']
+    am = max(1, min(int(d.get('amount', 1)), 10**9)); conn = get_db()
+    rsch = user_research(conn, uid); cost = am * troop_cost_for(conn, uid, rsch)
+    u = conn.execute('SELECT money FROM users WHERE id=?', (uid,)).fetchone()
+    if round(u['money']) < cost:
+        conn.close(); return jsonify({'error': f'Need {cost}💰, have {round(u["money"])}💰'}), 400
+    conn.execute('UPDATE users SET money=money-? WHERE id=?', (cost, uid)); pool_add(conn, uid, 'army', am)
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'Recruited {am} troops for {cost}💰'})
+
+@app.route('/api/combat/preview', methods=['POST'])
+@require_login
+def combat_preview():
+    d = request.json or {}; uid = session['user_id']
+    tk = d.get('target_key', ''); kind = d.get('kind', 'land'); n = max(1, int(d.get('amount', 1)))
+    try: parse_key(tk)
+    except Exception: return jsonify({'error': 'bad key'}), 400
+    conn = get_db(); rs = user_research(conn, uid)
+    cap = BOAT_CAP + (4 if 'navigation' in rs else 0)
+    force = n if kind == 'land' else n*cap if kind == 'naval' else n*PLANE_POWER
+    r = resolve_battle(conn, uid, session['username'], tk, force, kind, d.get('from_key', ''), dry=True)
+    spy = 'espionage' in rs or 'f_spy' in ftechs(conn, uid)
+    out = {'odds': round(r['odds']*100), 'weather': r['weather'], 'attack': round(r['A'], 1), 'atk_mods': [[a, round(b, 2)] for a, b in r['amods']]}
+    blk = attack_block(conn, uid, r['def_oid'])
+    if blk: out['blocked'] = blk
+    if kind == 'naval' and d.get('from_key'):
+        try: out['voyage'] = voyage_cost(conn, uid, d['from_key'], tk, n)
+        except Exception: pass
+    if spy or not r['def_oid']:
+        out.update({'defense': round(r['D'], 1), 'def_mods': [[a, round(b, 2)] for a, b in r['dmods']]})
+    else:
+        out.update({'defense_est': [int(r['D']*0.7), int(r['D']*1.3)], 'odds': None,
+                    'odds_est': [round(100*r['A']/(r['A']+r['D']*1.3)), round(100*r['A']/(r['A']+r['D']*0.7))]})
+    conn.close(); return jsonify(out)
+
+def voyage_cost(conn, uid, fk, tk, boats):
+    dist = cell_distance(fk, tk); rs = user_research(conn, uid)
+    f = 1.0
+    if 'shipping' in rs: f *= 0.75
+    if 'f_navy' in ftechs(conn, uid): f *= 0.75
+    return {'money': int(boats*dist*VOYAGE_MONEY*f), 'wood': int(boats*dist*VOYAGE_WOOD*f), 'cells': dist}
+
+def _target_checks(conn, uid, tk):
+    msg = ingest_and_check_target(conn, tk)
+    if msg: return msg
+    tt = conn.execute('SELECT owner_id FROM territories WHERE grid_key=?', (tk,)).fetchone()
+    if tt and tt['owner_id'] == uid: return 'Cannot attack your own territory'
+    if tt and tt['owner_id']: return attack_block(conn, uid, tt['owner_id'])
+    return None
+
+@app.route('/api/attack', methods=['POST'])
+@require_login
+def attack():
+    d = request.json or {}; uid = session['user_id']
+    fk = d.get('from_key', '').strip(); tk = d.get('target_key', '').strip(); sent = max(1, int(d.get('troops', 1)))
+    try:
+        fl, fg = parse_key(fk); tl, tg = parse_key(tk)
+        if fk == tk or max(abs(fl-tl), abs(fg-tg)) > 1: return jsonify({'error': 'Target must be adjacent to your attacking tile'}), 400
+    except Exception: return jsonify({'error': 'Invalid keys'}), 400
+    conn = get_db(); conn.execute('BEGIN IMMEDIATE')
+    def bail(m, c=400): conn.rollback(); conn.close(); return jsonify({'error': m}), c
+    try:
+        ids = group_ids(conn, uid)
+        if not conn.execute(f'SELECT 1 FROM territories WHERE grid_key=? AND owner_id IN ({_in(ids)})', [fk]+ids).fetchone(): return bail('You do not own the attacking territory', 403)
+        m = _target_checks(conn, uid, tk)
+        if m: return bail(m)
+        have = pool_get(conn, uid, 'army')
+        if have < sent: return bail(f'Only {have} troops in your army')
+        pool_add(conn, uid, 'army', -sent)
+        r = do_assault(conn, uid, session['username'], fk, tk, sent, 'land', f'{sent} troops', sent)
+        ach = award_achievements(conn, uid); conn.commit(); conn.close()
+        return battle_response(r, {'achievements': ach})
+    except Exception as e:
+        conn.rollback(); conn.close(); return jsonify({'error': f'Battle failed: {e}'}), 500
+
+@app.route('/api/boats/build', methods=['POST'])
+@require_login
+def build_boats():
+    d = request.json or {}; uid = session['user_id']; am = max(1, min(int(d.get('amount', 1)), 1000)); conn = get_db()
+    if 'shipyard' not in user_research(conn, uid): conn.close(); return jsonify({'error': 'Research Shipbuilding first'}), 400
+    if group_levels(conn, uid, 'port') == 0: conn.close(); return jsonify({'error': 'You (or your faction) need a Port to build boats'}), 400
+    cost = {'money': am*BOAT_COST_M, 'wood': am*BOAT_COST_W}
+    u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
+    if not can_afford(u, cost): conn.close(); return jsonify({'error': f'Need {fmt_cost(cost)}'}), 400
+    pay(conn, uid, cost); pool_add(conn, uid, 'boats', am); conn.commit(); conn.close()
+    return jsonify({'success': True, 'message': f'Built {am} boat(s) for {fmt_cost(cost)}'})
+
+@app.route('/api/boats/attack', methods=['POST'])
+@require_login
+def boats_attack():
+    d = request.json or {}; uid = session['user_id']
+    fk = d.get('from_key', '').strip(); tk = d.get('target_key', '').strip(); n = max(1, int(d.get('boats', 1)))
+    conn = get_db(); conn.execute('BEGIN IMMEDIATE')
+    def bail(m, c=400): conn.rollback(); conn.close(); return jsonify({'error': m}), c
+    try:
+        ingest_water(conn, d.get('water')); ids = group_ids(conn, uid)
+        b = conn.execute(f'SELECT 1 FROM buildings b JOIN territories t ON t.grid_key=b.grid_key WHERE b.grid_key=? AND b.type="port" AND t.owner_id IN ({_in(ids)})', [fk]+ids).fetchone()
+        if not b: return bail('Boats must launch from a Port (yours or a faction mate\'s)')
+        if not is_coastal(conn, fk): return bail('This port is not on the coast — boats need water')
+        if cell_distance(fk, tk) <= 1: return bail('Target is adjacent — use a land attack')
+        if not is_coastal(conn, tk): return bail('Landing site must be on a coast (no port needed there)')
+        m = _target_checks(conn, uid, tk)
+        if m: return bail(m)
+        rsch = user_research(conn, uid)
+        if pool_get(conn, uid, 'boats') < n: return bail(f'You only have {pool_get(conn, uid, "boats")} boat(s)')
+        troops = min(pool_get(conn, uid, 'army'), n*(BOAT_CAP + (4 if 'navigation' in rsch else 0)))
+        if troops < 1: return bail('No troops available to load')
+        vc = voyage_cost(conn, uid, fk, tk, n); cost = {'money': vc['money'], 'wood': vc['wood']}
+        u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
+        if not can_afford(u, cost): return bail(f'Voyage of {vc["cells"]} cells costs {fmt_cost(cost)}')
+        pay(conn, uid, cost); pool_add(conn, uid, 'army', -troops); pool_add(conn, uid, 'boats', -n)
+        r = do_assault(conn, uid, session['username'], fk, tk, troops, 'naval', f'{n} boats/{troops} troops', troops)
+        back = int(round(n*0.8)) if r['win'] else 0
+        if back: pool_add(conn, uid, 'boats', back)
+        ach = award_achievements(conn, uid); conn.commit(); conn.close()
+        return battle_response(r, {'boats_back': back, 'troops_loaded': troops, 'voyage': vc, 'achievements': ach})
+    except Exception as e:
+        conn.rollback(); conn.close(); return jsonify({'error': f'Naval operation failed: {e}'}), 500
+
+@app.route('/api/planes/build', methods=['POST'])
+@require_login
+def build_planes():
+    d = request.json or {}; uid = session['user_id']; am = max(1, min(int(d.get('amount', 1)), 500)); conn = get_db()
+    if 'airforce' not in user_research(conn, uid): conn.close(); return jsonify({'error': 'Research Air Force first'}), 400
+    if group_levels(conn, uid, 'airport') == 0: conn.close(); return jsonify({'error': 'You (or your faction) need an Airport'}), 400
+    cost = {'money': am*PLANE_COST_M, 'metal': am*PLANE_COST_X, 'oil': am*PLANE_COST_O}
+    u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
+    if not can_afford(u, cost): conn.close(); return jsonify({'error': f'Need {fmt_cost(cost)}'}), 400
+    pay(conn, uid, cost); pool_add(conn, uid, 'planes', am); conn.commit(); conn.close()
+    return jsonify({'success': True, 'message': f'Built {am} plane(s) for {fmt_cost(cost)}'})
+
+@app.route('/api/planes/attack', methods=['POST'])
+@require_login
+def planes_attack():
+    d = request.json or {}; uid = session['user_id']
+    fk = d.get('from_key', '').strip(); tk = d.get('target_key', '').strip(); n = max(1, int(d.get('planes', 1)))
+    conn = get_db(); conn.execute('BEGIN IMMEDIATE')
+    def bail(m, c=400): conn.rollback(); conn.close(); return jsonify({'error': m}), c
+    try:
+        ids = group_ids(conn, uid)
+        b = conn.execute(f'SELECT b.level FROM buildings b JOIN territories t ON t.grid_key=b.grid_key WHERE b.grid_key=? AND b.type="airport" AND t.owner_id IN ({_in(ids)})', [fk]+ids).fetchone()
+        if not b: return bail('Planes must take off from an Airport (yours or a faction mate\'s)')
+        rsch = user_research(conn, uid); rng = plane_range(rsch) + (b['level']-1); dist = cell_distance(fk, tk)
+        if dist <= 1: return bail('Target is adjacent — use a land attack')
+        if dist > rng: return bail(f'Out of range ({dist} > {rng} cells). Build an airport closer.')
+        m = _target_checks(conn, uid, tk)
+        if m: return bail(m)
+        if pool_get(conn, uid, 'planes') < n: return bail(f'You only have {pool_get(conn, uid, "planes")} plane(s)')
+        paras = min(pool_get(conn, uid, 'army'), n*5)
+        if paras < 1: return bail('No paratroopers available')
+        pool_add(conn, uid, 'army', -paras); pool_add(conn, uid, 'planes', -n)
+        force = n*PLANE_POWER*(min(1.0, paras/(n*5))*0.5 + 0.5)
+        r = do_assault(conn, uid, session['username'], fk, tk, force, 'air', f'{n} planes/{paras} paras', paras)
+        back = int(round(n*0.7)) if r['win'] else int(n*0.2)
+        if back: pool_add(conn, uid, 'planes', back)
+        ach = award_achievements(conn, uid); conn.commit(); conn.close()
+        return battle_response(r, {'planes_back': back, 'achievements': ach})
+    except Exception as e:
+        conn.rollback(); conn.close(); return jsonify({'error': f'Air strike failed: {e}'}), 500
+
+# ── claim / sell / abandon / capital ─────────────────────────────────────────
+@app.route('/api/territory/claim', methods=['POST'])
+@require_login
+def claim_territory():
+    d = request.json or {}; uid = session['user_id']; gk = d.get('grid_key', '').strip()
+    try: gl, gg = parse_key(gk)
+    except Exception: return jsonify({'error': 'Invalid grid_key'}), 400
+    conn = get_db(); ingest_water(conn, d.get('water'))
+    def bail(m, c=400): conn.commit(); conn.close(); return jsonify({'error': m}), c
+    if is_water(conn, gk): return bail('You cannot claim open water')
+    if fallout_active(conn, gk): return bail('☢ Irradiated land — nobody can live here')
+    ex = conn.execute('SELECT owner_id FROM territories WHERE grid_key=?', (gk,)).fetchone()
+    if ex and ex['owner_id']: return bail('Already owned — attack it!')
+    mine = conn.execute('SELECT grid_key FROM territories WHERE owner_id=?', (uid,)).fetchall()
+    if mine and not any(max(abs(gl - parse_key(m['grid_key'])[0]), abs(gg - parse_key(m['grid_key'])[1])) <= 1 for m in mine) and not any(True for _ in []):
+        # allow expanding next to faction mates too
+        ids = group_ids(conn, uid); near = conn.execute(f'SELECT grid_key FROM territories WHERE owner_id IN ({_in(ids)})', ids).fetchall()
+        if not any(max(abs(gl - parse_key(m['grid_key'])[0]), abs(gg - parse_key(m['grid_key'])[1])) <= 1 for m in near):
+            return bail('Must be adjacent to your territory (or a faction mate\'s)')
+    terrain = get_terrain(gl, gg); cost = claim_price(conn, uid, terrain)
+    u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
+    if not can_afford(u, cost): return bail(f'Need {fmt_cost(cost)}')
+    pay(conn, uid, cost); now = int(time.time()); inv = cost_value(cost)
+    if ex: conn.execute('UPDATE territories SET owner_id=?,garrison=0,boats=0,planes=0,population=?,last_collected=?,invested=? WHERE grid_key=?', (uid, get_population(terrain, gl, gg), now, inv, gk))
+    else: conn.execute('INSERT INTO territories (grid_key,owner_id,terrain,garrison,boats,planes,population,last_collected,invested) VALUES (?,?,?,0,0,0,?,?,?)', (gk, uid, terrain, get_population(terrain, gl, gg), now, inv))
+    check_win(uid, conn); ach = award_achievements(conn, uid); conn.commit(); conn.close()
+    return jsonify({'success': True, 'terrain': terrain, 'message': f'Claimed {terrain} for {fmt_cost(cost)}', 'achievements': ach})
+
+@app.route('/api/territory/sell', methods=['POST'])
+@require_login
+def territory_sell():
+    uid = session['user_id']; gk = (request.json or {}).get('grid_key', ''); conn = get_db()
+    t = conn.execute('SELECT invested FROM territories WHERE grid_key=? AND owner_id=?', (gk, uid)).fetchone()
+    if not t: conn.close(); return jsonify({'error': 'Not your territory'}), 403
+    refund = int((t['invested'] or 0)*0.5)
+    conn.execute('UPDATE territories SET owner_id=NULL,garrison=0 WHERE grid_key=?', (gk,)); conn.execute('DELETE FROM buildings WHERE grid_key=?', (gk,))
+    conn.execute('UPDATE users SET money=money+?,capital_key=CASE WHEN capital_key=? THEN NULL ELSE capital_key END WHERE id=?', (refund, gk, uid))
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'Sold tile for {refund}💰 (50% of your investment)'})
+
+@app.route('/api/territory/abandon_all', methods=['POST'])
+@require_login
+def territory_abandon_all():
+    d = request.json or {}; uid = session['user_id']; conn = get_db()
+    if d.get('confirm') != 'DELETE ALL MY TERRITORIES': conn.close(); return jsonify({'error': 'Confirmation text did not match'}), 400
+    u = conn.execute('SELECT 1 FROM users WHERE id=? AND password=?', (uid, ph(d.get('password', '')))).fetchone()
+    if not u: conn.close(); return jsonify({'error': 'Wrong password'}), 403
+    keys = [r['grid_key'] for r in conn.execute('SELECT grid_key FROM territories WHERE owner_id=?', (uid,))]
+    for i in range(0, len(keys), 500):
+        ch = keys[i:i+500]; conn.execute(f'DELETE FROM buildings WHERE grid_key IN ({_in(ch)})', ch)
+    conn.execute('UPDATE territories SET owner_id=NULL,garrison=0 WHERE owner_id=?', (uid,)); conn.execute('UPDATE users SET capital_key=NULL WHERE id=?', (uid,))
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'Abandoned {len(keys)} territories. Pick a new place on the map!'})
+
+@app.route('/api/capital/set', methods=['POST'])
+@require_login
+def capital_set():
+    uid = session['user_id']; gk = (request.json or {}).get('grid_key', ''); conn = get_db()
+    if not conn.execute('SELECT 1 FROM territories WHERE grid_key=? AND owner_id=?', (gk, uid)).fetchone(): conn.close(); return jsonify({'error': 'Not your territory'}), 403
+    u = conn.execute('SELECT capital_key,capital_ts FROM users WHERE id=?', (uid,)).fetchone()
+    if u['capital_key'] and time.time() - (u['capital_ts'] or 0) < 86400: conn.close(); return jsonify({'error': 'You can move your capital once per day'}), 400
+    conn.execute('UPDATE users SET capital_key=?,capital_ts=? WHERE id=?', (gk, int(time.time()), uid))
+    ach = award_achievements(conn, uid); conn.commit(); conn.close()
+    return jsonify({'success': True, 'message': '⭐ Capital established! +15% defense there; embassies will gather here.', 'achievements': ach})
+
+# ── buildings ─────────────────────────────────────────────────────────────────
+@app.route('/api/building/build', methods=['POST'])
+@require_login
+def building_build():
+    d = request.json or {}; uid = session['user_id']; gk = d.get('grid_key', ''); bt = d.get('type', '')
+    if bt not in BUILDINGS: return jsonify({'error': 'Unknown building'}), 400
+    conn = get_db(); ingest_water(conn, d.get('water'))
+    t = conn.execute('SELECT terrain FROM territories WHERE grid_key=? AND owner_id=?', (gk, uid)).fetchone()
+    if not t: conn.close(); return jsonify({'error': 'You do not own this territory'}), 403
+    info = BUILDINGS[bt]; rsch = user_research(conn, uid)
+    if info.get('needs') and info['needs'] not in rsch: conn.close(); return jsonify({'error': f'Requires research: {RESEARCH_TREE[info["needs"]]["name"]}'}), 400
+    if info.get('terrain') and t['terrain'] not in info['terrain']: conn.close(); return jsonify({'error': f'Needs terrain: {", ".join(info["terrain"])}'}), 400
+    cur = conn.execute('SELECT * FROM buildings WHERE grid_key=?', (gk,)).fetchone()
+    if cur and cur['type'] != bt: conn.close(); return jsonify({'error': 'Tile already has a different building — demolish it first'}), 400
+    if info.get('coastal') and not is_coastal(conn, gk): conn.close(); return jsonify({'error': 'Ports can only be built on the coast'}), 400
+    lvl = (cur['level'] if cur else 0) + 1
+    if lvl > BUILD_MAX_LEVEL: conn.close(); return jsonify({'error': 'Already max level'}), 400
+    cost = build_cost(bt, lvl)
+    if 'engineering' in rsch: cost = {k: int(v*0.8) for k, v in cost.items()}
+    u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
+    if not can_afford(u, cost): conn.close(); return jsonify({'error': f'Need {fmt_cost(cost)}'}), 400
+    pay(conn, uid, cost)
+    if cur: conn.execute('UPDATE buildings SET level=? WHERE grid_key=?', (lvl, gk))
+    else: conn.execute('INSERT INTO buildings(grid_key,type,level) VALUES(?,?,1)', (gk, bt))
+    conn.execute('UPDATE territories SET invested=invested+? WHERE grid_key=?', (cost_value(cost), gk))
+    ach = award_achievements(conn, uid); conn.commit(); conn.close()
+    return jsonify({'success': True, 'message': f'{info["name"]} {"upgraded to Lv"+str(lvl) if cur else "built"} ({fmt_cost(cost)})', 'achievements': ach})
+
+@app.route('/api/daily/claim', methods=['POST'])
+@require_login
+def daily_claim():
+    uid = session['user_id']; day = int(time.time() // 86400); conn = get_db()
+    u = conn.execute('SELECT last_daily,daily_streak FROM users WHERE id=?', (uid,)).fetchone()
+    if u['last_daily'] == day: conn.close(); return jsonify({'error': 'Already claimed today — come back tomorrow!'}), 400
+    streak = (u['daily_streak'] + 1) if u['last_daily'] == day-1 else 1; s = min(streak, 7)
+    conn.execute('UPDATE users SET last_daily=?,daily_streak=?,money=money+?,food=food+?,wood=wood+?,metal=metal+?,oil=oil+? WHERE id=?',
+                 (day, streak, 100+50*s, 30*s, 30*s, 15*s, 8*s, uid))
+    pool_add(conn, uid, 'army', 2*s); ach = award_achievements(conn, uid); conn.commit(); conn.close()
+    return jsonify({'success': True, 'message': f'Day {streak} reward: {100+50*s}💰 + supplies + {2*s} troops!', 'achievements': ach})
+
+@app.route('/api/resources/sell_all', methods=['POST'])
+@require_login
+def sell_all():
+    uid = session['user_id']; only = (request.json or {}).get('resource'); conn = get_db(); total = 0; sold = {}
+    u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
+    for r, rate in SELL_RATES.items():
+        if only and r != only: continue
+        have = int(u[r])
+        if have > 0: total += have*rate; sold[r] = have; conn.execute(f'UPDATE users SET {r}={r}-? WHERE id=?', (have, uid))
+    conn.execute('UPDATE users SET money=money+? WHERE id=?', (total, uid)); ach = award_achievements(conn, uid); conn.commit(); conn.close()
+    if not sold: return jsonify({'error': 'Nothing to sell'}), 400
+    return jsonify({'success': True, 'earned': total, 'message': f'Sold everything for {total}💰', 'achievements': ach})
+
+@app.route('/api/income')
+@require_login
+def income_api():
+    uid = session['user_id']; mins = max(1, min(int(request.args.get('minutes', 60)), 10080)); conn = get_db()
+    rates, troops, c = income_rates(conn, uid); n = conn.execute('SELECT COUNT(*) c FROM territories WHERE owner_id=?', (uid,)).fetchone()['c']
+    mults = [('Faction bonus', faction_bonus(conn, uid)), ('Global x', float(get_setting(conn, 'income_mult', 1) or 1))]
+    if c['ide'].get('yield'): mults.append(('Ideology', c['ide']['yield']))
+    if c['ev'] in ('gold_rush','harvest','mining'): mults.append((f'Event: {c["ev"]}', 1.5))
+    conn.close()
+    return jsonify({'minutes': mins, 'tiles': n, 'rates': {k: round(v, 2) for k, v in rates.items()},
+                    'totals': {k: round(v*mins, 1) for k, v in rates.items()}, 'troops_per_min': troops,
+                    'value_per_min': round(sum(rates[k]*RATE_VAL[k] for k in rates), 1), 'mults': [[a, round(b, 2)] for a, b in mults if b != 1]})
+
+@app.route('/api/profile/color', methods=['POST'])
+@require_login
+def profile_color():
+    col = (request.json or {}).get('color', '')
+    if not re.match(r'^#[0-9a-fA-F]{6}$', col): return jsonify({'error': 'Pick a valid #RRGGBB color'}), 400
+    conn = get_db(); uid = session['user_id']; conn.execute('UPDATE users SET base_color=? WHERE id=?', (col, uid))
+    if not fac_id(conn, uid): conn.execute('UPDATE users SET color=? WHERE id=?', (col, uid))
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Color updated' + (' (your faction color is used while you are in a faction)' if fac_id(get_db(), uid) else '')})
+
+# ── FACTIONS (pooled army/fleet, research, wars, settings) ───────────────────
+def faction_dict(conn, f):
+    mem = conn.execute('SELECT u.id,u.username,u.color,(SELECT COUNT(*) FROM territories WHERE owner_id=u.id) tc,'
+                       '(SELECT COALESCE(SUM(population),0) FROM territories WHERE owner_id=u.id) pop FROM users u WHERE u.faction_id=? ORDER BY tc DESC', (f['id'],)).fetchall()
+    techs = [x['tech'] for x in conn.execute('SELECT tech FROM faction_research WHERE faction_id=?', (f['id'],))]
+    rels = []
+    for r in conn.execute("SELECT * FROM faction_rel WHERE status IN ('active','pending') AND (a=? OR b=?)", (f['id'], f['id'])):
+        other = r['b'] if r['a'] == f['id'] else r['a']; o = conn.execute('SELECT name,tag FROM factions WHERE id=?', (other,)).fetchone()
+        if not o: continue
+        mine, theirs = (r['score_a'], r['score_b']) if r['a'] == f['id'] else (r['score_b'], r['score_a'])
+        rels.append({'id': r['id'], 'kind': r['kind'], 'status': r['status'], 'other_id': other, 'other': o['name'], 'tag': o['tag'], 'mine': mine, 'theirs': theirs,
+                     'incoming': r['b'] == f['id'] and r['status'] == 'pending', 'since': r['ts']})
+    return {'id': f['id'], 'name': f['name'], 'tag': f['tag'], 'color': f['color'], 'mode': f['mode'], 'descr': f['descr'] or '', 'leader_id': f['leader_id'],
+            'treasury': round(f['treasury']), 'army': f['army'], 'boats': f['boats'], 'planes': f['planes'],
+            'members': [{'id': m['id'], 'username': m['username'], 'color': m['color'], 'territories': m['tc'], 'pop': m['pop']} for m in mem],
+            'territories': sum(m['tc'] for m in mem), 'population': sum(m['pop'] for m in mem), 'bonus_pct': round(min(15, 2*(len(mem)-1))),
+            'techs': techs, 'rels': rels, 'rate': 1.5 if 'f_bank' in techs else 1.0}
+
+def _join_faction(conn, uid, fid):
+    u = conn.execute('SELECT army,boats,planes FROM users WHERE id=?', (uid,)).fetchone(); f = conn.execute('SELECT color FROM factions WHERE id=?', (fid,)).fetchone()
+    for k in POOLS: conn.execute(f'UPDATE factions SET {k}={k}+? WHERE id=?', (u[k], fid))
+    conn.execute('UPDATE users SET army=0,boats=0,planes=0,faction_id=?,color=? WHERE id=?', (fid, f['color'], uid))
+    conn.execute('DELETE FROM faction_requests WHERE user_id=?', (uid,))
+
+def _leave_faction(conn, uid, ban=False):
+    fid = fac_id(conn, uid)
+    if not fid: return
+    n = max(1, faction_members(conn, fid)); f = conn.execute('SELECT * FROM factions WHERE id=?', (fid,)).fetchone()
+    for k in POOLS:
+        share = f[k]//n; conn.execute(f'UPDATE factions SET {k}={k}-? WHERE id=?', (share, fid)); conn.execute(f'UPDATE users SET {k}=? WHERE id=?', (share, uid))
+    conn.execute('UPDATE users SET faction_id=NULL,color=COALESCE(base_color,color) WHERE id=?', (uid,))
+    if ban: conn.execute('INSERT OR REPLACE INTO faction_bans(faction_id,user_id,until) VALUES(?,?,?)', (fid, uid, (int(time.time())//86400 + 1)*86400))
+    if f['leader_id'] == uid:
+        nxt = conn.execute('SELECT id FROM users WHERE faction_id=? ORDER BY id LIMIT 1', (fid,)).fetchone()
+        if nxt: conn.execute('UPDATE factions SET leader_id=? WHERE id=?', (nxt['id'], fid))
+        else:
+            for t in ('factions', 'faction_research', 'faction_requests', 'faction_bans'): conn.execute(f'DELETE FROM {t} WHERE {"id" if t=="factions" else "faction_id"}=?', (fid,))
+            conn.execute('DELETE FROM faction_rel WHERE a=? OR b=?', (fid, fid))
+
+def _my_fac(conn, uid, leader=False):
+    fid = fac_id(conn, uid)
+    f = conn.execute('SELECT * FROM factions WHERE id=?', (fid,)).fetchone() if fid else None
+    if not f: return None, ('You are not in a faction', 400)
+    if leader and f['leader_id'] != uid: return None, ('Only the faction leader can do that', 403)
+    return f, None
+
+@app.route('/api/faction/list')
+@require_login
+def faction_list():
+    conn = get_db()
+    rows = conn.execute('SELECT f.*,(SELECT COUNT(*) FROM users WHERE faction_id=f.id) mc,(SELECT COUNT(*) FROM territories t JOIN users u ON u.id=t.owner_id WHERE u.faction_id=f.id) tc FROM factions f ORDER BY tc DESC').fetchall()
+    out = [{'id': r['id'], 'name': r['name'], 'tag': r['tag'], 'members': r['mc'], 'territories': r['tc'], 'mode': r['mode'], 'color': r['color'], 'descr': r['descr'] or ''} for r in rows]
+    conn.close(); return jsonify(out)
+
+@app.route('/api/faction/info')
+@require_login
+def faction_info():
+    uid = session['user_id']; conn = get_db(); fid = fac_id(conn, uid)
+    f = conn.execute('SELECT * FROM factions WHERE id=?', (fid,)).fetchone() if fid else None
+    out = None
+    if f:
+        faction_tick(conn, fid); conn.commit(); f = conn.execute('SELECT * FROM factions WHERE id=?', (fid,)).fetchone()
+        out = faction_dict(conn, f); out['rally_ready_in'] = max(0, int(get_setting(conn, f'rally_{fid}', 0) or 0) - int(time.time()))
+        out['catalog'] = FACTION_TECH
+        if f['leader_id'] == uid:
+            out['requests'] = [{'id': r['id'], 'user_id': r['user_id'], 'username': uname(conn, r['user_id']), 'message': r['message']} for r in conn.execute('SELECT * FROM faction_requests WHERE faction_id=?', (fid,))]
+    unlocked = conn.execute('SELECT konami FROM users WHERE id=?', (uid,)).fetchone()['konami']
+    conn.close(); return jsonify({'faction': out, 'konami': bool(unlocked)})
+
+@app.route('/api/faction/create', methods=['POST'])
+@require_login
+def faction_create():
+    d = request.json or {}; uid = session['user_id']
+    name = (d.get('name') or '').strip(); tag = (d.get('tag') or '').strip().upper()
+    if not (3 <= len(name) <= 24) or not (2 <= len(tag) <= 4) or not tag.isalnum(): return jsonify({'error': 'Name 3–24 chars, tag 2–4 letters/digits'}), 400
+    conn = get_db(); u = conn.execute('SELECT money,faction_id,color,base_color FROM users WHERE id=?', (uid,)).fetchone()
+    if u['faction_id']: conn.close(); return jsonify({'error': 'Leave your faction first'}), 400
+    if round(u['money']) < FACTION_COST: conn.close(); return jsonify({'error': f'Founding a faction costs {FACTION_COST}💰'}), 400
+    try: cur = conn.execute('INSERT INTO factions(name,tag,leader_id,color,last_tick) VALUES(?,?,?,?,?)', (name, tag, uid, u['base_color'] or u['color'], int(time.time())))
+    except sqlite3.IntegrityError: conn.close(); return jsonify({'error': 'Name or tag already taken'}), 409
+    conn.execute('UPDATE users SET money=money-? WHERE id=?', (FACTION_COST, uid)); _join_faction(conn, uid, cur.lastrowid)
+    ach = award_achievements(conn, uid); conn.commit(); conn.close()
+    return jsonify({'success': True, 'message': f'Faction [{tag}] {name} founded!', 'achievements': ach})
+
+@app.route('/api/faction/join', methods=['POST'])
+@require_login
+def faction_join():
+    d = request.json or {}; uid = session['user_id']; fid = int(d.get('faction_id', 0)); conn = get_db()
+    if fac_id(conn, uid): conn.close(); return jsonify({'error': 'Leave your faction first'}), 400
+    f = conn.execute('SELECT * FROM factions WHERE id=?', (fid,)).fetchone()
+    if not f: conn.close(); return jsonify({'error': 'Faction not found'}), 404
+    ban = conn.execute('SELECT until FROM faction_bans WHERE faction_id=? AND user_id=?', (fid, uid)).fetchone()
+    if ban and ban['until'] > time.time(): conn.close(); return jsonify({'error': f'You were kicked — you can try again in {int((ban["until"]-time.time())//3600)+1}h'}), 403
+    if faction_members(conn, fid) >= 12: conn.close(); return jsonify({'error': 'Faction is full (12)'}), 400
+    if f['mode'] == 'closed': conn.close(); return jsonify({'error': '🔒 This faction is closed'}), 403
+    if f['mode'] == 'invite':
+        if conn.execute('SELECT 1 FROM faction_requests WHERE faction_id=? AND user_id=?', (fid, uid)).fetchone(): conn.close(); return jsonify({'error': 'You already asked to join'}), 400
+        conn.execute('INSERT INTO faction_requests(faction_id,user_id,message,ts) VALUES(?,?,?,?)', (fid, uid, (d.get('message') or '')[:140], int(time.time())))
+        create_notification(conn, f['leader_id'], 'info', f'🚩 {session["username"]} asks to join [{f["tag"]}] — see the Faction tab.')
+        conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Request sent to the faction leader'})
+    _join_faction(conn, uid, fid); ach = award_achievements(conn, uid); conn.commit(); conn.close()
+    return jsonify({'success': True, 'message': f'Joined [{f["tag"]}] {f["name"]}', 'achievements': ach})
+
+@app.route('/api/faction/request_respond', methods=['POST'])
+@require_login
+def faction_request_respond():
+    d = request.json or {}; uid = session['user_id']; conn = get_db(); f, err = _my_fac(conn, uid, True)
+    if err: conn.close(); return jsonify({'error': err[0]}), err[1]
+    r = conn.execute('SELECT * FROM faction_requests WHERE id=? AND faction_id=?', (int(d.get('request_id', 0)), f['id'])).fetchone()
+    if not r: conn.close(); return jsonify({'error': 'Request not found'}), 404
+    conn.execute('DELETE FROM faction_requests WHERE id=?', (r['id'],))
+    if d.get('accept'):
+        if fac_id(conn, r['user_id']): conn.close(); return jsonify({'error': 'They already joined another faction'}), 400
+        if faction_members(conn, f['id']) >= 12: conn.close(); return jsonify({'error': 'Faction is full'}), 400
+        _join_faction(conn, r['user_id'], f['id']); create_notification(conn, r['user_id'], 'info', f'✅ You were accepted into [{f["tag"]}] {f["name"]}!'); award_achievements(conn, r['user_id'])
+    else: create_notification(conn, r['user_id'], 'info', f'❌ [{f["tag"]}] declined your join request.')
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Done'})
+
+@app.route('/api/faction/leave', methods=['POST'])
+@require_login
+def faction_leave():
+    conn = get_db(); _leave_faction(conn, session['user_id']); conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'You left the faction (you took your share of the army and fleet)'})
+
+@app.route('/api/faction/kick', methods=['POST'])
+@require_login
+def faction_kick():
+    uid = session['user_id']; tid = int((request.json or {}).get('user_id', 0)); conn = get_db(); f, err = _my_fac(conn, uid, True)
+    if err: conn.close(); return jsonify({'error': err[0]}), err[1]
+    if tid == uid or fac_id(conn, tid) != f['id']: conn.close(); return jsonify({'error': 'Invalid member'}), 400
+    _leave_faction(conn, tid, ban=True); create_notification(conn, tid, 'info', f'You were kicked from [{f["tag"]}]. You can rejoin tomorrow.')
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Member kicked (banned until tomorrow)'})
+
+@app.route('/api/faction/donate', methods=['POST'])
+@require_login
+def faction_donate():
+    uid = session['user_id']; am = int((request.json or {}).get('amount', 0)); conn = get_db(); f, err = _my_fac(conn, uid)
+    if err: conn.close(); return jsonify({'error': err[0]}), err[1]
+    u = conn.execute('SELECT money FROM users WHERE id=?', (uid,)).fetchone()
+    if am < 1 or round(u['money']) < am: conn.close(); return jsonify({'error': 'Invalid amount'}), 400
+    conn.execute('UPDATE users SET money=money-? WHERE id=?', (am, uid)); conn.execute('UPDATE factions SET treasury=treasury+? WHERE id=?', (am, f['id']))
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'Donated {am}💰. Every 10 min 1% of the treasury is paid out to all members, and the leader can buy faction research with it.'})
+
+@app.route('/api/faction/settings', methods=['POST'])
+@require_login
+def faction_settings():
+    d = request.json or {}; uid = session['user_id']; conn = get_db(); f, err = _my_fac(conn, uid, True)
+    if err: conn.close(); return jsonify({'error': err[0]}), err[1]
+    mode = d.get('mode', f['mode']); col = d.get('color', f['color']); desc = (d.get('descr', f['descr']) or '')[:140]
+    if mode not in ('open', 'invite', 'closed'): conn.close(); return jsonify({'error': 'Bad mode'}), 400
+    if not re.match(r'^#[0-9a-fA-F]{6}$', col or ''): conn.close(); return jsonify({'error': 'Bad color'}), 400
+    conn.execute('UPDATE factions SET mode=?,color=?,descr=? WHERE id=?', (mode, col, desc, f['id'])); conn.execute('UPDATE users SET color=? WHERE faction_id=?', (col, f['id']))
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Faction settings saved'})
+
+@app.route('/api/faction/rally', methods=['POST'])
+@require_login
+def faction_rally():
+    uid = session['user_id']; conn = get_db(); f, err = _my_fac(conn, uid, True)
+    if err: conn.close(); return jsonify({'error': err[0]}), err[1]
+    if f['treasury'] < 1500: conn.close(); return jsonify({'error': 'Rally costs 1500💰 from the treasury'}), 400
+    nxt = int(get_setting(conn, f'rally_{f["id"]}', 0) or 0)
+    if nxt > time.time(): conn.close(); return jsonify({'error': f'Rally on cooldown ({int(nxt-time.time())//60} min)'}), 400
+    conn.execute('UPDATE factions SET treasury=treasury-1500 WHERE id=?', (f['id'],)); conn.execute('UPDATE users SET morale=100 WHERE faction_id=?', (f['id'],))
+    set_setting(conn, f'rally_{f["id"]}', int(time.time()) + 3600)
+    for m in conn.execute('SELECT id FROM users WHERE faction_id=?', (f['id'],)).fetchall(): create_notification(conn, m['id'], 'info', f'📯 [{f["tag"]}] rally! Your morale is at maximum.')
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Rally called — every member is at 100 morale!'})
+
+@app.route('/api/faction/research', methods=['POST'])
+@require_login
+def faction_research():
+    uid = session['user_id']; tech = (request.json or {}).get('tech'); conn = get_db(); f, err = _my_fac(conn, uid, True)
+    if err: conn.close(); return jsonify({'error': err[0]}), err[1]
+    if tech not in FACTION_TECH: conn.close(); return jsonify({'error': 'Unknown tech'}), 400
+    if conn.execute('SELECT 1 FROM faction_research WHERE faction_id=? AND tech=?', (f['id'], tech)).fetchone(): conn.close(); return jsonify({'error': 'Already researched'}), 400
+    cost = FACTION_TECH[tech]['cost']
+    if f['treasury'] < cost: conn.close(); return jsonify({'error': f'Treasury needs {cost}💰'}), 400
+    conn.execute('UPDATE factions SET treasury=treasury-? WHERE id=?', (cost, f['id'])); conn.execute('INSERT INTO faction_research VALUES(?,?)', (f['id'], tech))
+    for m in conn.execute('SELECT id FROM users WHERE faction_id=?', (f['id'],)).fetchall(): create_notification(conn, m['id'], 'info', f'🔬 Faction research complete: {FACTION_TECH[tech]["name"]}!')
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'Faction researched {FACTION_TECH[tech]["name"]} — all members benefit!'})
+
+def _notify_faction(conn, fid, msg):
+    for m in conn.execute('SELECT id FROM users WHERE faction_id=?', (fid,)).fetchall(): create_notification(conn, m['id'], 'info', msg)
+
+@app.route('/api/faction/war/declare', methods=['POST'])
+@require_login
+def war_declare():
+    uid = session['user_id']; tid = int((request.json or {}).get('faction_id', 0)); conn = get_db(); f, err = _my_fac(conn, uid, True)
+    if err: conn.close(); return jsonify({'error': err[0]}), err[1]
+    t = conn.execute('SELECT * FROM factions WHERE id=?', (tid,)).fetchone()
+    if not t or tid == f['id']: conn.close(); return jsonify({'error': 'Invalid target faction'}), 400
+    if rel_between(conn, f['id'], tid, status='active'): conn.close(); return jsonify({'error': 'You already have a treaty or war with them — end it first'}), 400
+    conn.execute("INSERT INTO faction_rel(a,b,kind,status,ts) VALUES(?,?,'war','active',?)", (f['id'], tid, int(time.time())))
+    announce(conn, f'⚔ WAR! [{f["tag"]}] {f["name"]} has declared war on [{t["tag"]}] {t["name"]}!')
+    _notify_faction(conn, tid, f'⚔ [{f["tag"]}] declared WAR on your faction! First to capture 25 enemy tiles wins.'); _notify_faction(conn, f['id'], f'⚔ We are at war with [{t["tag"]}]! First to capture 25 enemy tiles wins.')
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'War declared on {t["name"]}!'})
+
+@app.route('/api/faction/war/end', methods=['POST'])
+@require_login
+def war_end():
+    uid = session['user_id']; rid = int((request.json or {}).get('rel_id', 0)); conn = get_db(); f, err = _my_fac(conn, uid, True)
+    if err: conn.close(); return jsonify({'error': err[0]}), err[1]
+    r = conn.execute("SELECT * FROM faction_rel WHERE id=? AND kind='war' AND status='active' AND (a=? OR b=?)", (rid, f['id'], f['id'])).fetchone()
+    if not r: conn.close(); return jsonify({'error': 'No such war'}), 404
+    other = r['b'] if r['a'] == f['id'] else r['a']; mine = r['score_a'] if r['a'] == f['id'] else r['score_b']; theirs = r['score_b'] if r['a'] == f['id'] else r['score_a']
+    if time.time() - r['ts'] < 86400 and mine >= theirs: conn.close(); return jsonify({'error': 'A war lasts at least 24h unless you are losing — you can surrender if behind'}), 400
+    pay_ = 0
+    if mine < theirs:
+        pay_ = f['treasury']*0.15; conn.execute('UPDATE factions SET treasury=treasury-? WHERE id=?', (pay_, f['id'])); conn.execute('UPDATE factions SET treasury=treasury+? WHERE id=?', (pay_, other))
+    conn.execute("UPDATE faction_rel SET status='ended' WHERE id=?", (rid,))
+    announce(conn, f'🕊 [{f["tag"]}] ended the war ({mine}–{theirs}).'); _notify_faction(conn, other, f'🕊 [{f["tag"]}] ended the war.')
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'War ended{" — you paid "+str(int(pay_))+"💰 reparations" if pay_ else ""}'})
+
+@app.route('/api/faction/ally/propose', methods=['POST'])
+@require_login
+def ally_propose():
+    uid = session['user_id']; tid = int((request.json or {}).get('faction_id', 0)); conn = get_db(); f, err = _my_fac(conn, uid, True)
+    if err: conn.close(); return jsonify({'error': err[0]}), err[1]
+    t = conn.execute('SELECT * FROM factions WHERE id=?', (tid,)).fetchone()
+    if not t or tid == f['id']: conn.close(); return jsonify({'error': 'Invalid faction'}), 400
+    if rel_between(conn, f['id'], tid, status='active') or rel_between(conn, f['id'], tid, status='pending'): conn.close(); return jsonify({'error': 'There is already a relation/proposal'}), 400
+    cur = conn.execute("INSERT INTO faction_rel(a,b,kind,status,ts) VALUES(?,?,'ally','pending',?)", (f['id'], tid, int(time.time())))
+    notify_actions(conn, t['leader_id'], 'faction_ally', f'🤝 [{f["tag"]}] {f["name"]} proposes a faction alliance.',
+        [{'label': '✓ Accept', 'path': '/api/faction/rel/respond', 'body': {'rel_id': cur.lastrowid, 'accept': True}, 'cls': 'btn-success'}, {'label': '✕ Decline', 'path': '/api/faction/rel/respond', 'body': {'rel_id': cur.lastrowid, 'accept': False}, 'cls': 'btn-danger'}])
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Alliance proposed to their leader'})
+
+@app.route('/api/faction/rel/respond', methods=['POST'])
+@require_login
+def rel_respond():
+    d = request.json or {}; uid = session['user_id']; conn = get_db(); f, err = _my_fac(conn, uid, True)
+    if err: conn.close(); return jsonify({'error': err[0]}), err[1]
+    r = conn.execute("SELECT * FROM faction_rel WHERE id=? AND b=? AND status='pending'", (int(d.get('rel_id', 0)), f['id'])).fetchone()
+    if not r: conn.close(); return jsonify({'error': 'Proposal not found'}), 404
+    conn.execute('UPDATE faction_rel SET status=? WHERE id=?', ('active' if d.get('accept') else 'declined', r['id']))
+    ally = conn.execute('SELECT * FROM factions WHERE id=?', (r['a'],)).fetchone()
+    if d.get('accept'): announce(conn, f'🤝 [{ally["tag"]}] and [{f["tag"]}] are now allied!'); _notify_faction(conn, r['a'], f'🤝 [{f["tag"]}] accepted the alliance.')
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Alliance formed' if d.get('accept') else 'Declined'})
+
+@app.route('/api/faction/rel/break', methods=['POST'])
+@require_login
+def rel_break():
+    uid = session['user_id']; rid = int((request.json or {}).get('rel_id', 0)); conn = get_db(); f, err = _my_fac(conn, uid, True)
+    if err: conn.close(); return jsonify({'error': err[0]}), err[1]
+    conn.execute("UPDATE faction_rel SET status='ended' WHERE id=? AND kind='ally' AND (a=? OR b=?)", (rid, f['id'], f['id'])); conn.commit(); conn.close()
+    return jsonify({'success': True, 'message': 'Alliance ended'})
+
+# ── Ideology / wonders ───────────────────────────────────────────────────────
+@app.route('/api/ideology/set', methods=['POST'])
+@require_login
+def ideology_set():
+    uid = session['user_id']; k = (request.json or {}).get('id'); conn = get_db()
+    if k not in IDEOLOGIES: conn.close(); return jsonify({'error': 'Unknown ideology'}), 400
+    u = conn.execute('SELECT ideology,ideology_ts,money FROM users WHERE id=?', (uid,)).fetchone()
+    if u['ideology'] == k: conn.close(); return jsonify({'error': 'Already your ideology'}), 400
+    cost = 0
+    if u['ideology']:
+        if time.time() - (u['ideology_ts'] or 0) < 86400: conn.close(); return jsonify({'error': 'You can change ideology once per 24h'}), 400
+        cost = 2000
+        if u['money'] < cost: conn.close(); return jsonify({'error': 'A revolution costs 2000💰'}), 400
+    conn.execute('UPDATE users SET ideology=?,ideology_ts=?,money=money-? WHERE id=?', (k, int(time.time()), cost, uid))
+    ach = award_achievements(conn, uid); conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'{IDEOLOGIES[k]["name"]} adopted!', 'achievements': ach})
+
+@app.route('/api/wonders')
+@require_login
+def wonders_list():
+    conn = get_db(); own = {r['key']: r['owner_id'] for r in conn.execute('SELECT key,owner_id FROM wonders')}
+    out = [{'key': k, **v, 'owner_id': own.get(k), 'owner': uname(conn, own[k]) if k in own else None} for k, v in WONDERS.items()]
+    conn.close(); return jsonify(out)
+
+@app.route('/api/wonders/buy', methods=['POST'])
+@require_login
+def wonders_buy():
+    uid = session['user_id']; k = (request.json or {}).get('key'); conn = get_db(); conn.execute('BEGIN IMMEDIATE')
+    if k not in WONDERS: conn.rollback(); conn.close(); return jsonify({'error': 'Unknown wonder'}), 400
+    if conn.execute('SELECT 1 FROM wonders WHERE key=?', (k,)).fetchone(): conn.rollback(); conn.close(); return jsonify({'error': 'Someone already built it!'}), 400
+    u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone(); cost = WONDERS[k]['cost']
+    if not can_afford(u, cost): conn.rollback(); conn.close(); return jsonify({'error': f'Need {fmt_cost(cost)}'}), 400
+    pay(conn, uid, cost); conn.execute('INSERT INTO wonders VALUES(?,?,?)', (k, uid, int(time.time())))
+    announce(conn, f'{WONDERS[k]["icon"]} {u["username"]} has completed the {WONDERS[k]["name"]}!'); ach = award_achievements(conn, uid); conn.commit(); conn.close()
+    return jsonify({'success': True, 'message': f'{WONDERS[k]["name"]} built!', 'achievements': ach})
+
+# ── Embassies / trade / loans ────────────────────────────────────────────────
+@app.route('/api/embassy/build', methods=['POST'])
+@require_login
+def embassy_build():
+    uid = session['user_id']; hid = int((request.json or {}).get('host_id', 0)); conn = get_db()
+    if 'diplomacy' not in user_research(conn, uid): conn.close(); return jsonify({'error': 'Research Diplomacy first'}), 400
+    h = conn.execute('SELECT capital_key,username FROM users WHERE id=?', (hid,)).fetchone()
+    if hid == uid or not h: conn.close(); return jsonify({'error': 'Invalid country'}), 400
+    if not h['capital_key']: conn.close(); return jsonify({'error': f'{h["username"]} has no capital yet'}), 400
+    if conn.execute('SELECT 1 FROM embassies WHERE host_id=? AND owner_id=?', (hid, uid)).fetchone(): conn.close(); return jsonify({'error': 'You already have an embassy there'}), 400
+    if conn.execute('SELECT money FROM users WHERE id=?', (uid,)).fetchone()['money'] < 400: conn.close(); return jsonify({'error': 'An embassy costs 400💰'}), 400
+    conn.execute('UPDATE users SET money=money-400 WHERE id=?', (uid,)); conn.execute('INSERT INTO embassies VALUES(?,?,?)', (hid, uid, int(time.time())))
+    create_notification(conn, hid, 'info', f'🏳 {session["username"]} opened an embassy in your capital.'); ach = award_achievements(conn, uid); conn.commit(); conn.close()
+    return jsonify({'success': True, 'message': f'Embassy opened in {h["username"]}\'s capital', 'achievements': ach})
+
+def trade_ok(conn, a, b):
+    if fac_id(conn, a) and fac_id(conn, a) == fac_id(conn, b): return True
+    return bool(conn.execute('SELECT 1 FROM embassies WHERE (host_id=? AND owner_id=?) OR (host_id=? AND owner_id=?)', (a, b, b, a)).fetchone())
+
+@app.route('/api/embassy/list')
+@require_login
+def embassy_list():
+    uid = session['user_id']; conn = get_db()
+    o = [{'host_id': r['host_id'], 'name': uname(conn, r['host_id'])} for r in conn.execute('SELECT host_id FROM embassies WHERE owner_id=?', (uid,))]
+    h = [{'owner_id': r['owner_id'], 'name': uname(conn, r['owner_id'])} for r in conn.execute('SELECT owner_id FROM embassies WHERE host_id=?', (uid,))]
+    trades = []
+    for t in conn.execute("SELECT * FROM trades WHERE status IN ('active','pending') AND (from_id=? OR to_id=?)", (uid, uid)):
+        trades.append({**dict(t), 'from_name': uname(conn, t['from_id']), 'to_name': uname(conn, t['to_id'])})
+    loans = []
+    for l in conn.execute("SELECT * FROM loans WHERE status IN ('active','pending') AND (lender_id=? OR borrower_id=?)", (uid, uid)):
+        loans.append({**dict(l), 'lender': uname(conn, l['lender_id']), 'borrower': uname(conn, l['borrower_id'])})
+    conn.close(); return jsonify({'owned': o, 'hosted': h, 'trades': trades, 'loans': loans})
+
+@app.route('/api/trade/propose', methods=['POST'])
+@require_login
+def trade_propose():
+    d = request.json or {}; uid = session['user_id']; to = int(d.get('to_id', 0)); gr, tr = d.get('give_res'), d.get('get_res')
+    ga, ta = int(d.get('give_amt', 0)), int(d.get('get_amt', 0)); ok = set(RATE_VAL)
+    if gr not in ok or tr not in ok or gr == tr or not (1 <= ga <= 10**6) or not (1 <= ta <= 10**6) or to == uid: return jsonify({'error': 'Invalid trade'}), 400
+    conn = get_db()
+    if not conn.execute('SELECT 1 FROM users WHERE id=?', (to,)).fetchone(): conn.close(); return jsonify({'error': 'Unknown player'}), 400
+    if not trade_ok(conn, uid, to): conn.close(); return jsonify({'error': 'You need an embassy with them (or be in the same faction) to trade'}), 400
+    cur = conn.execute("INSERT INTO trades(from_id,to_id,give_res,give_amt,get_res,get_amt,status) VALUES(?,?,?,?,?,?,'pending')", (uid, to, gr, ga, tr, ta))
+    notify_actions(conn, to, 'trade_request', f'⚖ {session["username"]} offers: they send {ga}{RES_EMOJI[gr]} and you send {ta}{RES_EMOJI[tr]} every 10 min.',
+        [{'label': '✓ Accept', 'path': '/api/trade/respond', 'body': {'trade_id': cur.lastrowid, 'accept': True}, 'cls': 'btn-success'}, {'label': '✕ Decline', 'path': '/api/trade/respond', 'body': {'trade_id': cur.lastrowid, 'accept': False}, 'cls': 'btn-danger'}])
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Trade offer sent'})
+
+@app.route('/api/trade/respond', methods=['POST'])
+@require_login
+def trade_respond():
+    d = request.json or {}; uid = session['user_id']; conn = get_db()
+    t = conn.execute("SELECT * FROM trades WHERE id=? AND to_id=? AND status='pending'", (int(d.get('trade_id', 0)), uid)).fetchone()
+    if not t: conn.close(); return jsonify({'error': 'Offer not found'}), 404
+    conn.execute('UPDATE trades SET status=?,last_run=? WHERE id=?', ('active' if d.get('accept') else 'declined', int(time.time()), t['id']))
+    create_notification(conn, t['from_id'], 'info', f'⚖ {session["username"]} {"accepted" if d.get("accept") else "declined"} your trade offer.')
+    award_achievements(conn, t['from_id']); award_achievements(conn, uid); conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Trade deal active' if d.get('accept') else 'Declined'})
+
+@app.route('/api/trade/cancel', methods=['POST'])
+@require_login
+def trade_cancel():
+    uid = session['user_id']; conn = get_db()
+    conn.execute("UPDATE trades SET status='cancelled' WHERE id=? AND (from_id=? OR to_id=?)", (int((request.json or {}).get('trade_id', 0)), uid, uid)); conn.commit(); conn.close()
+    return jsonify({'success': True, 'message': 'Trade cancelled'})
+
+@app.route('/api/loan/request', methods=['POST'])
+@require_login
+def loan_request():
+    d = request.json or {}; uid = session['user_id']; to = int(d.get('to_id', 0)); unit = d.get('unit'); amt = int(d.get('amount', 0)); conn = get_db()
+    if unit not in ('boats', 'planes') or amt < 1 or to == uid: conn.close(); return jsonify({'error': 'Invalid request'}), 400
+    if fac_id(conn, uid) and fac_id(conn, uid) == fac_id(conn, to): conn.close(); return jsonify({'error': 'Faction mates already share one fleet — just use it!'}), 400
+    if not conn.execute('SELECT 1 FROM users WHERE id=?', (to,)).fetchone(): conn.close(); return jsonify({'error': 'Unknown player'}), 400
+    cur = conn.execute("INSERT INTO loans(lender_id,borrower_id,unit,amount,message,status,ts) VALUES(?,?,?,?,?,'pending',?)", (to, uid, unit, amt, (d.get('message') or '')[:200], int(time.time())))
+    msg = f'🚢 {session["username"]} asks to borrow {amt} {unit}.' + (f' "{(d.get("message") or "")[:200]}"' if d.get('message') else '')
+    notify_actions(conn, to, 'loan_request', msg, [{'label': '✓ Lend', 'path': '/api/loan/respond', 'body': {'loan_id': cur.lastrowid, 'accept': True}, 'cls': 'btn-success'}, {'label': '✕ Deny', 'path': '/api/loan/respond', 'body': {'loan_id': cur.lastrowid, 'accept': False}, 'cls': 'btn-danger'}])
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Request sent'})
+
+@app.route('/api/loan/respond', methods=['POST'])
+@require_login
+def loan_respond():
+    d = request.json or {}; uid = session['user_id']; conn = get_db(); conn.execute('BEGIN IMMEDIATE')
+    l = conn.execute("SELECT * FROM loans WHERE id=? AND lender_id=? AND status='pending'", (int(d.get('loan_id', 0)), uid)).fetchone()
+    if not l: conn.rollback(); conn.close(); return jsonify({'error': 'Request not found'}), 404
+    if d.get('accept'):
+        if pool_get(conn, uid, l['unit']) < l['amount']: conn.rollback(); conn.close(); return jsonify({'error': f'You only have {pool_get(conn, uid, l["unit"])} {l["unit"]}'}), 400
+        pool_add(conn, uid, l['unit'], -l['amount']); pool_add(conn, l['borrower_id'], l['unit'], l['amount']); conn.execute("UPDATE loans SET status='active' WHERE id=?", (l['id'],))
+    else: conn.execute("UPDATE loans SET status='denied' WHERE id=?", (l['id'],))
+    create_notification(conn, l['borrower_id'], 'info', f'🚢 {session["username"]} {"lent you" if d.get("accept") else "denied your request for"} {l["amount"]} {l["unit"]}.')
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Lent!' if d.get('accept') else 'Denied'})
+
+@app.route('/api/loan/return', methods=['POST'])
+@require_login
+def loan_return():
+    uid = session['user_id']; conn = get_db(); conn.execute('BEGIN IMMEDIATE')
+    l = conn.execute("SELECT * FROM loans WHERE id=? AND (borrower_id=? OR lender_id=?) AND status='active'", (int((request.json or {}).get('loan_id', 0)), uid, uid)).fetchone()
+    if not l: conn.rollback(); conn.close(); return jsonify({'error': 'Loan not found'}), 404
+    back = min(l['amount'], pool_get(conn, l['borrower_id'], l['unit']))
+    pool_add(conn, l['borrower_id'], l['unit'], -back); pool_add(conn, l['lender_id'], l['unit'], back); conn.execute("UPDATE loans SET status='returned' WHERE id=?", (l['id'],))
+    create_notification(conn, l['lender_id'], 'info', f'🚢 {uname(conn, l["borrower_id"])} returned {back}/{l["amount"]} {l["unit"]}.'); conn.commit(); conn.close()
+    return jsonify({'success': True, 'message': f'Returned {back} {l["unit"]}'})
+
+# ── Nukes & fallout ──────────────────────────────────────────────────────────
+def nuke_cost(conn): return int(float(get_setting(conn, 'nuke_cost', 100000000) or 100000000))
+
+@app.route('/api/nuke/build', methods=['POST'])
+@require_login
+def nuke_build():
+    d = request.json or {}; uid = session['user_id']; conn = get_db(); rs = user_research(conn, uid)
+    for t in ('nuclear_physics', 'rocketry', 'manhattan'):
+        if t not in rs: conn.close(); return jsonify({'error': f'Requires research: {RESEARCH_TREE[t]["name"]}'}), 400
+    for b in ('uranium_mine', 'enrichment', 'nuclear_plant'):
+        if group_levels(conn, uid, b) == 0: conn.close(); return jsonify({'error': f'You need a {BUILDINGS[b]["name"]}'}), 400
+    cost = nuke_cost(conn); u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
+    extra = {'uranium': NUKE_URANIUM, 'steel': NUKE_STEEL}
+    if not can_afford(u, extra): conn.close(); return jsonify({'error': f'Need {fmt_cost(extra)} as well'}), 400
+    if d.get('from_treasury'):
+        f, err = _my_fac(conn, uid, True)
+        if err or f['treasury'] < cost: conn.close(); return jsonify({'error': 'Leader-only, and the treasury needs ' + f'{cost:,}💰'}), 400
+        conn.execute('UPDATE factions SET treasury=treasury-? WHERE id=?', (cost, f['id']))
+    else:
+        if u['money'] < cost: conn.close(); return jsonify({'error': f'A nuclear warhead costs {cost:,}💰'}), 400
+        conn.execute('UPDATE users SET money=money-? WHERE id=?', (cost, uid))
+    pay(conn, uid, extra); conn.execute('UPDATE users SET nukes=nukes+1 WHERE id=?', (uid,)); conn.commit(); conn.close()
+    return jsonify({'success': True, 'message': '☢ A nuclear warhead has been assembled.'})
+
+@app.route('/api/nuke/launch', methods=['POST'])
+@require_login
+def nuke_launch():
+    d = request.json or {}; uid = session['user_id']; fk, tk = d.get('from_key', ''), d.get('target_key', ''); conn = get_db(); conn.execute('BEGIN IMMEDIATE')
+    def bail(m): conn.rollback(); conn.close(); return jsonify({'error': m}), 400
+    try: tl, tg = parse_key(tk); parse_key(fk)
+    except Exception: return bail('Bad keys')
+    ids = group_ids(conn, uid)
+    if not conn.execute(f'SELECT 1 FROM buildings b JOIN territories t ON t.grid_key=b.grid_key WHERE b.grid_key=? AND b.type="silo" AND t.owner_id IN ({_in(ids)})', [fk]+ids).fetchone(): return bail('Launch from a Missile Silo')
+    u = conn.execute('SELECT nukes,last_nuke FROM users WHERE id=?', (uid,)).fetchone()
+    if u['nukes'] < 1: return bail('You have no nuclear warheads')
+    if time.time() - (u['last_nuke'] or 0) < NUKE_COOLDOWN: return bail(f'Silo reloading ({int((NUKE_COOLDOWN-(time.time()-u["last_nuke"]))//60)+1} min)')
+    if cell_distance(fk, tk) > NUKE_RANGE: return bail(f'Out of range ({NUKE_RANGE} cells)')
+    R = random.randint(3, 10)
+    owners, n = devastate(conn, tl, tg, R, int(time.time()) + 6*3600, 'nuke')
+    conn.execute('UPDATE users SET nukes=nukes-1,last_nuke=? WHERE id=?', (int(time.time()), uid)); seen = set()
+    for o, cnt in owners.items():
+        g = fac_id(conn, o) or ('u', o)
+        if g not in seen:
+            seen.add(g); pool_add(conn, o, 'army', -int(pool_get(conn, o, 'army')*0.4))
+        conn.execute('UPDATE users SET morale=MAX(5,morale-30),money=money*0.9 WHERE id=?', (o,))
+        create_notification(conn, o, 'attack', f'☢ {session["username"]} NUKED you! {cnt} tiles vaporised, army -40%, morale shattered, money -10%.')
+    conn.execute('INSERT INTO battle_log (attacker,defender,grid_key,result,mode,details) VALUES (?,?,?,?,?,?)', (session['username'], ', '.join(uname(conn, o) for o in owners) or 'nobody', tk, 'victory', 'nuke', f'radius {R}, {n} cells'))
+    announce(conn, f'☢ {session["username"]} launched a nuclear missile! Radius {R} around {tl*GRID:.1f}°, {tg*GRID:.1f}° destroyed; {sum(owners.values())} territories vaporised.')
+    ach = award_achievements(conn, uid); conn.commit(); conn.close()
+    return jsonify({'success': True, 'message': f'☢ Detonation! Radius {R}: {sum(owners.values())} territories lost by {len(owners)} countr{"y" if len(owners)==1 else "ies"}.', 'radius': R, 'achievements': ach})
+
+@app.route('/api/fallout')
+def fallout_list():
+    conn = get_db(); rows = [r['grid_key'] for r in conn.execute('SELECT grid_key FROM fallout WHERE until>?', (int(time.time()),))]; conn.close(); return jsonify(rows)
+
+@app.route('/api/world')
+def world_info():
+    conn = get_db(); r = conn.execute('SELECT COALESCE(SUM(population),0) p,COUNT(*) c FROM territories WHERE owner_id IS NOT NULL').fetchone(); conn.close()
+    return jsonify({'population': r['p'], 'territories': r['c']})
+
+# ── Konami / merge ───────────────────────────────────────────────────────────
+@app.route('/api/konami', methods=['POST'])
+@require_login
+def konami():
+    conn = get_db(); conn.execute('UPDATE users SET konami=1 WHERE id=?', (session['user_id'],)); conn.commit(); conn.close(); return jsonify({'success': True})
+
+@app.route('/api/merge/request', methods=['POST'])
+@require_login
+def merge_request():
+    uid = session['user_id']; name = ((request.json or {}).get('username') or '').strip(); conn = get_db()
+    if not conn.execute('SELECT konami FROM users WHERE id=?', (uid,)).fetchone()['konami']: conn.close(); return jsonify({'error': '???'}), 403
+    t = conn.execute('SELECT id FROM users WHERE username=? COLLATE NOCASE', (name,)).fetchone()
+    if not t or t['id'] == uid: conn.close(); return jsonify({'error': 'Player not found'}), 404
+    cur = conn.execute("INSERT INTO merges(from_id,to_id,status,ts) VALUES(?,?,'pending',?)", (uid, t['id'], int(time.time())))
+    notify_actions(conn, t['id'], 'merge_request', f'🧬 {session["username"]} proposes to MERGE your countries into one (your account would be absorbed into theirs — territories, resources, research, everything).',
+        [{'label': '✓ Merge', 'path': '/api/merge/respond', 'body': {'merge_id': cur.lastrowid, 'accept': True}, 'cls': 'btn-success'}, {'label': '✕ No', 'path': '/api/merge/respond', 'body': {'merge_id': cur.lastrowid, 'accept': False}, 'cls': 'btn-danger'}])
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Merge proposal sent'})
+
+def do_merge(conn, keep, gone):
+    _leave_faction(conn, gone); g = conn.execute('SELECT * FROM users WHERE id=?', (gone,)).fetchone(); k = conn.execute('SELECT * FROM users WHERE id=?', (keep,)).fetchone()
+    cols = ['money', 'food', 'wood', 'metal', 'oil', 'steel', 'uranium', 'gems', 'nukes', 'wins', 'losses', 'chat_count']
+    conn.execute('UPDATE users SET ' + ','.join(f'{c}={c}+?' for c in cols) + ' WHERE id=?', [g[c] for c in cols] + [keep])
+    for p in POOLS: pool_add(conn, keep, p, g[p])
+    rs = sorted(set(json.loads(k['research'] or '[]')) | set(json.loads(g['research'] or '[]'))); conn.execute('UPDATE users SET research=? WHERE id=?', (json.dumps(rs), keep))
+    conn.execute('UPDATE territories SET owner_id=? WHERE owner_id=?', (keep, gone))
+    conn.execute('UPDATE OR IGNORE embassies SET owner_id=? WHERE owner_id=?', (keep, gone)); conn.execute('UPDATE OR IGNORE embassies SET host_id=? WHERE host_id=?', (keep, gone))
+    conn.execute('DELETE FROM embassies WHERE owner_id=? OR host_id=? OR owner_id=host_id', (gone, gone))
+    conn.execute('UPDATE OR IGNORE achievements SET user_id=? WHERE user_id=?', (keep, gone)); conn.execute('DELETE FROM achievements WHERE user_id=?', (gone,))
+    conn.execute('UPDATE wonders SET owner_id=? WHERE owner_id=?', (keep, gone))
+    conn.execute("UPDATE trades SET status='cancelled' WHERE from_id=? OR to_id=?", (gone, gone)); conn.execute("UPDATE loans SET status='returned' WHERE lender_id=? OR borrower_id=?", (gone, gone))
+    for t in ('notifications', 'alliances'):
+        col = 'user_id' if t == 'notifications' else None
+        if col: conn.execute(f'DELETE FROM {t} WHERE {col}=?', (gone,))
+    try: conn.execute('DELETE FROM alliances WHERE user_id=? OR ally_id=?', (gone, gone))
+    except Exception: pass
+    conn.execute('DELETE FROM faction_requests WHERE user_id=?', (gone,)); conn.execute('DELETE FROM users WHERE id=?', (gone,))
+    create_notification(conn, keep, 'info', f'🧬 {g["username"]} merged into your country!'); announce(conn, f'🧬 {g["username"]} and {k["username"]} merged into one nation!')
+
+@app.route('/api/merge/respond', methods=['POST'])
+@require_login
+def merge_respond():
+    d = request.json or {}; uid = session['user_id']; conn = get_db(); conn.execute('BEGIN IMMEDIATE')
+    m = conn.execute("SELECT * FROM merges WHERE id=? AND to_id=? AND status='pending'", (int(d.get('merge_id', 0)), uid)).fetchone()
+    if not m: conn.rollback(); conn.close(); return jsonify({'error': 'Proposal not found'}), 404
+    conn.execute('UPDATE merges SET status=? WHERE id=?', ('done' if d.get('accept') else 'declined', m['id']))
+    if d.get('accept'):
+        try: do_merge(conn, m['from_id'], uid)
+        except Exception as e: conn.rollback(); conn.close(); return jsonify({'error': f'Merge failed: {e}'}), 500
+        session.clear()
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Merged! Log in with the other account from now on.' if d.get('accept') else 'Declined'})
+
+# ── admin extras (v5) ────────────────────────────────────────────────────────
+@app.route('/api/admin/chat_edit', methods=['POST'])
+@require_admin
+def admin_chat_edit():
+    d = request.json or {}; conn = get_db(); conn.execute('UPDATE chat SET message=?,edited=1 WHERE id=?', ((d.get('text') or '')[:200], int(d.get('id', 0)))); conn.commit(); conn.close()
+    return jsonify({'success': True, 'message': 'Message edited'})
+
+@app.route('/api/admin/chat_as', methods=['POST'])
+@require_admin
+def admin_chat_as():
+    d = request.json or {}; conn = get_db(); u = conn.execute('SELECT id,username,color FROM users WHERE id=?', (int(d.get('user_id', 0)),)).fetchone()
+    text = ' '.join((d.get('message') or '').split())[:200]
+    if not u or not text: conn.close(); return jsonify({'error': 'Pick a user and type something'}), 400
+    ch = _channel(conn, u['id'], d.get('channel', 'global'))
+    if not ch: conn.close(); return jsonify({'error': 'That user has no faction'}), 400
+    conn.execute('INSERT INTO chat(channel,user_id,username,color,message,ts) VALUES(?,?,?,?,?,?)', (ch, u['id'], u['username'], u['color'], text, int(time.time()))); conn.commit(); conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/admin/clear_fallout', methods=['POST'])
+@require_admin
+def admin_clear_fallout():
+    gk = (request.json or {}).get('grid_key'); conn = get_db()
+    if gk: conn.execute('DELETE FROM fallout WHERE grid_key=?', (gk,))
+    else: conn.execute('DELETE FROM fallout')
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Fallout cleared'})
+
+@app.route('/api/admin/give_resource', methods=['POST'])
+@require_admin
+def admin_give_resource():
+    d = request.json or {}; r = d.get('resource'); uid = int(d.get('user_id', 0)); am = int(d.get('amount', 0)); conn = get_db()
+    if r in POOLS: pool_add(conn, uid, r, am)
+    elif r in ('money', 'food', 'wood', 'metal', 'oil', 'steel', 'uranium', 'gems', 'nukes'): conn.execute(f'UPDATE users SET {r}=MAX(0,{r}+?) WHERE id=?', (am, uid))
+    else: conn.close(); return jsonify({'error': 'Bad resource'}), 400
+    conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'Gave {am} {r}'})
+
+@app.route('/api/admin/set_setting', methods=['POST'])
+@require_admin
+def admin_set_setting():
+    d = request.json or {}; k = d.get('key')
+    if k not in ('income_mult', 'troop_cost_mult', 'events_enabled', 'nuke_cost'): return jsonify({'error': 'Bad key'}), 400
+    v = d.get('value')
+    if k == 'nuke_cost':
+        try: v = max(0, int(float(v)))
+        except Exception: return jsonify({'error': 'Bad value'}), 400
+    elif k != 'events_enabled':
+        try: v = max(0.1, min(float(v), 20))
+        except Exception: return jsonify({'error': 'Bad value'}), 400
+    conn = get_db(); set_setting(conn, k, v); conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'{k} = {v}'})
+
+def me_extra(conn, u, uid):
+    f = None; fid = u['faction_id']
+    if fid:
+        fr = conn.execute('SELECT * FROM factions WHERE id=?', (fid,)).fetchone()
+        if fr: f = {'id': fr['id'], 'name': fr['name'], 'tag': fr['tag'], 'is_leader': fr['leader_id'] == uid, 'color': fr['color'], 'mode': fr['mode'], 'techs': [x['tech'] for x in conn.execute('SELECT tech FROM faction_research WHERE faction_id=?', (fid,))]}
+    pop = conn.execute('SELECT COALESCE(SUM(population),0) p FROM territories WHERE owner_id=?', (uid,)).fetchone()['p']
+    return {'steel': round(u['steel']), 'uranium': round(u['uranium']), 'gems': round(u['gems']), 'nukes': u['nukes'], 'ideology': u['ideology'],
+            'capital_key': u['capital_key'], 'konami': bool(u['konami']), 'faction': f, 'population': pop, 'base_color': u['base_color'] or u['color'],
+            'ideology_cooldown': max(0, int((u['ideology_ts'] or 0) + 86400 - time.time())) if u['ideology'] else 0,
+            'wonders': sorted(my_wonders(conn, uid)), 'nuke_cost': nuke_cost(conn), 'uni_discount': round(research_discount(conn, uid)*100)}
+
+def detail_extra(conn, grid_key, row):
+    out = {'fallout': fallout_active(conn, grid_key)}
+    if row and row['owner_id']:
+        c = conn.execute('SELECT capital_key FROM users WHERE id=?', (row['owner_id'],)).fetchone()
+        out['capital'] = bool(c and c['capital_key'] == grid_key); out['invested'] = round(row['invested'] or 0)
+    uid = session.get('user_id')
+    if uid and (not row or not row['owner_id']):
+        try:
+            gl, gg = parse_key(grid_key); out['claim'] = claim_price(conn, uid, row['terrain'] if row else get_terrain(gl, gg))
+        except Exception: pass
+    return out
+
+
+init_db(); migrate_v4(); migrate_v5()
 
 if __name__ == '__main__':
     print("\n" + "="*56)
