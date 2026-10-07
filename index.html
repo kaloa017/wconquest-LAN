@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>World Conquest</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Rajdhani:wght@400;500;600&display=swap" rel="stylesheet">
@@ -405,6 +405,123 @@ select.input-sm option{background:var(--panel3)}
 .leaflet-control-zoom a:hover{background:var(--panel2)!important}
 .map-tip{background:rgba(17,22,32,.93)!important;border:1px solid rgba(200,150,58,.3)!important;border-radius:3px!important;color:var(--text)!important;font-family:'Rajdhani',sans-serif!important;font-size:12px!important;padding:5px 9px!important;white-space:nowrap!important;box-shadow:0 4px 12px rgba(0,0,0,.5)!important}
 .map-tip::before{display:none!important}
+/* ═══ v4 UI OVERHAUL ═════════════════════════════════════════════════ */
+:root{--bg:#0a0d13;--panel:#121722;--panel2:#1a2130;--panel3:#222b3d;--border:#2b3650;--radius:12px;
+  --navbar-h:52px;--hud-h:36px;--mobile-nav-h:62px;--safe-b:env(safe-area-inset-bottom,0px);--safe-t:env(safe-area-inset-top,0px)}
+html,body{height:100%}
+body{height:100dvh;font-size:15px;line-height:1.35;overscroll-behavior:none}
+#game-screen{height:100dvh}
+input,select,textarea{font-size:16px!important}
+.btn{border-radius:9px;min-height:38px;padding:8px 14px;font-size:13px}
+.btn-sm{min-height:34px;padding:6px 11px;font-size:12px}
+.btn-full{width:100%}
+.btn-blue{background:#2a6fa8;color:#fff}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.form-input,.input-sm{border-radius:9px;min-height:38px}
+#navbar{height:calc(var(--navbar-h) + var(--safe-t));padding-top:var(--safe-t);background:linear-gradient(180deg,#161d2b,#101521);box-shadow:0 2px 12px rgba(0,0,0,.4)}
+.res-pill{border-radius:20px;padding:4px 10px;font-size:13px;background:var(--panel2)}
+#hud-strip{display:flex;gap:6px;align-items:center;padding:0 10px;height:var(--hud-h);background:#0e131c;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none;flex-shrink:0;z-index:150}
+#hud-strip::-webkit-scrollbar{display:none}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:20px;background:var(--panel2);border:1px solid var(--border);white-space:nowrap;color:var(--text);flex-shrink:0}
+.chip.good{border-color:rgba(46,204,113,.5);color:#7ee8a2}.chip.bad{border-color:rgba(231,76,60,.5);color:#ff8a7a}
+.chip.gold{border-color:rgba(240,192,64,.55);color:var(--gold)}.chip.btnish{cursor:pointer}
+.chip small{color:var(--text3);font-weight:500}
+/* map look: dark filter over free OSM tiles */
+.dark-tiles{filter:invert(1) hue-rotate(185deg) brightness(.88) contrast(.92) saturate(.55)}
+.leaflet-control-zoom a{width:36px!important;height:36px!important;line-height:36px!important;border-radius:8px!important}
+.leaflet-control-zoom{border:none!important;box-shadow:var(--shadow)!important}
+/* sidebar */
+#sidebar{width:370px;background:var(--panel)}
+.sidebar-tabs{background:#0f141e;padding:4px 4px 0;gap:2px}
+.stab{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:56px;flex:0 0 auto;padding:7px 6px 6px;font-size:10px;border-radius:8px 8px 0 0}
+.stab .si{font-size:18px;line-height:1.1}
+.stab.active{background:var(--panel);}
+.stab .dot{position:absolute;top:4px;right:10px;width:8px;height:8px;border-radius:50%;background:var(--red2);display:none}
+.stab{position:relative}.stab.has-dot .dot{display:block}
+.panel-content{padding:14px}
+.panel-content.chatp{display:none;flex-direction:column;padding:10px}
+.panel-content.chatp.active{display:flex}
+.tp-card,.tc{border-radius:var(--radius);background:var(--panel2);border:1px solid var(--border)}
+.army-section{border-radius:var(--radius);background:var(--panel2);border:1px solid var(--border);padding:12px;margin-bottom:10px}
+.army-section-title{font-weight:700;font-size:13px;letter-spacing:.6px;margin-bottom:8px;text-transform:uppercase}
+.v4-card{border-radius:var(--radius);background:var(--panel2);border:1px solid var(--border);padding:12px;margin-bottom:10px}
+.v4-card h4{font-size:12px;letter-spacing:.8px;text-transform:uppercase;color:var(--text2);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:6px}
+.v4-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.v4-row>.grow{flex:1;min-width:0}
+.v4-sub{font-size:12px;color:var(--text3)}
+.v4-bar{height:8px;border-radius:5px;background:#0b0f16;overflow:hidden;margin:6px 0}
+.v4-bar>i{display:block;height:100%;border-radius:5px;background:linear-gradient(90deg,#c0392b,#e8b84b 50%,#2ecc71)}
+.pv-odds{font-family:'Cinzel',serif;font-size:30px;font-weight:700;text-align:center;line-height:1}
+.pv-nums{display:flex;justify-content:space-between;font-size:13px;color:var(--text2);margin-top:2px}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.chips .chip{font-size:11px;padding:2px 8px}
+input[type=range]{width:100%;accent-color:var(--accent2);height:28px}
+.bld-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.bld-opt{background:var(--panel3);border:1px solid var(--border);border-radius:10px;padding:9px;text-align:left;color:var(--text);cursor:pointer;font-family:inherit}
+.bld-opt:hover:not(:disabled){border-color:var(--accent)}
+.bld-opt:disabled{opacity:.45}
+.bld-opt b{display:block;font-size:13px}.bld-opt span{font-size:11px;color:var(--text3)}
+/* chat */
+.chat-tabs{display:flex;gap:6px;margin-bottom:8px}
+.chat-tabs button{flex:1}
+#chat-msgs{flex:1;overflow-y:auto;min-height:160px;background:#0c1018;border:1px solid var(--border);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:5px}
+.cm{font-size:14px;word-break:break-word}.cm b{margin-right:5px}.cm time{font-size:10px;color:var(--text3);margin-left:5px}
+.cm .del{color:var(--red2);cursor:pointer;margin-left:6px;font-size:11px}
+.chat-in{display:flex;gap:6px;margin-top:8px}.chat-in input{flex:1}
+.quest-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ach{background:var(--panel3);border:1px solid var(--border);border-radius:10px;padding:8px;font-size:12px;opacity:.55}
+.ach.done{opacity:1;border-color:rgba(240,192,64,.6)}.ach b{display:block;font-size:13px}
+.more-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:6px 0 14px}
+.more-grid button{background:var(--panel2);border:1px solid var(--border);border-radius:14px;color:var(--text);padding:14px 4px;font-family:inherit;font-size:13px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:4px}
+.more-grid button span{font-size:26px}
+/* battle report */
+#battle-report{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:8200;display:none;align-items:center;justify-content:center;padding:16px}
+#battle-report.open{display:flex}
+#br-box{background:var(--panel);border:1px solid var(--border);border-radius:16px;max-width:430px;width:100%;max-height:88dvh;overflow-y:auto;padding:18px;box-shadow:var(--shadow)}
+#br-box h2{font-family:'Cinzel',serif;text-align:center;font-size:24px;letter-spacing:2px}
+#br-box h2.win{color:var(--green2)}#br-box h2.lose{color:var(--red2)}
+.br-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.br-cols h5{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);margin-bottom:5px}
+.br-big{font-family:'Cinzel',serif;font-size:26px;color:var(--text)}
+.mod{display:flex;justify-content:space-between;font-size:12px;padding:2px 0;border-bottom:1px dashed var(--border)}
+.mod.up b{color:var(--green2)}.mod.dn b{color:var(--red2)}
+#online-widget{z-index:200}
+body.sheet-open #online-widget{display:none}
+#toast{z-index:9500}
+/* ═══ PHONES ═════════════════════════════════════════════════════════ */
+@media(max-width:767px){
+  :root{--navbar-h:48px}
+  .nav-logo,.player-info span#player-name,#rank-badge{display:none}
+  .player-info{gap:0}
+  #navbar{gap:5px;padding-left:8px;padding-right:8px}
+  #navbar .btn{min-height:34px;padding:4px 9px}
+  .res-pill{padding:3px 8px;font-size:12px}
+  #main{flex:1;min-height:0;padding-bottom:calc(var(--mobile-nav-h) + var(--safe-b))}
+  #map{height:100%!important}
+  #mobile-nav{height:calc(var(--mobile-nav-h) + var(--safe-b))!important;padding-bottom:var(--safe-b);background:linear-gradient(180deg,#151b28,#0f131c)}
+  .mnav-btn{font-size:10px;padding:6px 2px;position:relative}
+  .mnav-btn .micon{font-size:22px}
+  .mnav-btn .dot{position:absolute;top:6px;right:22%;width:9px;height:9px;border-radius:50%;background:var(--red2);display:none}
+  .mnav-btn.has-dot .dot{display:block}
+  #mobile-sheet{bottom:calc(var(--mobile-nav-h) + var(--safe-b))!important;max-height:calc(100dvh - var(--navbar-h) - var(--hud-h) - var(--mobile-nav-h) - 24px)!important;height:auto;z-index:260;border-radius:20px 20px 0 0!important}
+  #mobile-sheet.tall{height:calc(100dvh - var(--navbar-h) - var(--hud-h) - var(--mobile-nav-h) - 24px)!important}
+  #mobile-sheet-handle{padding:10px 16px 6px}
+  #mobile-sheet-content{padding:2px 14px calc(18px + var(--safe-b))!important}
+  #online-widget{top:8px;bottom:auto;left:8px;min-width:0;max-width:150px;opacity:.95}
+  #online-list{max-height:110px}
+  #toast{bottom:calc(var(--mobile-nav-h) + var(--safe-b) + 14px);max-width:92vw}
+  #notif-container{top:calc(var(--navbar-h) + var(--hud-h) + 8px);right:8px;left:8px;max-width:none}
+  .modal-overlay{padding:0;align-items:flex-end}
+  .modal-box{max-width:100%!important;border-radius:18px 18px 0 0;max-height:94dvh;overflow-y:auto}
+  #auth-box{padding:24px 20px;width:94vw}
+  .bld-grid{grid-template-columns:1fr 1fr}
+  .admin-table{font-size:12px}
+  .leaflet-control-zoom{display:none}
+  #chat-msgs{min-height:0;height:46dvh}
+  .pv-odds{font-size:34px}
+}
+@media(min-width:768px) and (max-width:1000px){#sidebar{width:320px}}
+
 </style>
 </head>
 <body>
@@ -466,24 +583,22 @@ select.input-sm option{background:var(--panel3)}
   </div>
  </nav>
 
+ <div id="hud-strip"></div>
+
  <!-- MAP + SIDEBAR -->
  <div id="main">
   <div id="map"></div>
 
   <!-- DESKTOP SIDEBAR -->
   <div id="sidebar">
-   <div class="sidebar-tabs">
-    <button class="stab active" data-panel="territory" onclick="showPanel('territory')">Territory</button>
-    <button class="stab" data-panel="research" onclick="showPanel('research')">Research</button>
-    <button class="stab" data-panel="market" onclick="showPanel('market')">Market</button>
-    <button class="stab" data-panel="leaderboard" onclick="showPanel('leaderboard')">Ranks</button>
-    <button class="stab" data-panel="battles" onclick="showPanel('battles')">Battles</button>
-    <button class="stab" data-panel="social" onclick="showPanel('social')">Social</button>
-   </div>
+   <div class="sidebar-tabs"><button class="stab active" data-panel="territory" onclick="showPanel('territory')"><span class="si">🏴</span>Tile<i class="dot"></i></button><button class="stab" data-panel="chat" onclick="showPanel('chat')"><span class="si">💬</span>Chat<i class="dot"></i></button><button class="stab" data-panel="faction" onclick="showPanel('faction')"><span class="si">🚩</span>Faction<i class="dot"></i></button><button class="stab" data-panel="quests" onclick="showPanel('quests')"><span class="si">🎁</span>Quests<i class="dot"></i></button><button class="stab" data-panel="research" onclick="showPanel('research')"><span class="si">🔬</span>Tech<i class="dot"></i></button><button class="stab" data-panel="market" onclick="showPanel('market')"><span class="si">💹</span>Market<i class="dot"></i></button><button class="stab" data-panel="leaderboard" onclick="showPanel('leaderboard')"><span class="si">🏆</span>Ranks<i class="dot"></i></button><button class="stab" data-panel="battles" onclick="showPanel('battles')"><span class="si">⚔</span>Battles<i class="dot"></i></button><button class="stab" data-panel="social" onclick="showPanel('social')"><span class="si">🤝</span>Social<i class="dot"></i></button></div>
    <div id="panel-territory" class="panel-content active">
     <div id="territory-info"><div class="empty-state"><div class="es-icon">🗺</div><strong>Click any land territory</strong><br>to view details and take action<br><span style="color:var(--text3);font-size:11px">Keybind: <kbd style="background:var(--panel3);border:1px solid var(--border);border-radius:2px;padding:1px 5px;font-size:10px">C</kbd> to claim selected</span></div></div>
     <div id="territory-actions"></div>
    </div>
+   <div id="panel-chat" class="panel-content chatp"><div id="chat-content"></div></div>
+   <div id="panel-faction" class="panel-content"><div id="faction-content"></div></div>
+   <div id="panel-quests" class="panel-content"><div id="quests-content"></div></div>
    <div id="panel-research" class="panel-content"><div id="research-content"></div></div>
    <div id="panel-market" class="panel-content"><div id="market-content"></div></div>
    <div id="panel-leaderboard" class="panel-content"><div id="leaderboard-list"></div></div>
@@ -493,15 +608,7 @@ select.input-sm option{background:var(--panel3)}
  </div>
 
  <!-- MOBILE BOTTOM NAV -->
- <div id="mobile-nav">
-  <button class="mnav-btn active" data-mn="map" onclick="mobileNav('map')"><span class="micon">🗺</span>Map</button>
-  <button class="mnav-btn" data-mn="territory" onclick="mobileNav('territory')"><span class="micon">🏴</span>Territory</button>
-  <button class="mnav-btn" data-mn="research" onclick="mobileNav('research')"><span class="micon">🔬</span>Research</button>
-  <button class="mnav-btn" data-mn="market" onclick="mobileNav('market')"><span class="micon">💹</span>Market</button>
-  <button class="mnav-btn" data-mn="leaderboard" onclick="mobileNav('leaderboard')"><span class="micon">🏆</span>Ranks</button>
-  <button class="mnav-btn" data-mn="battles" onclick="mobileNav('battles')"><span class="micon">⚔</span>Battles</button>
-  <button class="mnav-btn" data-mn="social" onclick="mobileNav('social')"><span class="micon">🤝</span>Social</button>
- </div>
+ <div id="mobile-nav"><button class="mnav-btn active" data-mn="map" onclick="mobileNav('map')"><span class="micon">🗺</span>Map<i class="dot"></i></button><button class="mnav-btn" data-mn="territory" onclick="mobileNav('territory')"><span class="micon">🏴</span>Tile<i class="dot"></i></button><button class="mnav-btn" data-mn="chat" onclick="mobileNav('chat')"><span class="micon">💬</span>Chat<i class="dot"></i></button><button class="mnav-btn" data-mn="faction" onclick="mobileNav('faction')"><span class="micon">🚩</span>Faction<i class="dot"></i></button><button class="mnav-btn" data-mn="more" onclick="mobileNav('more')"><span class="micon">☰</span>More<i class="dot"></i></button></div>
 
  <!-- MOBILE SHEET -->
  <div id="mobile-sheet">
@@ -534,6 +641,8 @@ select.input-sm option{background:var(--panel3)}
 
 <!-- ANN POPUPS -->
 <div id="ann-container"><div id="ann-backdrop" onclick="closeCurrentAnn()"></div></div>
+
+<div id="battle-report"><div id="br-box"></div></div>
 
 <!-- TOAST -->
 <div id="toast"></div>
@@ -2159,6 +2268,434 @@ async function startGame(user){
   },12000);
   // Win condition: only checked server-side when all land is claimed
 }
+</script>
+<script>
+/* ═══ v4 CLIENT ═══════════════════════════════════════════════════════ */
+Object.assign(RESEARCH_TREE,{
+  tactics:{name:'Tactics',icon:'🧠',cost:180,branch:'military',requires:['iron'],desc:'Morale never drops below 30; +5% attack'},
+  medicine:{name:'Field Medicine',icon:'⚕',cost:200,branch:'military',requires:['castle'],desc:'-25% casualties'},
+  logistics:{name:'Logistics',icon:'📦',cost:220,branch:'military',requires:['iron'],desc:'+25% army capacity'},
+  espionage:{name:'Espionage',icon:'🕵',cost:260,branch:'military',requires:['tactics'],desc:'See exact enemy defense & modifiers'},
+  engineering:{name:'Engineering',icon:'🏗',cost:200,branch:'economy',requires:['trade'],desc:'-20% building costs'},
+  banking:{name:'Banking',icon:'🏦',cost:300,branch:'economy',requires:['trade'],desc:'-20% claim cost, +10% money'},
+  navigation:{name:'Navigation',icon:'🧭',cost:260,branch:'naval',requires:['shipyard'],desc:'Boat range +2, boats carry +4 troops'},
+  jets:{name:'Jet Engines',icon:'🛩',cost:500,branch:'naval',requires:['airforce'],desc:'Plane range +2'},
+  radar:{name:'Radar',icon:'📡',cost:350,branch:'naval',requires:['airforce'],desc:'-30% damage from air strikes against you'},
+});
+RESEARCH_TREE.shipyard.desc='Unlocks Ports & Boats (amphibious landings)';
+RESEARCH_TREE.airforce.desc='Unlocks Airports & Planes';
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let BLD={};
+const WX_ICON={clear:'☀️',rain:'🌧',fog:'🌫',snow:'🌨',storm:'⛈'};
+const WX_FX={clear:'no effect',rain:'-7% attack',fog:'-5% land, -25% air',snow:'-12% attack',storm:'-18% land, -40% air'};
+/* weather: deterministic per 10-min slot & region — computed locally, identical to the server's formula */
+const WX_TABLE={polar:[['clear',30],['snow',40],['fog',15],['storm',15]],temperate:[['clear',45],['rain',25],['fog',12],['snow',10],['storm',8]],tropical:[['clear',40],['rain',30],['storm',20],['fog',10]]};
+function weatherFor(slot,gl,gg){
+  const lat=Math.abs(gl*GRID),band=lat>55?'polar':lat>25?'temperate':'tropical';
+  const rx=Math.floor(gl/25),ry=Math.floor(gg/25);
+  let h=((Math.imul(slot,73856093)^Math.imul(rx,19349663)^Math.imul(ry,83492791))>>>0);
+  h=(h^(h>>>13))>>>0; h=Math.imul(h,1274126177)>>>0; h=((h^(h>>>16))>>>0)%100;
+  let acc=0;for(const[n,w] of WX_TABLE[band]){acc+=w;if(h<acc)return n}return'clear';
+}
+const curSlot=()=>Math.floor(Date.now()/600000);
+const nextWxMins=()=>Math.ceil((600-(Date.now()/1000%600))/60);
+
+/* ── map: free OpenStreetMap tiles (no API key) ── */
+function initMap(){
+  canvasR=L.canvas({padding:.5});
+  const wb=L.latLngBounds(L.latLng(-85,-180),L.latLng(85,180));
+  map=L.map('map',{zoomControl:true,attributionControl:true,preferCanvas:true,worldCopyJump:false,maxBoundsViscosity:1.0,maxBounds:wb,minZoom:2,zoomSnap:.5,tap:true}).setView([30,15],4);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',maxZoom:12,minZoom:2,noWrap:true,bounds:wb,className:'dark-tiles',crossOrigin:true}).addTo(map);
+  map.on('mousemove',onMapMove);map.on('click',onMapClick);
+  map.on('moveend',()=>updateHud());
+  window.addEventListener('resize',()=>map.invalidateSize());
+}
+
+/* ── water / coast detection (client knows the land polygons; server caches what clients report) ── */
+function waterMap(key){
+  if(!landGeoJSON)return null;const[gl,gg]=parseKey(key),m={};
+  for(const k of [key,...adjKeys(gl,gg)]){const[a,b]=parseKey(k);m[k]=!isLand(a,b)}return m;
+}
+async function reportWater(key){const w=waterMap(key);if(w&&currentUser)await api('POST','/api/water/report',{water:w})}
+
+/* ── helpers ── */
+const dist=(a,b)=>cellDist(a,b);
+const myTiles=()=>Object.keys(territories).filter(k=>territories[k].owner_id===currentUser?.id);
+const resIcon={money:'💰',wood:'🌲',metal:'⚙',oil:'🛢',food:'🌾'};
+const fmtCost=c=>Object.entries(c).map(([k,v])=>v+resIcon[k]).join(' ');
+function bldCost(type,lvl){let c={...(BLD[type]?.costs?.[lvl-1]||{})};if((currentUser?.research||[]).includes('engineering'))for(const k in c)c[k]=Math.floor(c[k]*.8);return c}
+function chipsOf(list){return`<div class="chips">${(list||[]).map(([n,m])=>`<span class="chip ${m>1.001?'good':m<.999?'bad':''}">${esc(n)} ×${(+m).toFixed(2)}</span>`).join('')}</div>`}
+function moraleLabel(m){return m>=75?'🔥 Fired up':m>=45?'🙂 Steady':m>=25?'😟 Shaky':'😱 Broken'}
+
+/* ── HUD strip ── */
+function updateHud(){
+  const el=document.getElementById('hud-strip');if(!el)return;
+  const u=currentUser;
+  let center=[30,15];try{const c=map.getCenter();center=[c.lat,c.lng]}catch(e){}
+  const wx=weatherFor(curSlot(),Math.floor(center[0]/GRID),Math.floor(center[1]/GRID));
+  let h=`<span class="chip" title="Local weather — changes every 10 min (${WX_FX[wx]})">${WX_ICON[wx]} ${wx} <small>${nextWxMins()}m</small></span>`;
+  if(u){
+    const rs=u.research||[];
+    h=`<span class="chip btnish" onclick="openPanel('territory')">⚔ ${u.army}<small>/${u.army_cap}</small></span>`+
+      (rs.includes('shipyard')?`<span class="chip">⚓ ${u.boats}</span>`:'')+(rs.includes('airforce')?`<span class="chip">✈ ${u.planes}</span>`:'')+
+      `<span class="chip ${u.morale>=60?'good':u.morale<30?'bad':''}" title="Morale boosts attacks. Wins raise it, losses drop it.">${moraleLabel(u.morale)} <small>${u.morale}</small></span>`+h;
+    if(u.event){const m=Math.max(1,Math.round((u.event.until-Date.now()/1000)/60));h+=`<span class="chip gold btnish" onclick="openPanel('quests')" title="${esc(u.event.desc)}">${u.event.icon} ${esc(u.event.name)} <small>${m}m</small></span>`}
+    if(u.daily_ready)h+=`<span class="chip good btnish" onclick="openPanel('quests')">🎁 Daily ready</span>`;
+  }
+  el.innerHTML=h;
+}
+const _un=updateNavbar;updateNavbar=function(u){_un(u);updateHud();setDot('quests',!!u.daily_ready)};
+function setDot(panel,on){document.querySelector(`.stab[data-panel="${panel}"]`)?.classList.toggle('has-dot',on);if(panel==='chat'||panel==='quests')document.querySelector(`.mnav-btn[data-mn="${panel==='quests'?'more':panel}"]`)?.classList.toggle('has-dot',on)}
+
+/* ── panel router (desktop sidebar / mobile sheet) ── */
+const PANELS={
+  territory:()=>{if(selectedKey&&territories[selectedKey]&&false){}},
+  chat:{c:'chat-content',f:()=>buildChat()},faction:{c:'faction-content',f:()=>buildFaction()},quests:{c:'quests-content',f:()=>buildQuests()},
+  research:{c:'research-content',f:()=>buildResearch()},market:{c:'market-content',f:()=>buildMarket()},
+  leaderboard:{c:'leaderboard-list',f:()=>loadLeaderboard()},battles:{c:'battles-list',f:()=>loadBattleLog()},social:{c:'social-content',f:()=>buildSocialPanel()},
+};
+let sheetPanel=null;
+function openPanel(id){
+  if(!isMobile()){showPanel(id);return}
+  mobileNav(id==='territory'?'territory':['chat','faction'].includes(id)?id:'more',id);
+}
+function showPanel(id){
+  document.querySelectorAll('.panel-content').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.stab').forEach(b=>b.classList.remove('active'));
+  document.getElementById('panel-'+id)?.classList.add('active');
+  document.querySelector(`.stab[data-panel="${id}"]`)?.classList.add('active');
+  if(PANELS[id]?.f)PANELS[id].f();
+}
+function setMnav(tab){document.querySelectorAll('.mnav-btn').forEach(b=>b.classList.toggle('active',b.dataset.mn===tab))}
+function mobileNav(tab,panel){
+  if(tab==='map'){closeMobileSheet();return}
+  setMnav(tab);mobileView=tab;
+  const c=document.getElementById('mobile-sheet-content'),sh=document.getElementById('mobile-sheet');
+  sheetPanel=panel||tab;sh.classList.toggle('tall',['chat'].includes(sheetPanel));
+  if(tab==='more'&&!panel){
+    c.innerHTML=`<div class="more-grid">${[['quests','🎁','Quests'],['research','🔬','Research'],['market','💹','Market'],['leaderboard','🏆','Ranks'],['battles','⚔','Battles'],['social','🤝','Social']].map(([id,i,n])=>`<button onclick="mobileNav('more','${id}')"><span>${i}</span>${n}</button>`).join('')}</div>`;
+  }else if(sheetPanel==='territory'){
+    if(selectedKey)fetchAndBuildPanel(selectedKey);else c.innerHTML='<div class="empty-state"><div class="es-icon">🗺</div>Tap a territory on the map</div>';
+  }else{
+    const p=PANELS[sheetPanel];c.innerHTML=`<div id="${p.c}"></div>`;p.f();
+  }
+  sh.classList.add('open');document.body.classList.add('sheet-open');
+}
+function openMobileSheetForPanel(id){mobileNav(id==='territory'?'territory':['chat','faction'].includes(id)?id:'more',id)}
+function openMobileSheet(key){setMnav('territory');sheetPanel='territory';document.getElementById('mobile-sheet').classList.remove('tall');document.getElementById('mobile-sheet').classList.add('open');document.body.classList.add('sheet-open');fetchAndBuildPanel(key)}
+function closeMobileSheet(){document.getElementById('mobile-sheet').classList.remove('open');document.body.classList.remove('sheet-open');sheetPanel=null;setMnav('map')}
+function onMapClick(e){
+  const{lat,lng}=e.latlng,gl=Math.floor(lat/GRID),gg=Math.floor(lng/GRID),key=`${gl},${gg}`;
+  selectTerritory(key);
+  if(isMobile())openMobileSheet(key);else{showPanel('territory');fetchAndBuildPanel(key)}
+}
+async function fetchAndBuildPanel(key){
+  await reportWater(key);
+  const t=await api('GET',`/api/territory/${key}`);if(t.error)return;
+  territories[key]={...(territories[key]||{}),...t};renderTerritories();
+  window.__force=true;
+  if(isMobile()){const c=document.getElementById('mobile-sheet-content');if(sheetPanel==='territory'&&c)buildTerritoryPanel(key,t,c)}
+  else buildTerritoryPanel(key,t,null);
+}
+
+/* keep scouting info (coast, weather) when the periodic refresh replaces the territory list */
+const _rt=refreshTerritories;
+refreshTerritories=async function(){const o=selectedKey&&territories[selectedKey];const ex=o?{coastal:o.coastal,water:o.water,weather:o.weather}:null;await _rt();if(ex&&territories[selectedKey])Object.assign(territories[selectedKey],ex)};
+/* ── TERRITORY PANEL ── */
+function buildTerritoryPanel(key,t,container){
+  if(container&&sheetPanel!=='territory')return;   // sheet is showing another panel
+  const host=container||document.getElementById('territory-actions');
+  const ae=document.activeElement;
+  if(!window.__force&&host&&ae&&host.contains(ae)&&/INPUT|SELECT/.test(ae.tagName))return;   // don't wipe a field the player is using
+  window.__force=false;
+  const[gl,gg]=parseKey(key),terrain=t.terrain||getTerrainClient(gl,gg),cfg=TERRAIN_CFG[terrain]||{};
+  const isOwned=!!t.owner_id,isMine=currentUser&&t.owner_id===currentUser.id;
+  const u=currentUser,rs=new Set(u?.research||[]);
+  const put=(info,act)=>{if(container)container.innerHTML=info+act;else{document.getElementById('territory-info').innerHTML=info;document.getElementById('territory-actions').innerHTML=act}};
+  if((t.water||(landGeoJSON&&!isOwned&&!isLand(gl,gg)))){put('<div class="water-warn">🌊 Open ocean — nothing to claim here. Cross it with ⚓ boats from a Port or ✈ planes from an Airport.</div>','');return}
+  const wx=t.weather||weatherFor(curSlot(),gl,gg);
+  const myAdj=u?myAdjKeys(gl,gg):[];
+  const tagTxt=t.tag?`<span style="color:var(--text3)">[${esc(t.tag)}]</span> `:'';
+  const bInfo=t.building&&BLD[t.building]?`${BLD[t.building].icon} ${BLD[t.building].name} Lv${t.blevel}`:'';
+  const info=`<div class="tp-card"><div class="tp-head"><span class="tp-icon">${cfg.icon||'?'}</span><div class="tp-head-info">
+    <div class="tp-name">${cfg.label||terrain}</div>
+    ${isOwned?`<div class="tp-owner"><span class="owner-dot" style="background:${t.color}"></span> ${tagTxt}<strong style="color:${t.color}">${esc(t.owner)}</strong>${isMine?' <span style="color:var(--accent2);font-size:11px">(You)</span>':''}</div>`:'<div class="tp-owner" style="color:var(--text3)">Unclaimed</div>'}
+    </div><div class="tp-yield"><div>${RES_CFG[cfg.res]?.icon||''}+${cfg.rate}</div><div style="font-size:9px;color:var(--text3)">/min</div></div></div>
+    <div class="tp-stats"><div class="tp-stat"><div class="tp-stat-val">${t.garrison||0}</div><div class="tp-stat-label">🛡 Defense</div></div>
+    <div class="tp-stat"><div class="tp-stat-val" style="font-size:12px">${fmtPop(t.population)}</div><div class="tp-stat-label">👥 Pop</div></div>
+    ${bInfo?`<div class="tp-stat"><div class="tp-stat-val" style="font-size:12px">${bInfo.split(' ')[0]}</div><div class="tp-stat-label">${bInfo.split(' ').slice(1).join(' ')}</div></div>`:''}</div>
+    <div class="chips" style="padding:0 12px 10px"><span class="chip">${WX_ICON[wx]} ${wx} <small>${WX_FX[wx]}</small></span>${t.coastal?'<span class="chip">🌊 Coastal</span>':''}${terrain==='mountains'?'<span class="chip good">⛰ +35% defense</span>':terrain==='forest'?'<span class="chip good">🌲 +20% defense</span>':terrain==='city'?'<span class="chip good">🏙 +25% defense</span>':''}</div></div>`;
+  let a='';
+  if(!u){a='<div class="empty-state" style="padding:16px">Log in to claim land and fight.</div>';put(info,`<div class="tp-actions">${a}</div>`);return}
+  if(isMine){
+    // Army / recruit
+    const room=Math.max(0,u.army_cap-u.army),maxR=Math.max(1,Math.min(150,room)),def=Math.min(10,maxR);
+    a+=`<div class="army-section"><div class="army-section-title">⚔ National Army <span class="v4-sub">${u.army}/${u.army_cap}</span></div>
+      <div class="v4-bar"><i style="width:${Math.min(100,100*u.army/u.army_cap)}%"></i></div>
+      <div class="v4-sub" style="margin-bottom:6px">One army defends and attacks for your whole realm. Cap grows with land, Barracks & Logistics.</div>
+      <input type="range" id="build-slider" min="1" max="${maxR}" value="${def}" ${room<1?'disabled':''}/>
+      <div class="v4-row"><span class="grow"><b id="build-slider-val">${def}</b> troops · <b id="build-cost">${def*u.troop_cost}</b>💰 <span class="v4-sub">(${u.troop_cost}💰 each)</span></span>
+      <button class="btn btn-primary" ${room<1?'disabled':''} onclick="buildTroops('${key}')">Recruit</button></div></div>`;
+    // Building
+    const cur=t.building?BLD[t.building]:null;
+    if(cur){
+      const nl=t.blevel+1,canUp=nl<=3,cost=canUp?bldCost(t.building,nl):null;
+      a+=`<div class="army-section"><div class="army-section-title">${cur.icon} ${cur.name} <span class="v4-sub">Lv${t.blevel}/3</span></div><div class="v4-sub" style="margin-bottom:8px">${cur.desc}</div>
+        <div class="v4-row">${canUp?`<button class="btn btn-primary btn-sm grow" onclick="bldAct('${key}','${t.building}')">⬆ Upgrade · ${fmtCost(cost)}</button>`:'<span class="grow v4-sub">Max level</span>'}
+        <button class="btn btn-ghost btn-sm" onclick="bldDemolish('${key}')">Demolish</button></div></div>`;
+    }else{
+      a+=`<div class="army-section"><div class="army-section-title">🏗 Build</div><div class="bld-grid">${Object.entries(BLD).map(([id,b])=>{
+        const need=b.needs&&!rs.has(b.needs)?`🔒 ${RESEARCH_TREE[b.needs]?.name}`:(b.coastal&&!t.coastal?'🔒 Coast only':'');
+        return`<button class="bld-opt" ${need?'disabled':''} onclick="bldAct('${key}','${id}')"><b>${b.icon} ${b.name}</b><span>${need||fmtCost(bldCost(id,1))}</span><span style="display:block;margin-top:2px">${b.desc}</span></button>`}).join('')}</div></div>`;
+    }
+    // Fleet
+    const ports=myTiles().filter(k=>territories[k].building==='port').length,ap=myTiles().filter(k=>territories[k].building==='airport').length;
+    if(rs.has('shipyard')){
+      a+=`<div class="army-section"><div class="army-section-title" style="color:#7ab8e8">⚓ Fleet <span class="v4-sub">${u.boats} boats · unlimited range</span></div>
+      ${ports?`<div class="v4-row"><input type="number" class="input-sm" id="boat-amt" value="1" min="1" max="20" style="width:70px"/><span class="grow v4-sub">250💰 + 20🌲 each · carries ${12+(rs.has('navigation')?4:0)} troops</span><button class="btn btn-blue btn-sm" onclick="buildBoats('${key}')">Build</button></div>`:'<div class="v4-sub">Build a ⚓ Port on a coastal tile to construct and launch boats.</div>'}</div>`;
+    }
+    if(rs.has('airforce')){
+      a+=`<div class="army-section"><div class="army-section-title" style="color:#aaaaff">✈ Air Wing <span class="v4-sub">${u.planes} planes · range ${u.plane_range}</span></div>
+      ${ap?`<div class="v4-row"><input type="number" class="input-sm" id="plane-amt" value="1" min="1" max="10" style="width:70px"/><span class="grow v4-sub">700💰 40⚙ 30🛢 each · carries 5 paratroops</span><button class="btn btn-blue btn-sm" onclick="buildPlanes('${key}')">Build</button></div>`:'<div class="v4-sub">Build an 🛫 Airport anywhere to construct and launch planes.</div>'}</div>`;
+    }
+  }else{
+    const allyE=myAlliances.find(x=>x.ally_id===t.owner_id&&x.status==='active');
+    const sameFac=u.faction&&t.tag&&u.faction.tag===t.tag;
+    const canClaim=!isOwned&&(myAdj.length>0||myTiles().length===0);
+    if(canClaim){
+      a+=`<div class="claim-block"><button class="btn btn-primary btn-full claim-btn" onclick="claimTerritory('${key}')">🏴 Claim — ${u.claim_cost}💰 <span class="keybind-hint">C</span></button>
+      <div class="claim-info">${cfg.icon} ${RES_CFG[cfg.res]?.icon||''} ${cfg.rate}/min · 👥 ${fmtPop(t.population)}</div></div>`;
+    }
+    if(allyE||sameFac){
+      a+=`<div class="ally-territory-label">🤝 ${sameFac?'Faction mate':'Allied'} — ${esc(t.owner)}</div>`;
+      if(allyE)a+=`<button class="btn btn-danger btn-full" onclick="breakAllianceByAllyId(${t.owner_id})">💔 Break Alliance</button>`;
+    }else{
+      // attack options: land / sea / air
+      if(myAdj.length&&(isOwned||!canClaim)){
+        a+=atkBlock('land',key,{from:myAdj[0],max:u.army,def:Math.max(1,Math.floor(u.army*.6)),label:'⚔ Land Assault',unit:'troops',color:'var(--red2)',btn:'⚔ Attack'});
+      }
+      const boatSrc=myTiles().filter(k=>territories[k].building==='port'&&dist(k,key)>1);
+      const planeSrc=myTiles().filter(k=>territories[k].building==='airport'&&dist(k,key)>1&&dist(k,key)<=u.plane_range+(territories[k].blevel-1));
+      if(rs.has('shipyard')){
+        if(boatSrc.length&&t.coastal&&u.boats>0)a+=atkBlock('naval',key,{from:boatSrc[0],srcs:boatSrc,max:u.boats,def:u.boats,label:'⚓ Naval Landing',unit:'boats',color:'#7ab8e8',btn:'⚓ Land'});
+        else a+=`<div class="v4-card"><h4 style="color:#7ab8e8">⚓ Naval Landing</h4><div class="v4-sub">${!t.coastal?'Target is not on a coast.':!boatSrc.length?`Boats can reach this target from any of your Ports.`:'You have no boats — build some at a Port.'}</div></div>`;
+      }
+      if(rs.has('airforce')){
+        if(planeSrc.length&&u.planes>0)a+=atkBlock('air',key,{from:planeSrc[0],srcs:planeSrc,max:u.planes,def:u.planes,label:'✈ Air Strike',unit:'planes',color:'#aaaaff',btn:'✈ Strike'});
+        else a+=`<div class="v4-card"><h4 style="color:#aaaaff">✈ Air Strike</h4><div class="v4-sub">${!planeSrc.length?`Needs an Airport within ${u.plane_range} cells.`:'You have no planes — build some.'}</div></div>`;
+      }
+      if(!myAdj.length&&!rs.has('shipyard')&&!rs.has('airforce'))a+=`<div class="empty-state" style="padding:14px 8px"><div class="es-icon">🌊</div>No land route. Research ⚓ Shipbuilding or ✈ Air Force.</div>`;
+      if(isOwned){
+        const pend=myAlliances.find(x=>x.ally_id===t.owner_id&&x.status==='pending');
+        a+=pend?`<div class="v4-sub" style="text-align:center;margin-top:6px">⏳ Alliance invite pending</div>`:`<button class="btn btn-ghost btn-full" style="margin-top:6px" onclick="sendAllianceInviteFromPanel('${esc(t.owner)}')">🤝 Propose Alliance</button>`;
+      }
+    }
+  }
+  put(info,`<div class="tp-actions">${a}</div>`);
+  const bs=document.getElementById('build-slider');
+  if(bs)bs.oninput=()=>{document.getElementById('build-slider-val').textContent=bs.value;document.getElementById('build-cost').textContent=bs.value*u.troop_cost};
+  document.querySelectorAll('[data-pv]').forEach(el=>{
+    const kind=el.dataset.pv,sl=document.getElementById('sl-'+kind),sel=document.getElementById('src-'+kind);
+    const go=()=>previewBattle(kind,key);
+    if(sl)sl.oninput=()=>{document.getElementById('sv-'+kind).textContent=sl.value;clearTimeout(sl._t);sl._t=setTimeout(go,200)};
+    if(sel)sel.onchange=go;go();
+  });
+}
+function atkBlock(kind,key,o){
+  const opts=o.srcs&&o.srcs.length>1?`<select class="input-sm" id="src-${kind}" style="width:100%;margin-bottom:6px">${o.srcs.map(k=>{const[a,b]=parseKey(k);return`<option value="${k}">${(a*GRID).toFixed(1)}°, ${(b*GRID).toFixed(1)}° · ${dist(k,key)} cells</option>`}).join('')}</select>`:`<input type="hidden" id="src-${kind}" value="${o.from}"/>`;
+  return`<div class="v4-card" data-pv="${kind}"><h4 style="color:${o.color}">${o.label}</h4>${opts}
+    <input type="range" id="sl-${kind}" min="1" max="${Math.max(1,o.max)}" value="${Math.max(1,Math.min(o.max,o.def))}"/>
+    <div class="v4-row"><span class="grow"><b id="sv-${kind}">${Math.max(1,Math.min(o.max,o.def))}</b> ${o.unit} <span class="v4-sub">of ${o.max}</span></span></div>
+    <div id="pv-${kind}" style="margin:8px 0"><div class="v4-sub">Scouting…</div></div>
+    <button class="btn btn-danger btn-full" onclick="doAttack('${kind}','${key}')">${o.btn}</button></div>`;
+}
+async function previewBattle(kind,key){
+  const sl=document.getElementById('sl-'+kind),src=document.getElementById('src-'+kind),el=document.getElementById('pv-'+kind);if(!sl||!el)return;
+  const p=await api('POST','/api/combat/preview',{target_key:key,from_key:src?.value,amount:+sl.value,kind});
+  if(p.error){el.innerHTML=`<div class="v4-sub">${esc(p.error)}</div>`;return}
+  const pct=p.odds!=null?p.odds:null;
+  const col=pct==null?'var(--text2)':pct>=62?'var(--green2)':pct>=42?'var(--accent2)':'var(--red2)';
+  el.innerHTML=`<div class="pv-odds" style="color:${col}">${pct!=null?pct+'%':`${p.odds_est[0]}–${p.odds_est[1]}%`}</div>
+    <div class="v4-bar"><i style="width:${pct??((p.odds_est[0]+p.odds_est[1])/2)}%"></i></div>
+    <div class="pv-nums"><span>Your force <b>${p.attack}</b></span><span>${p.defense!=null?`Enemy <b>${p.defense}</b>`:`Enemy ≈ <b>${p.defense_est[0]}–${p.defense_est[1]}</b>`}</span></div>
+    ${chipsOf(p.atk_mods)}${p.def_mods?`<div class="v4-sub" style="margin-top:6px">Defender</div>${chipsOf(p.def_mods.map(([n,m])=>[n,1/m]))}`:'<div class="v4-sub" style="margin-top:6px">🕵 Research Espionage for exact enemy numbers.</div>'}`;
+}
+function showBattleReport(r,title){
+  const b=r.breakdown||{},win=r.attacker_wins;
+  const list=(a,cls)=>(a||[]).map(([n,m])=>`<div class="mod ${m>1.001?'up':m<.999?'dn':''}"><span>${esc(n)}</span><b>×${(+m).toFixed(2)}</b></div>`).join('')||'<div class="v4-sub">—</div>';
+  document.getElementById('br-box').innerHTML=`<h2 class="${win?'win':'lose'}">${win?'VICTORY':'DEFEAT'}</h2>
+    <div style="text-align:center;margin:6px 0 2px;color:var(--text2)">${esc(r.message)}</div>
+    <div class="br-cols"><div><h5>Your force</h5><div class="br-big">${b.attack}</div>${list(b.atk_mods)}</div><div><h5>Defense</h5><div class="br-big">${b.defense}</div>${list((b.def_mods||[]).map(([n,m])=>[n,1/m]))}</div></div>
+    <div class="v4-sub" style="text-align:center;margin-bottom:10px">${WX_ICON[b.weather]||''} ${b.weather} · both sides roll ±8% luck${r.boats_back!=null?` · ${r.boats_back} boats returned`:''}${r.planes_back!=null?` · ${r.planes_back} planes returned`:''}</div>
+    <button class="btn btn-primary btn-full" onclick="document.getElementById('battle-report').classList.remove('open')">Continue</button>`;
+  document.getElementById('battle-report').classList.add('open');
+}
+function achToast(r){(r.achievements||[]).forEach((a,i)=>setTimeout(()=>toast(`🏅 ${a.name}! +${a.reward}💰`,'success'),600+i*1800))}
+async function doAttack(kind,key){
+  if(!requireLogin())return;
+  const sl=document.getElementById('sl-'+kind),src=document.getElementById('src-'+kind)?.value;if(!sl||!src)return;
+  const n=+sl.value,water=waterMap(src);let w2=waterMap(key);const water2={...(water||{}),...(w2||{})};
+  const [path,body]=kind==='land'?['/api/attack',{from_key:src,target_key:key,troops:n}]:kind==='naval'?['/api/boats/attack',{from_key:src,target_key:key,boats:n,water:water2}]:['/api/planes/attack',{from_key:src,target_key:key,planes:n,water:water2}];
+  const r=await api('POST',path,body);
+  if(r.error)return toast(r.error,'error');
+  showBattleReport(r);achToast(r);
+  await refreshAll();window.__force=true;await fetchAndBuildPanel(key);loadBattleLog();
+}
+function attackTerritory(k){return doAttack("land",k)}
+async function afterAct(r,key){if(r.error)return toast(r.error,'error');toast(r.message,'success');achToast(r);await refreshAll();window.__force=true;await fetchAndBuildPanel(key)}
+async function claimTerritory(key){
+  if(!requireLogin())return;const[gl,gg]=parseKey(key);
+  if(landGeoJSON&&!isLand(gl,gg))return toast('Cannot claim open water!','error');
+  const r=await api('POST','/api/territory/claim',{grid_key:key,water:waterMap(key)});
+  if(r.error)return toast(r.error,'error');selectTerritory(key);afterAct(r,key);
+}
+async function buildTroops(key){if(!requireLogin())return;afterAct(await api('POST','/api/troops/build',{grid_key:key,amount:+document.getElementById('build-slider')?.value||1}),key)}
+async function buildBoats(key){afterAct(await api('POST','/api/boats/build',{grid_key:key,amount:+document.getElementById('boat-amt')?.value||1}),key)}
+async function buildPlanes(key){afterAct(await api('POST','/api/planes/build',{grid_key:key,amount:+document.getElementById('plane-amt')?.value||1}),key)}
+async function bldAct(key,type){afterAct(await api('POST','/api/building/build',{grid_key:key,type,water:waterMap(key)}),key)}
+async function bldDemolish(key){if(!confirm('Demolish this building? (no refund)'))return;afterAct(await api('POST','/api/building/demolish',{grid_key:key}),key)}
+
+/* ── leaderboard (faction tags) ── */
+async function loadLeaderboard(){
+  const el=document.getElementById('leaderboard-list');if(!el)return;
+  const list=await api('GET','/api/leaderboard');
+  if(!list||list.error){el.innerHTML='<div class="empty-state">Error loading</div>';return}
+  el.innerHTML=list.map((p,i)=>{const me=currentUser&&p.username===currentUser.username;const rank=p.rank||{icon:'🪓',name:'Settler'};
+    return`<div class="lb-row"><span class="lb-rank ${i<3?'top'+(i+1):''}">#${i+1}</span><span class="lb-col" style="background:${p.color}"></span>
+    <span class="lb-name${me?' me':''}">${p.tag?`<span style="color:var(--text3)">[${esc(p.tag)}]</span> `:''}${esc(p.username)}${p.is_admin?' ⭐':''}</span>
+    <span class="lb-sub">${rank.icon}</span><span class="lb-sub">🗺${p.territories}</span><span class="lb-sub">🏅${p.wins||0}</span></div>`}).join('')||'<div class="empty-state">No players yet</div>';
+}
+
+/* ── CHAT ── */
+let chatCh='global',chatLastId={global:0,faction:0},chatUnseen=0;
+function chatVisible(){return isMobile()?sheetPanel==='chat':document.getElementById('panel-chat')?.classList.contains('active')}
+function buildChat(){
+  const el=document.getElementById('chat-content');if(!el)return;
+  if(!currentUser){el.innerHTML='<div class="empty-state">Log in to chat</div>';return}
+  el.innerHTML=`<div class="chat-tabs"><button class="btn btn-sm ${chatCh==='global'?'btn-primary':'btn-ghost'}" onclick="setChat('global')">🌍 Global</button>
+    <button class="btn btn-sm ${chatCh==='faction'?'btn-primary':'btn-ghost'}" onclick="setChat('faction')">🚩 Faction${currentUser.faction?` [${esc(currentUser.faction.tag)}]`:''}</button></div>
+    <div id="chat-msgs"></div><div class="chat-in"><input class="form-input" id="chat-input" maxlength="200" placeholder="Say something…" onkeydown="if(event.key==='Enter')sendChat()"/><button class="btn btn-primary" onclick="sendChat()">Send</button></div>`;
+  chatLastId[chatCh]=0;chatUnseen=0;setDot('chat',false);pollChat(true);
+}
+function setChat(c){chatCh=c;buildChat()}
+function chatLine(m){const t=new Date(m.ts*1000);const hh=String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0');
+  return`<div class="cm"><b style="color:${m.color||'#ccc'}">${esc(m.user)}</b>${esc(m.text)}<time>${hh}</time>${currentUser?.is_admin?`<span class="del" onclick="adminDelMsg(${m.id})">✕</span>`:''}</div>`}
+async function pollChat(first){
+  if(!currentUser)return;
+  const box=document.getElementById('chat-msgs');
+  if(!box){ // background: only unread dot for global
+    const r=await api('GET','/api/chat?channel=global&since='+(chatLastId.global||0));
+    if(r.messages?.length){if(chatLastId.global)setDot('chat',true);chatLastId.global=r.last_id}return}
+  const r=await api('GET',`/api/chat?channel=${chatCh}&since=${chatLastId[chatCh]||0}`);
+  if(r.error&&chatCh==='faction'){box.innerHTML='<div class="v4-sub" style="margin:auto;text-align:center">Join or found a faction to unlock private chat 🚩</div>';return}
+  if(!r.messages)return;
+  const atBottom=box.scrollTop+box.clientHeight>=box.scrollHeight-40;
+  if(r.messages.length){box.insertAdjacentHTML('beforeend',r.messages.map(chatLine).join(''));chatLastId[chatCh]=r.last_id;if(first||atBottom)box.scrollTop=box.scrollHeight;if(!first&&!chatVisible()&&r.messages.some(m=>m.uid!==currentUser.id))setDot('chat',true)}
+  else if(first)box.innerHTML='<div class="v4-sub" style="margin:auto">No messages yet — say hi!</div>';
+}
+async function sendChat(){
+  const inp=document.getElementById('chat-input'),m=inp?.value.trim();if(!m)return;inp.value='';
+  const r=await api('POST','/api/chat/send',{channel:chatCh,message:m});
+  if(r.error)return toast(r.error,'error');achToast(r);pollChat();
+}
+async function adminDelMsg(id){await api('POST','/api/admin/chat_delete',{id});buildChat()}
+
+/* ── FACTION ── */
+async function buildFaction(){
+  const el=document.getElementById('faction-content');if(!el)return;
+  if(!currentUser){el.innerHTML='<div class="empty-state">Log in to join a faction</div>';return}
+  const[inf,list]=await Promise.all([api('GET','/api/faction/info'),api('GET','/api/faction/list')]);
+  const f=inf.faction;
+  if(!f){
+    el.innerHTML=`<div class="v4-card"><h4>🚩 Found a Faction <span class="v4-sub">500💰</span></h4>
+      <input class="form-input" id="fc-name" placeholder="Faction name (3–24)" style="margin-bottom:6px"/><div class="v4-row"><input class="form-input grow" id="fc-tag" placeholder="TAG" maxlength="4"/><button class="btn btn-primary" onclick="factionCreate()">Found</button></div>
+      <div class="v4-sub" style="margin-top:6px">Faction mates can't attack each other, share a private chat, and get +2% yield per extra member (max +15%).</div></div>
+      <div class="v4-card"><h4>Join a faction</h4>${(Array.isArray(list)&&list.length)?list.map(x=>`<div class="v4-row" style="margin-bottom:6px"><span class="grow"><b>[${esc(x.tag)}]</b> ${esc(x.name)}<div class="v4-sub">👥 ${x.members} · 🗺 ${x.territories}</div></span><button class="btn btn-ghost btn-sm" onclick="factionJoin(${x.id})">Join</button></div>`).join(''):'<div class="v4-sub">No factions yet — be the first!</div>'}</div>`;
+    return;
+  }
+  const lead=f.leader_id===currentUser.id;
+  el.innerHTML=`<div class="v4-card"><h4><span>[${esc(f.tag)}] ${esc(f.name)}</span><span class="chip good">+${f.bonus_pct}% yield</span></h4>
+    <div class="v4-row"><span class="chip">👥 ${f.members.length}/12</span><span class="chip">🗺 ${f.territories}</span><span class="chip gold">🏦 ${f.treasury}💰</span></div></div>
+    <div class="v4-card"><h4>Treasury</h4><div class="v4-row"><input type="number" class="input-sm grow" id="fd-amt" min="1" placeholder="Amount"/><button class="btn btn-success btn-sm" onclick="factionDonate()">Donate</button></div>
+      ${lead?`<button class="btn btn-primary btn-full" style="margin-top:8px" onclick="factionRally()">📯 Call Rally — 1500💰 (all members morale → 100)${f.rally_ready_in?` · ${Math.ceil(f.rally_ready_in/60)}m cd`:''}</button>`:''}</div>
+    <div class="v4-card"><h4>Members</h4>${f.members.map(m=>`<div class="v4-row" style="margin-bottom:5px"><span class="owner-dot" style="background:${m.color}"></span><span class="grow">${esc(m.username)}${m.id===f.leader_id?' 👑':''}<span class="v4-sub"> · 🗺 ${m.territories}</span></span>${lead&&m.id!==currentUser.id?`<button class="btn btn-ghost btn-sm" onclick="factionKick(${m.id})">Kick</button>`:''}</div>`).join('')}</div>
+    <button class="btn btn-ghost btn-full" onclick="factionLeave()">Leave faction</button>`;
+}
+async function facDo(path,body){const r=await api('POST',path,body||{});if(r.error)return toast(r.error,'error');toast(r.message,'success');achToast(r);await refreshUser();buildFaction()}
+const factionCreate=()=>facDo('/api/faction/create',{name:document.getElementById('fc-name').value,tag:document.getElementById('fc-tag').value});
+const factionJoin=id=>facDo('/api/faction/join',{faction_id:id});
+const factionLeave=()=>confirm('Leave your faction?')&&facDo('/api/faction/leave');
+const factionKick=id=>confirm('Kick this member?')&&facDo('/api/faction/kick',{user_id:id});
+const factionDonate=()=>facDo('/api/faction/donate',{amount:+document.getElementById('fd-amt').value});
+const factionRally=()=>facDo('/api/faction/rally');
+
+/* ── QUESTS / EVENTS / ACHIEVEMENTS ── */
+async function buildQuests(){
+  const el=document.getElementById('quests-content');if(!el)return;
+  if(!currentUser){el.innerHTML='<div class="empty-state">Log in to play</div>';return}
+  const ach=await api('GET','/api/achievements');const u=currentUser;
+  let center=[30,15];try{const c=map.getCenter();center=[c.lat,c.lng]}catch(e){}
+  const wx=weatherFor(curSlot(),Math.floor(center[0]/GRID),Math.floor(center[1]/GRID));
+  el.innerHTML=`<div class="v4-card"><h4>🎁 Daily Reward <span class="chip">🔥 streak ${u.daily_streak||0}</span></h4>
+    <button class="btn ${u.daily_ready?'btn-primary':'btn-ghost'} btn-full" ${u.daily_ready?'':'disabled'} onclick="claimDaily()">${u.daily_ready?'Claim today\'s reward':'Come back tomorrow'}</button>
+    <div class="v4-sub" style="margin-top:6px">Rewards grow for 7 days in a row: money, supplies and free troops.</div></div>
+    <div class="v4-card"><h4>🌍 World Event</h4>${u.event?`<div style="font-size:18px">${u.event.icon} <b>${esc(u.event.name)}</b></div><div class="v4-sub">${esc(u.event.desc)} · ${Math.max(1,Math.round((u.event.until-Date.now()/1000)/60))} min left</div>`:'<div class="v4-sub">Quiet times… a new event will start soon.</div>'}</div>
+    <div class="v4-card"><h4>${WX_ICON[wx]} Local Weather <span class="v4-sub">changes in ${nextWxMins()} min</span></h4><div class="v4-sub">At the map centre: <b>${wx}</b> — ${WX_FX[wx]} for attackers. Computed on your device; no server polling.</div></div>
+    <div class="v4-card"><h4>🏅 Achievements <span class="v4-sub">${Array.isArray(ach)?ach.filter(a=>a.done).length+'/'+ach.length:''}</span></h4><div class="quest-grid">${(Array.isArray(ach)?ach:[]).map(a=>`<div class="ach ${a.done?'done':''}"><b>${a.icon} ${esc(a.name)}</b>${esc(a.desc)}<div style="color:var(--gold)">+${a.reward}💰</div></div>`).join('')}</div></div>`;
+}
+async function claimDaily(){const r=await api('POST','/api/daily/claim');if(r.error)return toast(r.error,'error');toast(r.message,'success');achToast(r);await refreshUser();buildQuests()}
+
+/* ── ADMIN additions ── */
+function injectAdmin(){
+  const tabs=document.querySelector('.admin-tabs');if(!tabs||document.getElementById('admin-world'))return;
+  tabs.insertAdjacentHTML('beforeend','<button class="atab" onclick="adminTab(event,\'world\')">World</button><button class="atab" onclick="adminTab(event,\'social\')">Factions & Chat</button>');
+  const box=tabs.parentElement;
+  box.insertAdjacentHTML('beforeend',`<div id="admin-world" class="admin-panel"><div style="display:flex;flex-direction:column;gap:10px">
+    <div class="tc"><div class="section-label">Server stats</div><div id="adm-stats" class="v4-sub" style="margin-top:6px">…</div></div>
+    <div class="tc"><div class="section-label">World event</div><div class="input-row" style="margin-top:6px"><select class="input-sm" id="adm-ev"><option value="gold_rush">🪙 Gold Rush</option><option value="harvest">🌾 Harvest</option><option value="mining">⛏ Mining Boom</option><option value="conscription">📯 Conscription</option><option value="war_fever">🔥 War Fever</option><option value="cold_snap">🧊 Cold Snap</option></select><input class="input-sm" id="adm-ev-min" type="number" value="30" style="max-width:70px"/><button class="btn btn-primary btn-sm" onclick="admEvent(document.getElementById('adm-ev').value)">Start</button><button class="btn btn-ghost btn-sm" onclick="admEvent('none')">End</button></div>
+      <label class="v4-sub" style="display:block;margin-top:6px"><input type="checkbox" id="adm-ev-auto" onchange="admSet('events_enabled',this.checked?'1':'0')"/> random events enabled</label></div>
+    <div class="tc"><div class="section-label">Global multipliers</div><div class="input-row" style="margin-top:6px"><span class="v4-sub">Income ×</span><input class="input-sm" id="adm-inc" type="number" step=".1" style="max-width:80px"/><button class="btn btn-ghost btn-sm" onclick="admSet('income_mult',document.getElementById('adm-inc').value)">Set</button><span class="v4-sub">Troop cost ×</span><input class="input-sm" id="adm-tc" type="number" step=".1" style="max-width:80px"/><button class="btn btn-ghost btn-sm" onclick="admSet('troop_cost_mult',document.getElementById('adm-tc').value)">Set</button></div></div>
+    <div class="tc"><div class="section-label">Give resource / units</div><div class="input-row" style="margin-top:6px"><select class="input-sm" id="adm-gu"></select><select class="input-sm" id="adm-gr"><option>money</option><option>food</option><option>wood</option><option>metal</option><option>oil</option><option>army</option><option>boats</option><option>planes</option></select><input class="input-sm" id="adm-ga" type="number" value="100" style="max-width:80px"/><button class="btn btn-success btn-sm" onclick="admGive()">Give</button></div></div>
+    <div class="tc"><div class="section-label">Give territory</div><div class="input-row" style="margin-top:6px"><select class="input-sm" id="adm-tu"></select><input class="input-sm" id="adm-tk" placeholder="grid key e.g. 120,40"/><button class="btn btn-primary btn-sm" onclick="admTerr()">Assign</button></div></div></div></div>
+    <div id="admin-social" class="admin-panel"><div class="tc"><div class="section-label">Mute player</div><div class="input-row" style="margin-top:6px"><select class="input-sm" id="adm-mu"></select><input class="input-sm" id="adm-mm" type="number" value="10" style="max-width:70px"/><span class="v4-sub">min</span><button class="btn btn-danger btn-sm" onclick="admMute()">Mute</button><button class="btn btn-ghost btn-sm" onclick="admMute(0)">Unmute</button></div>
+      <button class="btn btn-danger btn-sm" style="margin-top:8px" onclick="if(confirm('Delete ALL chat messages?'))api('POST','/api/admin/chat_delete',{all:true}).then(()=>toast('Chat cleared','success'))">🗑 Clear all chat</button></div>
+      <div class="tc" style="margin-top:10px"><div class="section-label">Factions</div><div id="adm-facs" style="margin-top:6px"></div></div></div>`);
+}
+const _at=adminTab;adminTab=function(e,id){_at(e,id);if(id==='world')loadAdmWorld();if(id==='social')loadAdmSocial()};
+function admUsersOpts(){return adminUserList.filter(u=>u.username!=='admin').map(u=>`<option value="${u.id}">${esc(u.username)}</option>`).join('')}
+async function loadAdmWorld(){
+  const s=await api('GET','/api/admin/stats');if(s.error)return;
+  document.getElementById('adm-stats').innerHTML=`👥 ${s.users} players · 🗺 ${s.territories} tiles · ⚔ ${s.battles} battles · 🏗 ${s.buildings} buildings · 🚩 ${s.factions} factions · 💬 ${s.chat_msgs} msgs · 🪖 ${s.total_army} total troops${s.event?` · event: ${s.event.icon} ${s.event.name}`:''}`;
+  document.getElementById('adm-inc').value=s.settings.income_mult;document.getElementById('adm-tc').value=s.settings.troop_cost_mult;document.getElementById('adm-ev-auto').checked=s.settings.events_enabled==='1';
+  ['adm-gu','adm-tu'].forEach(i=>document.getElementById(i).innerHTML=admUsersOpts());
+}
+async function loadAdmSocial(){
+  document.getElementById('adm-mu').innerHTML=admUsersOpts();
+  const f=await api('GET','/api/admin/factions');
+  document.getElementById('adm-facs').innerHTML=(Array.isArray(f)&&f.length)?f.map(x=>`<div class="v4-row" style="margin-bottom:5px"><span class="grow"><b>[${esc(x.tag)}]</b> ${esc(x.name)} <span class="v4-sub">👥${x.members.length} 🗺${x.territories} 🏦${x.treasury}</span></span><button class="btn btn-danger btn-sm" onclick="admDisband(${x.id})">Disband</button></div>`).join(''):'<div class="v4-sub">None</div>';
+}
+async function admRun(path,body,reload){const r=await api('POST',path,body);if(r.error)return toast(r.error,'error');toast(r.message||'Done','success');reload&&reload();refreshAll()}
+const admEvent=t=>admRun('/api/admin/event',{type:t,minutes:+document.getElementById('adm-ev-min').value},loadAdmWorld);
+const admSet=(k,v)=>admRun('/api/admin/set_setting',{key:k,value:v},loadAdmWorld);
+const admGive=()=>admRun('/api/admin/give_resource',{user_id:+document.getElementById('adm-gu').value,resource:document.getElementById('adm-gr').value,amount:+document.getElementById('adm-ga').value});
+const admTerr=()=>admRun('/api/admin/give_territory',{user_id:+document.getElementById('adm-tu').value,grid_key:document.getElementById('adm-tk').value.trim()});
+const admMute=(m)=>admRun('/api/admin/mute',{user_id:+document.getElementById('adm-mu').value,minutes:m===0?0:+document.getElementById('adm-mm').value});
+const admDisband=id=>confirm('Disband this faction?')&&admRun('/api/admin/disband_faction',{faction_id:id},loadAdmSocial);
+
+/* ── bootstrap ── */
+const _sg=startGame;
+startGame=async function(user){
+  api('GET','/api/buildings').then(b=>{if(b&&!b.error)BLD=b});
+  await _sg(user);
+  injectAdmin();updateHud();
+  if(isMobile()&&!onlineCollapsed)toggleOnline();
+  setInterval(()=>{pollChat();updateHud()},5000);
+  setInterval(()=>{if(!document.hidden&&document.getElementById('quests-content'))buildQuests()},60000);
+};
+const _ss=startSpectatorMode;
+startSpectatorMode=async function(){await _ss();updateHud();setInterval(updateHud,30000)};
+document.addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select'))return;if(e.key==='c'&&selectedKey&&currentUser&&!territories[selectedKey]?.owner_id)claimTerritory(selectedKey)});
+
 </script>
 </body>
 </html>

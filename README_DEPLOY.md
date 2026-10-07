@@ -104,3 +104,37 @@ This downloads a `.sql` dump of the entire database you can keep as a backup.
 | Sell: oil | 5💰 | 10💰 |
 | Claim cost | 30💰 flat | 25→40→80→150→400→1200 (tiered) |
 | Offline cap | 60 min | 120 min |
+
+
+---
+
+## v4 changes
+
+### Map
+- Tiles now come from **OpenStreetMap** (no API key). A CSS filter gives it the dark look. OSM's tile policy is fine for a small hobby
+  game; if traffic grows, change the URL in `initMap()` to another free/self-hosted tile server.
+
+### Combat (rewritten)
+- **One national army** (`users.army`) attacks and defends for the whole realm. Capacity = 60 + 30 per tile + Barracks (+25% Logistics).
+- Defense on a tile = your army shared across your territories (`army / tiles^0.55`) + 3 militia, times home-ground, terrain, Fortress and Castle Walls.
+- Attack modifiers: research, **weather**, **morale** (wins raise it, losses lower it), world events, faction unity. Both sides roll +-8% luck.
+- **Weather** is computed from the 10-minute time slot + region, in JS on each client and in Python on the server (same formula,
+  checked identical), so there is no polling, no server load, and it cannot be spoofed.
+- Without Espionage you only see a +-30% estimate of enemy defense.
+- Each battle runs in one SQLite transaction, so double-clicks/races can no longer duplicate or lose troops.
+
+### Boats & planes
+- Port (needs Shipbuilding, coastal tile only): boats launch from ports to coastal targets, range 4 (+2 Navigation, +1 per port level above 1).
+  Boats cost 250 money + 20 wood, carry 12 troops, 80% return after a win.
+- Airport (needs Air Force, any tile): planes take off from airports within range 5 (+3 Blitzkrieg, +2 Jets, +1 per airport level above 1).
+  Planes cost 700 money + 40 metal + 30 oil, carry 5 paratroopers, 70% return after a win.
+- Coast info: the client already has the land polygons, so it reports which cells are water (`/api/water/report`) and the server
+  caches the first report per cell. Admins can correct a cell with `/api/admin/set_water`.
+
+### New content
+8 buildings (3 levels each), 9 new techs, factions (shared chat, treasury, rally), global + faction chat, daily rewards with streaks,
+14 achievements, random world events, and many new admin tools (events, multipliers, give resources/territory, mute, clear chat, disband factions).
+
+### Upgrading an existing game.db
+Nothing to do: `migrate_v4()` runs on startup, adds the new columns/tables and converts old per-tile garrisons into your national army.
+Flask debug mode is now off by default; set `DEBUG=1` to enable it.
