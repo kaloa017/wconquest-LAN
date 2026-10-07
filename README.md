@@ -1,8 +1,14 @@
-# wconquest-LAN
+# World Conquest
 
-Claude Sonnet 5.5 browser game
+This is a game hosted locally on the internet. It's only accessible via the same Wi-Fi (or LAN) network. It's simply just a mix of [<r/place>](<https://en.wikipedia.org/wiki/R/place>) and territorial.io. 
 
-Runs on the local internet by running app.py.
+In order for this to run, simply clone the project, install the Flask library, and run via
+
+```bash
+python app.py
+```
+
+Then it should now be accessible via the LAN.
 
 ## Changes to Make
 
@@ -155,4 +161,4 @@ Runs on the local internet by running app.py.
 
 ## Want to contribute to this project?
 
-Feel free to fork the project and do a merge request to contribute to this game.
+Feel free to fork the project and do a merge request to contribute to this game. Thank you!
