@@ -1,6 +1,6 @@
 # World Conquest
 
-This is a game hosted locally on the internet. It's only accessible via the same Wi-Fi (or LAN) network. It's simply just a mix of [<r/place>](<https://en.wikipedia.org/wiki/R/place>) and territorial.io. 
+This is a game hosted locally on the internet. It's only accessible via the same Wi-Fi (or LAN) network. It's simply just a mix of [r/place](<https://en.wikipedia.org/wiki/R/place>) and territorial.io. 
 
 In order for this to run, simply clone the project, install the Flask library, and run via
 
