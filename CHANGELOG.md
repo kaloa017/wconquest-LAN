@@ -1,3 +1,13 @@
+# 6.3.6 — persistent worlds
+
+- Removed territory-based victory detection, winner recording, all automatic reset
+  paths, win-status polling, victory overlays and countdown controls/styles.
+- Existing winner records are ignored. The leader/event status API and explicit
+  admin reset remain; combat victories and achievements are unchanged.
+- Added regressions for claims beyond the former threshold and stale winner saves.
+- Documented public-hosting alternatives to Cloudflare without port forwarding.
+- No additional save migration or player-data reset.
+
 # 6.3.5 — protect existing rounds
 
 - Automatic round resets are disabled by default, including both status polling

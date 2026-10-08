@@ -60,7 +60,7 @@ Legacy v4/v5 schema upgrades are retained for older saves. Do not remove backups
   interval survives restarts; admins can block/unblock ideas independently of game
   bans or chat mutes. Moderation changes are audited.
 
-The version displayed to players (6.3.5) is separate from SQLite schema version 11.
+The version displayed to players (6.3.6) is separate from SQLite schema version 11.
 Normal migration testing uses isolated databases; your live game.db is not a test fixture.
 
 ## Backup and rollback
@@ -113,3 +113,13 @@ status polling or the scheduler from erasing a world with a historical winner.
 The explicit admin reset remains available. Restart the server and reload clients.
 The original audit's automatic-expiry change was unsafe for existing saves and
 has been superseded.
+
+## 6.3.6 — remove win logic
+
+No schema or player-data migration. All victory detection and automatic round
+reset paths have been removed, including the former opt-in configuration switch.
+Old winner_id/winner_name/win_time rows are ignored; they cannot trigger a reset.
+The explicit administrator reset is retained. /api/game/status still supplies
+leader/event information and always returns status playing; victory-only fields
+threshold, reset_in and automatic_reset are no longer returned. Reload browsers
+for the removal of the victory overlay/countdown and obsolete polling.

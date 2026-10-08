@@ -36,16 +36,16 @@ refreshTerritories=async function(){
   for(const t of r.changed||[]){t.color=currentUser?.display_faction_colors!==false&&currentUser?.display_faction_colors!==0?(t.faction_color||t.base_color):t.base_color;const previous=territories[t.grid_key];for(const flag of ['coastal','water','weather'])if(previous?.[flag]!==undefined)t[flag]=previous[flag];if(t.owner_id)t.water=false;territories[t.grid_key]=t;if(tlayers[t.grid_key]){map.removeLayer(tlayers[t.grid_key]);delete tlayers[t.grid_key]}}
   mapVersion=r.version;if(r.reset||r.changed?.length||r.removed?.length)renderTerritories();
 };
-function stopPolling(){sharedAudio.pause();hideWinScreen();for(const t of pollHandles)clearInterval(t);pollHandles=[];clearInterval(refreshTimer);clearInterval(spectatorTimer)}
+function stopPolling(){sharedAudio.pause();for(const t of pollHandles)clearInterval(t);pollHandles=[];clearInterval(refreshTimer);clearInterval(spectatorTimer)}
 async function startSession(user){
   sessionGeneration++;pollBusy=false;selectedKey=null;myAlliances=[];chatLastId={global:0,faction:0};chatCh='global';selectedStock='';seenNotifIds.clear();notifPopupQueue=[];notifShowing=false;document.getElementById('notif-container').replaceChildren();
   await ready;stopPolling();currentUser=user;document.body.classList.toggle('is-admin',!!user?.is_admin);mapVersion='';territories={};tlayers={};if(map){map.remove();map=null;hoverRect=null}
   document.getElementById('auth-overlay').style.display='none';document.getElementById('game-screen').style.display='flex';initMap();map.invalidateSize();
   const [buildings,research]=await Promise.all([api('GET','/api/buildings'),api('GET','/api/research')]);if(!buildings.error)BLD=buildings;if(research.tree)Object.assign(RESEARCH_TREE,research.tree);
-  if(user){await refreshUser();if(!currentUser)return false}else updateNavbarGuest();await refreshTerritories();await refreshOnline();drawFallout();await checkGameStatus();updateHud();
+  if(user){await refreshUser();if(!currentUser)return false}else updateNavbarGuest();await refreshTerritories();await refreshOnline();drawFallout();updateHud();
   await loadLandGeoJSON();
   pollHandles.push(setInterval(async()=>{if(document.hidden||pollBusy)return;pollBusy=true;try{
-    if(currentUser)await refreshUser();await refreshTerritories();await refreshOnline();await checkGameStatus();pollAnnouncements();updateHud();
+    if(currentUser)await refreshUser();await refreshTerritories();await refreshOnline();pollAnnouncements();updateHud();
     if(currentUser){pollNotifications();pollChat();await refreshMusic()}else await api('POST','/api/spectate',{});await drawEva();
   }finally{pollBusy=false}},12000));
   pollHandles.push(setInterval(()=>{if(!document.hidden)drawFallout()},60000));

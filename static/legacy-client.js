@@ -4,9 +4,7 @@
 //  CONFIG (mirrors Python)
 // ══════════════════════════════════════════════════
 const GRID = 0.18;
-const WIN_THRESHOLD = 150; // matches server WIN_THRESHOLD
 const CLAIM_COST = 25; // base cost — scales with territory count
-const WIN_COUNTDOWN = 45;
 // Boats & planes are single-use with unlimited range (overseas only)
 const SELL_RATES = {food:2,wood:4,metal:6,oil:10};
 const BOAT_COST = 800;
@@ -62,8 +60,6 @@ let winCheckTimer = null;
 let lastSeenAnnId = 0;
 let onlineCollapsed = false;
 let mobileView    = 'map';
-let winShowing    = false;
-let winBarTimer   = null;
 let adminUserList = [];
 let spectatorTimer = null;
 let myAlliances   = []; // [{id, status, ally_id, ally_name, ally_color, is_requester}]
@@ -657,41 +653,6 @@ async function pollAnnouncements(){
   lastSeenAnnId=maxId;
 }
 
-async function checkGameStatus(){
-  const r=await api('GET','/api/game/status');
-  if(!r||r.error)return;
-  if(r.status==='winner'&&r.automatic_reset===false){hideWinScreen();return}
-  if(r.status==='winner'&&!winShowing){showWinScreen(r.winner,r.reset_in);}
-  else if(r.status==='reset'){hideWinScreen();await refreshAll();}
-  else if(r.status==='playing'&&winShowing){hideWinScreen();}
-}
-
-// ══════════════════════════════════════════════════
-//  WIN SCREEN
-// ══════════════════════════════════════════════════
-function showWinScreen(winner,resetIn){
-  winShowing=true;
-  document.getElementById('win-player-name').innerHTML=`<span style="color:var(--accent2)">${esc(winner)}</span> has conquered the world!`;
-  document.getElementById('win-sub-text').textContent=`${winner} reached ${WIN_THRESHOLD} territories. All territory and resources will be reset.`;
-  document.getElementById('win-overlay').classList.add('show');
-  let secs=resetIn;
-  const bar=document.getElementById('win-bar');
-  const cntEl=document.getElementById('win-countdown');
-  cntEl.textContent=secs;
-  bar.style.width=`${(secs/WIN_COUNTDOWN)*100}%`;
-  clearInterval(winBarTimer);
-  winBarTimer=setInterval(()=>{
-    secs--;cntEl.textContent=Math.max(0,secs);
-    bar.style.width=`${Math.max(0,(secs/WIN_COUNTDOWN)*100)}%`;
-    if(secs<=0){clearInterval(winBarTimer);}
-  },1000);
-}
-function hideWinScreen(){
-  winShowing=false;
-  clearInterval(winBarTimer);
-  document.getElementById('win-overlay').classList.remove('show');
-}
-
 // ══════════════════════════════════════════════════
 //  PANELS
 // ══════════════════════════════════════════════════
@@ -1103,7 +1064,7 @@ async function adminResetGame(){
   if(!confirm('Reset entire game? All territories and resources will be cleared.'))return;
   const r=await api('POST','/api/admin/reset_game',{});
   if(r.error)return toast(r.error,'error');
-  toast('Game reset!','success');hideWinScreen();await refreshAll();
+  toast('Game reset!','success');await refreshAll();
 }
 async function postAnnouncement(){
   const msg=document.getElementById('ann-text').value.trim();

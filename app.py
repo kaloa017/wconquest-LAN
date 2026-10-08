@@ -309,27 +309,6 @@ def require_admin(f):
 
 # ── Auto resource collection ──────────────────────────────────────────────────
 
-# ── Win-condition check ───────────────────────────────────────────────────────
-
-def check_win(uid, conn):
-    """Win when a single player reaches WIN_THRESHOLD territories."""
-    existing = get_setting(conn,'winner_id')
-    if existing: return False
-    # Find the player with the most territories
-    leader = conn.execute('''
-        SELECT u.id, u.username, COUNT(t.id) tc FROM users u
-        JOIN territories t ON t.owner_id=u.id
-        WHERE u.is_banned=0
-        GROUP BY u.id
-        ORDER BY tc DESC LIMIT 1
-    ''').fetchone()
-    if not leader or leader['tc'] < WIN_THRESHOLD:
-        return False
-    set_setting(conn,'winner_id', leader['id'])
-    set_setting(conn,'winner_name', leader['username'])
-    set_setting(conn,'win_time', int(time.time()))
-    return True
-
 # ── Static ────────────────────────────────────────────────────────────────────
 
 @app.route('/')
@@ -1213,26 +1192,11 @@ def get_announcements():
     conn.close()
     return jsonify([dict(r) for r in rows])
 
-# ── Game status (win condition) ───────────────────────────────────────────────
+# ── Game status (leader and world event) ───────────────────────────────────────────────
 
 @app.route('/api/game/status')
 def game_status():
     conn = get_db()
-    wid   = get_setting(conn,'winner_id')
-    wname = get_setting(conn,'winner_name')
-    wtime = get_setting(conn,'win_time')
-    if wid and wtime:
-        if not AUTO_RESET_ROUNDS:
-            conn.close()
-            return jsonify(status='winner',winner=wname,reset_in=None,automatic_reset=False,threshold=WIN_THRESHOLD)
-        elapsed = time.time() - float(wtime)
-        if elapsed >= WIN_COUNTDOWN:
-            do_game_reset(conn); conn.commit(); conn.close()
-            return jsonify({'status':'reset','message':'A new round has started!'})
-        conn.close()
-        return jsonify({'status':'winner','winner':wname,
-                        'reset_in': WIN_COUNTDOWN-int(elapsed),
-                        'threshold': WIN_THRESHOLD})
     ev = current_event(conn); conn.commit()
     conn.close()
     # Check current leader
@@ -1244,7 +1208,7 @@ def game_status():
     ''').fetchone()
     conn2.close()
     leader_info = {'name':leader['username'],'count':leader['tc']} if leader else None
-    return jsonify({'status':'playing','threshold':WIN_THRESHOLD,'leader':leader_info,'event':ev,'next_weather_in':600-int(time.time()%600)})
+    return jsonify({'status':'playing','leader':leader_info,'event':ev,'next_weather_in':600-int(time.time()%600)})
 
 # ── Admin ─────────────────────────────────────────────────────────────────────
 
@@ -1777,7 +1741,6 @@ def do_assault(conn, uid, uname_, fk, tk, force, kind, units_label, committed_tr
                  (uname_, def_name, tk, 'victory' if win else 'defeat', kind, f'{units_label}: {round(r["A"])} vs {round(r["D"])} · {r["weather"]} · {r["terrain"]}'))
     if r['def_oid']:
         create_notification(conn, r['def_oid'], 'attack', f'⚔ {uname_} {"captured" if win else "attacked"} your {r["terrain"]} tile ({tk}) by {kind} — {"you lost it!" if win else "you held!"}')
-    if win: check_win(uid, conn)
     r.update({'win': win, 'msg': msg, 'lost': lost}); return r
 
 def do_game_reset(conn):
@@ -2028,7 +1991,7 @@ def claim_territory():
     pay(conn, uid, cost); now = int(time.time()); inv = cost_value(cost)
     if ex: conn.execute('UPDATE territories SET owner_id=?,garrison=0,boats=0,planes=0,population=?,last_collected=?,invested=? WHERE grid_key=?', (uid, get_population(terrain, gl, gg), now, inv, gk))
     else: conn.execute('INSERT INTO territories (grid_key,owner_id,terrain,garrison,boats,planes,population,last_collected,invested) VALUES (?,?,?,0,0,0,?,?,?)', (gk, uid, terrain, get_population(terrain, gl, gg), now, inv))
-    check_win(uid, conn); ach = award_achievements(conn, uid); conn.commit(); conn.close()
+    ach = award_achievements(conn, uid); conn.commit(); conn.close()
     return jsonify({'success': True, 'terrain': terrain, 'message': f'Claimed {terrain} for {fmt_cost(cost)}', 'achievements': ach})
 
 @app.route('/api/territory/sell', methods=['POST'])

@@ -1,4 +1,4 @@
-# World Conquest LAN — v6.3.5
+# World Conquest LAN — v6.3.6
 
 Persistent multiplayer strategy on a real-world grid: claim tiles, recruit armies,
 build an economy, research technology, form factions and fight for territory.
@@ -213,12 +213,15 @@ checker is configured. See [Contributing](CONTRIBUTING.md) and [Security](SECURI
 `.env.example` documents environment variables; the application does not load it
 or `.env` automatically. Set variables in your shell/service before starting.
 
-## Round safety in 6.3.5
+## Persistent worlds in 6.3.6
 
-Automatic round resets are **off by default** (`AUTO_RESET_ROUNDS = False` in
-config.py). Reaching the victory threshold records a winner but keeps the world.
-Start another round only with the explicit admin reset action. This also protects
-older saves containing a stale winner timestamp. Do not enable automatic resets
-unless you deliberately want the world erased after WIN_COUNTDOWN seconds.
-Restart the server and reload browsers after upgrading; changing files alone does
-not change a server process that is already running.
+Victory detection, territory-based win thresholds, winner recording, countdowns
+and automatic round resets have been removed completely. Claims and combat keep
+the world running indefinitely; the Conqueror achievement and combat victories
+still work. Historical winner settings in older saves are ignored. The status
+API remains available for leader/event information and always reports playing.
+Only the existing explicit admin reset can start a fresh world. Saves need no
+additional migration. Restart the server and reload clients after updating.
+
+See [Cloudflare alternatives](docs/DEPLOYMENT.md#alternatives-to-cloudflare-without-port-forwarding)
+for Tailscale Funnel, ngrok, playit.gg and running on a public VPS.

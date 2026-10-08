@@ -141,19 +141,6 @@ select.input-sm option{background:var(--panel3)}
 .online-admin{font-size:9px;padding:1px 5px;background:rgba(240,192,64,.12);color:var(--gold);border-radius:2px;font-weight:600}
 .online-tc{font-size:10px;color:var(--text3)}
 
-/* ═══ WIN SCREEN ═════════════════════════════════════════════════════ */
-#win-overlay{position:fixed;inset:0;z-index:8500;background:rgba(5,8,12,.88);display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;backdrop-filter:blur(3px)}
-#win-overlay.show{display:flex}
-#win-box{background:var(--panel);border:2px solid var(--gold);border-radius:8px;padding:40px 50px;text-align:center;box-shadow:0 0 80px rgba(240,192,64,.25),var(--shadow);max-width:480px;width:90vw}
-#win-box h2{font-family:'Cinzel',serif;font-size:28px;color:var(--gold);margin-bottom:8px;letter-spacing:2px;text-shadow:0 0 30px rgba(240,192,64,.5)}
-#win-box .win-name{font-size:20px;font-weight:600;margin-bottom:8px}
-#win-box .win-sub{color:var(--text2);font-size:14px;margin-bottom:18px;line-height:1.6}
-#win-countdown{font-family:'Cinzel',serif;font-size:36px;color:var(--accent2);font-weight:700}
-#win-bar-wrap{height:5px;background:var(--border);border-radius:3px;overflow:hidden;margin-top:10px}
-#win-bar{height:100%;background:var(--gold);border-radius:3px;transition:width 1s linear}
-.win-confetti{font-size:32px;letter-spacing:8px;animation:confetti 1s infinite alternate}
-@keyframes confetti{from{opacity:.7}to{opacity:1}}
-
 /* ═══ ANNOUNCEMENT POPUP — CENTER MODAL ══════════════════════════════ */
 #ann-container{position:fixed;inset:0;z-index:8900;display:flex;align-items:center;justify-content:center;pointer-events:none}
 #ann-container.has-popup{pointer-events:all}

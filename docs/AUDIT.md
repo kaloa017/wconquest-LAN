@@ -1,3 +1,12 @@
+# Persistent-world update — 6.3.6
+
+At the host's request, all victory detection, threshold checks, winner recording,
+automatic resets, countdowns and victory UI were removed. Only explicit admin
+reset remains. Old winner metadata is inert; no live data migration is needed.
+Regressions verify stale metadata cannot reset a world and claiming beyond the
+old 150-tile threshold does not record a winner. The suite now has 49 tests.
+The historical audit/correction notes below describe superseded behavior.
+
 # Round-reset correction — 6.3.5
 
 The audit incorrectly re-enabled destructive automatic round expiry on an existing

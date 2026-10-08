@@ -505,8 +505,6 @@ def scheduler_tick():
         due=conn.execute('SELECT next_tick FROM scheduler_state WHERE id=1').fetchone()[0]
         if now>=due:
             conn.execute('UPDATE scheduler_state SET next_tick=? WHERE id=1',(now+SCHEDULER_INTERVAL,))
-            win_time=core['get_setting'](conn,'win_time')
-            if AUTO_RESET_ROUNDS and core['get_setting'](conn,'winner_id') and win_time and now-float(win_time)>=WIN_COUNTDOWN:core['do_game_reset'](conn)
             for u in conn.execute('SELECT id FROM users WHERE is_banned=0').fetchall():core['auto_collect'](u['id'],conn)
             targets=[]
             for r in conn.execute('SELECT u.id,COUNT(t.id) n,u.last_seen FROM users u LEFT JOIN territories t ON t.owner_id=u.id WHERE u.is_banned=0 GROUP BY u.id'):
