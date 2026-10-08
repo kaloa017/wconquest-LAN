@@ -2477,7 +2477,6 @@ def trade_cancel():
 def loan_request():
     d = request.json or {}; uid = session['user_id']; to = int(d.get('to_id', 0)); unit = d.get('unit'); amt = int(d.get('amount', 0)); conn = get_db()
     if unit not in ('boats', 'planes') or amt < 1 or to == uid: conn.close(); return jsonify({'error': 'Invalid request'}), 400
-    if fac_id(conn, uid) and fac_id(conn, uid) == fac_id(conn, to): conn.close(); return jsonify({'error': 'Faction mates already share one fleet — just use it!'}), 400
     if not conn.execute('SELECT 1 FROM users WHERE id=?', (to,)).fetchone(): conn.close(); return jsonify({'error': 'Unknown player'}), 400
     cur = conn.execute("INSERT INTO loans(lender_id,borrower_id,unit,amount,message,status,ts) VALUES(?,?,?,?,?,'pending',?)", (to, uid, unit, amt, (d.get('message') or '')[:200], int(time.time())))
     msg = f'🚢 {session["username"]} asks to borrow {amt} {unit}.' + (f' "{(d.get("message") or "")[:200]}"' if d.get('message') else '')
@@ -2491,8 +2490,9 @@ def loan_respond():
     l = conn.execute("SELECT * FROM loans WHERE id=? AND lender_id=? AND status='pending'", (int(d.get('loan_id', 0)), uid)).fetchone()
     if not l: conn.rollback(); conn.close(); return jsonify({'error': 'Request not found'}), 404
     if d.get('accept'):
-        if pool_get(conn, uid, l['unit']) < l['amount']: conn.rollback(); conn.close(); return jsonify({'error': f'You only have {pool_get(conn, uid, l["unit"])} {l["unit"]}'}), 400
-        pool_add(conn, uid, l['unit'], -l['amount']); pool_add(conn, l['borrower_id'], l['unit'], l['amount']); conn.execute("UPDATE loans SET status='active' WHERE id=?", (l['id'],))
+        owned = conn.execute(f'SELECT {l["unit"]} FROM users WHERE id=?', (uid,)).fetchone()[0]
+        if owned < l['amount']: conn.rollback(); conn.close(); return jsonify({'error': f'You personally own only {owned} {l["unit"]}'}), 400
+        conn.execute(f'UPDATE users SET {l["unit"]}={l["unit"]}-? WHERE id=?', (l['amount'], uid)); pool_add(conn, l['borrower_id'], l['unit'], l['amount']); conn.execute("UPDATE loans SET status='active' WHERE id=?", (l['id'],))
     else: conn.execute("UPDATE loans SET status='denied' WHERE id=?", (l['id'],))
     create_notification(conn, l['borrower_id'], 'info', f'🚢 {session["username"]} {"lent you" if d.get("accept") else "denied your request for"} {l["amount"]} {l["unit"]}.')
     conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Lent!' if d.get('accept') else 'Denied'})
@@ -2503,8 +2503,9 @@ def loan_return():
     uid = session['user_id']; conn = get_db(); conn.execute('BEGIN IMMEDIATE')
     l = conn.execute("SELECT * FROM loans WHERE id=? AND (borrower_id=? OR lender_id=?) AND status='active'", (int((request.json or {}).get('loan_id', 0)), uid, uid)).fetchone()
     if not l: conn.rollback(); conn.close(); return jsonify({'error': 'Loan not found'}), 404
-    back = min(l['amount'], pool_get(conn, l['borrower_id'], l['unit']))
-    pool_add(conn, l['borrower_id'], l['unit'], -back); pool_add(conn, l['lender_id'], l['unit'], back); conn.execute("UPDATE loans SET status='returned' WHERE id=?", (l['id'],))
+    owned = conn.execute(f'SELECT {l["unit"]} FROM users WHERE id=?', (l['borrower_id'],)).fetchone()
+    back = min(l['amount'], owned[0] if owned else 0)
+    conn.execute(f'UPDATE users SET {l["unit"]}={l["unit"]}-? WHERE id=?', (back, l['borrower_id'])); pool_add(conn, l['lender_id'], l['unit'], back); conn.execute("UPDATE loans SET status='returned' WHERE id=?", (l['id'],))
     create_notification(conn, l['lender_id'], 'info', f'🚢 {uname(conn, l["borrower_id"])} returned {back}/{l["amount"]} {l["unit"]}.'); conn.commit(); conn.close()
     return jsonify({'success': True, 'message': f'Returned {back} {l["unit"]}'})
 
@@ -2664,6 +2665,11 @@ def admin_set_setting():
     d = request.json or {}; k = d.get('key')
     if k not in ('income_mult', 'troop_cost_mult', 'events_enabled', 'nuke_cost'): return jsonify({'error': 'Bad key'}), 400
     v = d.get('value')
+    if k != 'events_enabled':
+        try:
+            if isinstance(v,bool) or not math.isfinite(float(v)): raise ValueError()
+        except (ValueError,TypeError,OverflowError): return jsonify({'error': 'Setting must be a finite number'}), 400
+    elif str(v) not in ('0','1'):return jsonify({'error': 'Choose 0 or 1 for events'}),400
     if k == 'nuke_cost':
         try: v = max(0, int(float(v)))
         except Exception: return jsonify({'error': 'Bad value'}), 400

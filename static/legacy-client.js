@@ -641,7 +641,7 @@ async function refreshOnline(){
     const isMe=currentUser&&u.username===currentUser.username;
     const isSpec=u.type==='spectator';
     const dot=isSpec?`<span style="font-size:11px">${u.flag||'🌐'}</span>`:`<span class="online-dot" style="background:${u.color}"></span>`;
-    const name=`<span class="online-name${isMe?' me':''}" title="${isSpec?(u.country||''):''}">` + u.username + `</span>`;
+    const name=`<span class="online-name${isMe?' me':''}" title="${isSpec?esc(u.country||''):''}">` + esc(u.username) + `</span>`;
     const badge=u.is_admin?'<span class="online-admin">MOD</span>':'';
     const tc=isSpec?'<span class="online-tc" style="font-size:9px">watching</span>':`<span class="online-tc">🗺${u.territories}</span>`;
     return `<div class="online-row">${dot}${name}${badge}${tc}</div>`;
@@ -670,7 +670,7 @@ async function checkGameStatus(){
 // ══════════════════════════════════════════════════
 function showWinScreen(winner,resetIn){
   winShowing=true;
-  document.getElementById('win-player-name').innerHTML=`<span style="color:var(--accent2)">${winner}</span> has conquered the world!`;
+  document.getElementById('win-player-name').innerHTML=`<span style="color:var(--accent2)">${esc(winner)}</span> has conquered the world!`;
   document.getElementById('win-sub-text').textContent=`${winner} reached ${WIN_THRESHOLD} territories. All territory and resources will be reset.`;
   document.getElementById('win-overlay').classList.add('show');
   let secs=resetIn;
@@ -732,8 +732,8 @@ async function loadBattleLog(){
   if(!list||!list.length){el.innerHTML='<div class="empty-state"><div class="es-icon">⚔</div>No battles yet</div>';return;}
   const modeIcon={'land':'⚔','naval':'⚓','air':'✈'};
   el.innerHTML=list.map(b=>`<div class="be ${b.result}">
-    <div class="be-title">${modeIcon[b.mode]||'⚔'} ${b.result==='victory'?'Victory':'Defeat'} — ${b.attacker} vs ${b.defender}</div>
-    <div class="be-detail">${b.details||''} · ${(b.created_at||'').slice(0,16)}</div>
+    <div class="be-title">${modeIcon[b.mode]||'⚔'} ${b.result==='victory'?'Victory':'Defeat'} — ${esc(b.attacker)} vs ${esc(b.defender)}</div>
+    <div class="be-detail">${esc(b.details||'')} · ${(b.created_at||'').slice(0,16)}</div>
   </div>`).join('');
 }
 
@@ -1123,8 +1123,8 @@ async function loadAdminAnns(){
   document.getElementById('admin-ann-list').innerHTML=list.map(a=>`
     <div class="ann-entry" style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
       <div>
-        <div>${a.message}</div>
-        ${a.image_url?`<div style="font-size:10px;color:var(--text3)">📷 ${a.image_url.slice(0,40)}…</div>`:''}
+        <div>${esc(a.message)}</div>
+        ${a.image_url?`<div style="font-size:10px;color:var(--text3)">📷 ${esc(a.image_url.slice(0,40))}…</div>`:''}
         <div style="font-size:10px;color:var(--text3);margin-top:3px">— ${esc(a.author)} · ${(a.created_at||'').slice(0,16)}</div>
       </div>
       <button class="btn btn-danger btn-sm" style="flex-shrink:0" onclick="delAnn(${a.id})">✕</button>

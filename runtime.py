@@ -22,7 +22,7 @@ def initialize_security(app):
         else:
             key = secrets.token_hex(32)
             with os.fdopen(fd,'w') as f: f.write(key)
-        if len(key) < 32: raise RuntimeError('Session secret must be at least 32 characters')
+    if len(key) < 32: raise RuntimeError('Session secret must be at least 32 characters')
     app.secret_key = key
     app.wsgi_app = TrustedProxy(app.wsgi_app)
 

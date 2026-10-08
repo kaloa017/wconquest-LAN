@@ -186,6 +186,8 @@ def before_request():
         if request.mimetype!='multipart/form-data':
             d=body()
             for key,value in d.items():
+                if key in ('message','text','name','tag','descr','color','resource','unit','kind','channel','action','rank','type','key','give_res','get_res','symbol','side','idea','image','image_url','recovery_code','reset_pin','pin') and not isinstance(value,str):raise ValueError('Expected text for '+key)
+                if key in ('ban','promote','accept','enabled','water','from_treasury','display_faction_colors','share_boats','share_planes','music_muted') and not isinstance(value,bool) and key!='water':raise ValueError('Expected true or false for '+key)
                 if key in ('amount','troops','boats','planes','minutes','user_id','faction_id','to_id','host_id','request_id','loan_id','rel_id','merge_id','trade_id','give_amt','get_amt'):
                     integer(value,0,10**9)
                 if key in ('grid_key','from_key','target_key') and value:core['parse_key'](value)
