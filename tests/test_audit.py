@@ -30,7 +30,7 @@ class AuditTests(unittest.TestCase):
     def user(self,conn,label):
         return conn.execute('INSERT INTO users(username,password) VALUES(?,?)',(label+str(time.time_ns())[-8:],app.ph('testpassword'))).lastrowid
     def faction(self,conn,members):
-        fid=conn.execute('INSERT INTO factions(name,tag,leader_id,color) VALUES(?,?,?,?)',('Audit'+str(time.time_ns()),str(time.time_ns())[-4:],members[0],'#ef4444')).lastrowid
+        fid=conn.execute('INSERT INTO factions(name,tag,leader_id,color) VALUES(?,?,?,?)',('Audit'+str(time.time_ns()),format(conn.execute('SELECT COALESCE(MAX(id),0)+1 FROM factions').fetchone()[0],'04x'),members[0],'#ef4444')).lastrowid
         for uid in members:features.join_faction(conn,uid,fid)
         return fid
     def test_loan_cannot_transfer_faction_mates_vehicles(self):

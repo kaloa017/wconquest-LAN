@@ -14,5 +14,8 @@ let resolveChat,appended=false;const box={innerHTML:'',insertAdjacentHTML:()=>{a
 const chatContext={currentUser:{id:1,faction:{id:7}},sessionGeneration:1,chatCh:'faction',chatLastId:{global:0,faction:0},document:{getElementById:()=>box},api:()=>new Promise(resolve=>resolveChat=resolve)};
 vm.createContext(chatContext);vm.runInContext(functionSource('pollChat'),chatContext);const chat=chatContext.pollChat();chatContext.chatCh='global';resolveChat({messages:[{id:1,text:'private'}],last_id:1});await chat;assert.equal(appended,false);assert.equal(chatContext.chatLastId.faction,0);
 assert(source.includes('window.innerWidth<=768'));
+// Failed bootstrap must become a useful API error, not an unhandled rejection.
+const active=fs.readFileSync(path.join(__dirname,'../static/client.js'),'utf8');const startup=active.slice(0,active.indexOf('function card('));
+const failedContext={Audio:function(){},fetch:async()=>({ok:false,status:503}),api:null};vm.createContext(failedContext);vm.runInContext(startup,failedContext);const failed=await failedContext.api('GET','/api/me');assert.match(failed.error,/Connection interrupted/);
 console.log('Client security, stale territory, stale chat and tablet breakpoint regressions passed.');
 })().catch(error=>{console.error(error);process.exitCode=1});
