@@ -34,3 +34,6 @@ body h1,body h2,body h3,body h4{font-family:inherit!important}#settings-content 
 /* Visible toast state must keep the mobile inset, without desktop centering. */
 #toast{white-space:normal;overflow-wrap:anywhere;box-sizing:border-box}
 @media(max-width:768px){#toast,#toast.show{left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right));width:auto;min-width:0;max-width:none;margin:0;box-sizing:border-box}#toast{transform:translateY(14px)}#toast.show{transform:translateY(0);max-height:calc(100dvh - 160px);overflow:auto;pointer-events:auto}.claim-block{max-width:100%;min-width:0;padding:10px}.claim-btn{max-width:100%;white-space:normal;overflow-wrap:anywhere;letter-spacing:0;line-height:1.65;display:block;padding:12px 10px}.claim-info{white-space:normal;overflow-wrap:anywhere;line-height:1.6}.claim-btn .keybind-hint{display:none}}
+
+/* Keyboard focus is visible on cards and controls that act as buttons. */
+[role="button"]:focus-visible,textarea:focus-visible{outline:2px solid #f4cc83;outline-offset:3px}

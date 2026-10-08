@@ -1,15 +1,17 @@
 /* v6: one lifecycle, authenticated requests, delta map sync and grouped controls. */
+let sessionGeneration=0;
 let csrf='', mapVersion='', pollBusy=false, pollHandles=[], gameConfig={}, selectedStock='';
 const cheatWarning='Cheating is unethical and unfair to other players. Every use is recorded in the audit log.';
 function safeImageUrl(value){try{const u=new URL(value,location.origin);return ['http:','https:'].includes(u.protocol)?u.href:''}catch{return ''}}
 const sharedAudio=new Audio();sharedAudio.loop=true;sharedAudio.preload='none';let musicUrl='';
-const ready=fetch('/api/bootstrap',{credentials:'same-origin'}).then(r=>r.json()).then(c=>{csrf=c.csrf;gameConfig=c;Object.assign(IDEO,c.ideologies);return c});
+const ready=fetch('/api/bootstrap',{credentials:'same-origin'}).then(r=>{if(!r.ok)throw new Error('Game configuration unavailable');return r.json()}).then(c=>{csrf=c.csrf;gameConfig=c;Object.assign(IDEO,c.ideologies);return c});
 api=async function(method,path,data){
-  await ready;
+  const generation=sessionGeneration;
+  try{await ready;
   if(method==='POST'&&['/api/admin/give_money','/api/admin/give_resource','/api/admin/give_territory'].includes(path)){
     if(!confirm(cheatWarning+'\nConfirm this host action?'))return {error:'Cancelled'};data={...data,confirm:true};
   }
-  try{const options={method,credentials:'same-origin',headers:{'Content-Type':'application/json','X-WC-CSRF':csrf},body:method==='POST'?JSON.stringify(data||{}):undefined};let r=await fetch(path,options);if(r.status===404&&path.startsWith('/api/ideas'))return {error:'Ideas are not available on this server yet. The host needs to restart the updated game server, then reload this page.'};let result=await r.json();if(r.status===403&&result.error?.startsWith('Refresh the page')){csrf=(await fetch('/api/bootstrap',{credentials:'same-origin'}).then(r=>r.json())).csrf;options.headers['X-WC-CSRF']=csrf;r=await fetch(path,options);result=await r.json()}if(r.status===401&&path==='/api/me'){stopPolling();currentUser=null;document.getElementById('auth-overlay').style.display='flex';document.getElementById('game-screen').style.display='none'}return result}
+  const options={method,credentials:'same-origin',headers:{'Content-Type':'application/json','X-WC-CSRF':csrf},body:method==='POST'?JSON.stringify(data||{}):undefined};let r=await fetch(path,options);if(r.status===404&&path.startsWith('/api/ideas'))return {error:'Ideas are not available on this server yet. The host needs to restart the updated game server, then reload this page.'};let result=await r.json();if(r.status===403&&result.error?.startsWith('Refresh the page')){csrf=(await fetch('/api/bootstrap',{credentials:'same-origin'}).then(r=>r.json())).csrf;options.headers['X-WC-CSRF']=csrf;r=await fetch(path,options);result=await r.json()}if(generation!==sessionGeneration)return {error:'Session changed; please retry.'};if(!result||(!r.ok&&!result.error))return {error:'Server returned an unexpected response ('+r.status+'). Please try again.'};if(r.status===401&&currentUser&&path!=='/api/login'){sessionGeneration++;stopPolling();document.body.classList.remove('is-admin');closeProfile();closeAdmin();closeGiftModal();closeCommunityDialog();currentUser=null;document.getElementById('auth-overlay').style.display='flex';document.getElementById('game-screen').style.display='none'}return result}
   catch{return {error:'Connection interrupted. Please try again.'}}
 };
 function card(title,content){return `<section class="v4-card"><h3>${esc(title)}</h3>${content}</section>`}
@@ -23,7 +25,7 @@ function addNavigation(id,label,render){
 function installScrollButtons(){
   document.querySelectorAll('.sidebar-tabs').forEach(el=>{
     if(el.dataset.arrows)return;el.dataset.arrows='1';const wrapper=document.createElement('div');wrapper.className='scroll-controls';el.parentNode.insertBefore(wrapper,el);wrapper.appendChild(el);
-    for(const [label,dir] of [['‹',-1],['›',1]]){const b=document.createElement('button');b.className='scroll-arrow';b.textContent=label;b.title=dir<0?'Scroll left; hold to continue':'Scroll right; hold to continue';wrapper.appendChild(b);let timer;
+    for(const [label,dir] of [['‹',-1],['›',1]]){const b=document.createElement('button');b.className='scroll-arrow';b.textContent=label;b.title=dir<0?'Scroll left; hold to continue':'Scroll right; hold to continue';b.setAttribute('aria-label',dir<0?'Scroll menus left':'Scroll menus right');wrapper.appendChild(b);let timer;
       const scroll=()=>el.scrollBy({left:dir*110,behavior:'smooth'});b.onclick=scroll;b.onpointerdown=e=>{b.setPointerCapture(e.pointerId);scroll();timer=setInterval(scroll,180)};for(const event of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(event,()=>clearInterval(timer));}
   });
 }
@@ -34,16 +36,17 @@ refreshTerritories=async function(){
   for(const t of r.changed||[]){t.color=currentUser?.display_faction_colors!==false&&currentUser?.display_faction_colors!==0?(t.faction_color||t.base_color):t.base_color;const previous=territories[t.grid_key];for(const flag of ['coastal','water','weather'])if(previous?.[flag]!==undefined)t[flag]=previous[flag];if(t.owner_id)t.water=false;territories[t.grid_key]=t;if(tlayers[t.grid_key]){map.removeLayer(tlayers[t.grid_key]);delete tlayers[t.grid_key]}}
   mapVersion=r.version;if(r.reset||r.changed?.length||r.removed?.length)renderTerritories();
 };
-function stopPolling(){for(const t of pollHandles)clearInterval(t);pollHandles=[];clearInterval(refreshTimer);clearInterval(spectatorTimer)}
+function stopPolling(){sharedAudio.pause();hideWinScreen();for(const t of pollHandles)clearInterval(t);pollHandles=[];clearInterval(refreshTimer);clearInterval(spectatorTimer)}
 async function startSession(user){
-  await ready;stopPolling();currentUser=user;mapVersion='';territories={};tlayers={};if(map){map.remove();map=null;hoverRect=null}
+  sessionGeneration++;pollBusy=false;selectedKey=null;myAlliances=[];chatLastId={global:0,faction:0};chatCh='global';selectedStock='';seenNotifIds.clear();notifPopupQueue=[];notifShowing=false;document.getElementById('notif-container').replaceChildren();
+  await ready;stopPolling();currentUser=user;document.body.classList.toggle('is-admin',!!user?.is_admin);mapVersion='';territories={};tlayers={};if(map){map.remove();map=null;hoverRect=null}
   document.getElementById('auth-overlay').style.display='none';document.getElementById('game-screen').style.display='flex';initMap();map.invalidateSize();
   const [buildings,research]=await Promise.all([api('GET','/api/buildings'),api('GET','/api/research')]);if(!buildings.error)BLD=buildings;if(research.tree)Object.assign(RESEARCH_TREE,research.tree);
-  if(user)await refreshUser();else updateNavbarGuest();await refreshTerritories();await refreshOnline();drawFallout();updateHud();
+  if(user){await refreshUser();if(!currentUser)return false}else updateNavbarGuest();await refreshTerritories();await refreshOnline();drawFallout();await checkGameStatus();updateHud();
   await loadLandGeoJSON();
   pollHandles.push(setInterval(async()=>{if(document.hidden||pollBusy)return;pollBusy=true;try{
-    if(currentUser)await refreshUser();await refreshTerritories();await refreshOnline();pollAnnouncements();updateHud();
-    if(currentUser){pollNotifications();pollChat();await refreshMusic()}await drawEva();
+    if(currentUser)await refreshUser();await refreshTerritories();await refreshOnline();await checkGameStatus();pollAnnouncements();updateHud();
+    if(currentUser){pollNotifications();pollChat();await refreshMusic()}else await api('POST','/api/spectate',{});await drawEva();
   }finally{pollBusy=false}},12000));
   pollHandles.push(setInterval(()=>{if(!document.hidden)drawFallout()},60000));
   if(user){await refreshMusic();const c=await api('GET','/api/changelog');if(c.show)showTextModal('What changed — '+c.version,c.text,async()=>{await api('POST','/api/changelog/seen',{})},'Don’t show again until the next update')}
@@ -142,7 +145,7 @@ installScrollButtons();
 document.querySelectorAll('input[type="password"]').forEach(i=>{i.minLength=8});
 document.getElementById('rg-pin')?.remove();document.getElementById('ppin-pin')?.remove();
 ready.catch(()=>toast('Unable to initialize game; reload to reconnect','error'));
-let evaMarkers=[];async function drawEva(){if(!map)return;const r=await api('GET','/api/eva/deployments');for(const m of evaMarkers)map.removeLayer(m);evaMarkers=[];for(const u of r.units||[]){const [a,b]=parseKey(u.grid_key);evaMarkers.push(L.marker([(a+.5)*GRID,(b+.5)*GRID],{interactive:false,icon:L.icon({iconUrl:'/static/eva/'+u.image,iconSize:[36,48],iconAnchor:[18,24]})}).addTo(map))}}
+let evaMarkers=[];async function drawEva(){if(!map)return;const r=await api('GET','/api/eva/deployments');for(const m of evaMarkers)map.removeLayer(m);evaMarkers=[];for(const u of r.units||[]){const [a,b]=parseKey(u.grid_key),island=pacificIslands[u.grid_key];evaMarkers.push(L.marker(island?[island.properties.lat,island.properties.lng]:[(a+.5)*GRID,(b+.5)*GRID],{interactive:false,icon:L.icon({iconUrl:'/static/eva/'+u.image,iconSize:[36,48],iconAnchor:[18,24]})}).addTo(map))}}
 async function deployEva(image){await act('/api/eva/deploy',{grid_key:selectedKey,image});await drawEva()}
 doSetPin=async function(){const r=await act('/api/profile/recovery',{password:document.getElementById('ppin-pass').value});if(r.recovery_code){closeProfile();showTextModal('Save your one-time recovery code',r.recovery_code)}};
 /* The server owns terrain; discard legacy pixel sampling and client water reports. */
@@ -202,7 +205,7 @@ const mainlandRender=renderTerritories;
 renderTerritories=function(){
   const all=territories;territories=Object.fromEntries(Object.entries(all).filter(([key])=>!key.startsWith('island:')));
   try{mainlandRender()}finally{territories=all}
-  drawPacificIslands();
+  drawCaps();drawPacificIslands();
 };
 const mainlandFlyTo=flyTo;
 flyTo=function(key){const f=pacificIslands[key];if(!f)return mainlandFlyTo(key);map.setView([f.properties.lat,f.properties.lng],8);if(isMobile())closeMobileSheet()};
@@ -252,7 +255,7 @@ const fullHostTools=buildHost;
 buildHost=async function(){await fullHostTools();document.getElementById('host-content').insertAdjacentHTML('afterbegin',card('💡 Community inbox','<p>Players can submit ideas from the top of the game. Read the latest suggestions here.</p><button class="btn btn-primary" onclick="readIdeas()">📬 Read player ideas</button>'))};
 const rankAdminUsers=loadAdminUsers;
 loadAdminUsers=async function(){await rankAdminUsers();document.querySelectorAll('#admin-user-rows tr').forEach((row,index)=>{const u=adminUserList[index];if(!u)return;const select=document.createElement('select');select.className='input-sm rank-selector';select.setAttribute('aria-label','Rank for '+u.username);select.innerHTML=['Automatic','Settler','Warrior','Commander','Warlord','Emperor','Conqueror','Donator'].map(rank=>`<option ${rank===(u.rank_override||'Automatic')?'selected':''}>${rank}</option>`).join('');select.onchange=async()=>{const chosen=select.value;if(!confirm('Set '+u.username+'’s display rank to '+chosen+'?')){select.value=u.rank_override||'Automatic';return}const result=await act('/api/admin/player',{user_id:u.id,action:'rank',rank:chosen});if(!result.error)await loadAdminUsers()};row.querySelector('.action-btns').appendChild(select)})};
-document.addEventListener('keydown',event=>{const dialog=document.querySelector('#v6-dialog .v6-dialog')||document.querySelector('.modal-overlay.open .modal-box');if(!dialog)return;if(event.key==='Escape'){if(document.getElementById('v6-dialog'))closeCommunityDialog();else{closeProfile();closeAdmin();closeGiftModal()}event.preventDefault()}if(event.key==='Tab'){const focusable=[...dialog.querySelectorAll('button,input,textarea,select,a[href],summary')].filter(el=>!el.disabled&&el.getClientRects().length),first=focusable[0],last=focusable.at(-1);if(event.shiftKey&&document.activeElement===first){last?.focus();event.preventDefault()}else if(!event.shiftKey&&document.activeElement===last){first?.focus();event.preventDefault()}}});
+document.addEventListener('keydown',event=>{if(document.getElementById('tut')?.classList.contains('open'))return;const dialog=document.querySelector('#v6-dialog .v6-dialog')||[...document.querySelectorAll('.modal-overlay.open .modal-box')].at(-1);if(!dialog)return;if(event.key==='Escape'){if(document.getElementById('v6-dialog')?.dataset.requiresAcknowledgement){event.preventDefault();return}if(document.getElementById('v6-dialog'))closeCommunityDialog();else if(dialog.closest('#admin-modal'))closeAdmin();else if(dialog.closest('#gift-modal'))closeGiftModal();else closeProfile();event.preventDefault()}if(event.key==='Tab'){const focusable=[...dialog.querySelectorAll('button,input,textarea,select,a[href],summary')].filter(el=>!el.disabled&&el.getClientRects().length),first=focusable[0],last=focusable.at(-1);if(event.shiftKey&&document.activeElement===first){last?.focus();event.preventDefault()}else if(!event.shiftKey&&document.activeElement===last){first?.focus();event.preventDefault()}}});
 const funCountry=buildEmpire;
 buildEmpire=async function(){await funCountry();if(!currentUser)return;const el=document.getElementById('empire-content'),u=currentUser;el.insertAdjacentHTML('afterbegin',card('🌍 Your country',`<div class="country-summary"><div><b>${Object.values(territories).filter(t=>t.owner_id===u.id).length}</b><span>Territories</span></div><div><b>${fmtPop(u.population)}</b><span>Population</span></div><div><b>${fmtN(u.army)}</b><span>Army</span></div></div><p style="margin-top:14px">${!Object.values(territories).some(t=>t.owner_id===u.id)?'Your story starts with one territory. Choose land or an island on the map.':!u.capital_key?'Give your country a home: choose an owned territory and make it your capital.':!u.ideology?'Choose an ideology below to shape how your country grows.':'Your country is growing. Research new technology, complete quests and work with your allies.'}</p><div class="help-grid"><button class="btn btn-ghost" onclick="showPanel('quests')">🎁 Daily rewards</button><button class="btn btn-ghost" onclick="showPanel('research')">🔬 Next discovery</button></div>`))};
 PANELS.empire.f=()=>buildEmpire();PANELS.market.f=()=>buildMarket();PANELS.stocks.f=()=>buildStocks();
@@ -267,7 +270,7 @@ buildStocks=async function(){
   el.innerHTML=card('📈 Stock exchange',`<p>Invest in another country or faction. Prices rise and fall, so decide how much you’re comfortable holding.</p><label for="stock-symbol">🌍 Choose an investment</label><select id="stock-symbol" class="form-input" onchange="selectedStock=this.value;buildStocks()"><option value="">Select a country or faction</option>${result.assets.map(a=>`<option value="${esc(a.symbol)}" ${a.symbol===selectedStock?'selected':''}>${a.kind==='faction'?'🚩':'🏳'} ${esc(a.name||a.symbol)} · ${a.price.toFixed(2)}💰${a.investable?'':' · own country/faction'}</option>`).join('')}</select>${chart}`)+card('🔄 Place a trade',control('📦 Number of shares','stock-quantity','number',1)+`<div class="v4-row"><button class="btn btn-primary grow" ${!asset?.investable?'disabled':''} onclick="tradeStock('buy')">📥 Buy shares</button><button class="btn btn-ghost grow" ${!held?.quantity?'disabled':''} onclick="tradeStock('sell')">📤 Sell shares</button></div><p class="v4-sub">${Math.round(result.fee*100)}% transaction fee. You cannot buy shares in yourself or your own faction.</p>`)+card('💼 Your portfolio',`<div class="stock-metric"><span>Total investment value</span><b>${fmtN(total)}💰</b></div>`+(result.portfolio.length?result.portfolio.map(p=>`<div class="v4-row"><span class="grow"><b>${esc(result.assets.find(a=>a.symbol===p.symbol)?.name||p.symbol)}</b><p class="v4-sub">${p.quantity} shares · purchased for ${fmtN(p.cost_basis)}💰</p></span><span class="chip gold">${fmtN(p.value)}💰</span><button class="btn btn-ghost btn-sm" onclick="selectedStock='${esc(p.symbol)}';buildStocks()">🔎 View</button></div>`).join(''):'<p>Your portfolio is empty. Choose an investment above when you’re ready to get started.</p>'))+'<button class="btn btn-ghost btn-full" onclick="showPanel(\'market\')">💹 Back to resource market</button>';
 };
 const oldTextDialog=showTextModal;
-showTextModal=function(title,text,done,label='Close'){const overlay=openCommunityDialog(title,'<pre></pre><div class="dialog-actions"><button id="text-dialog-done" class="btn btn-primary"></button></div>');overlay.querySelector('pre').textContent=text;const button=overlay.querySelector('#text-dialog-done');button.textContent=label;button.onclick=async()=>{button.disabled=true;try{if(done)await done();closeCommunityDialog()}finally{button.disabled=false}};if(done){overlay.onclick=null;overlay.querySelector('.dialog-top button').remove()}button.focus()};
+showTextModal=function(title,text,done,label='Close'){const overlay=openCommunityDialog(title,'<pre></pre><div class="dialog-actions"><button id="text-dialog-done" class="btn btn-primary"></button></div>');overlay.querySelector('pre').textContent=text;const button=overlay.querySelector('#text-dialog-done');button.textContent=label;button.onclick=async()=>{button.disabled=true;try{if(done)await done();closeCommunityDialog()}finally{button.disabled=false}};if(done){overlay.onclick=null;overlay.dataset.requiresAcknowledgement='1';overlay.querySelector('.dialog-top button').remove()}button.focus()};
 function findMyCountry(){if(!currentUser)return toast('Log in to find your country','error');const key=currentUser.capital_key||Object.keys(territories).find(k=>territories[k].owner_id===currentUser.id);if(key){closeMobileSheet();flyTo(key)}else toast('Choose your first territory on the map to begin','success')}
 function exploreAnIsland(){const choices=Object.values(pacificIslands);if(!choices.length)return toast('The island map is still loading','error');const island=choices[Math.floor(Math.random()*choices.length)];closeMobileSheet();map.setView([island.properties.lat,island.properties.lng],9);toast('🏝 '+island.properties.name+' · hover or tap to explore','success')}
 const polishedInitMap=initMap;
@@ -280,13 +283,13 @@ function applyChatCollapse(){const content=document.getElementById('chat-content
 const menuBuildChat=buildChat;
 buildChat=async function(){await menuBuildChat();const content=document.getElementById('chat-content');if(!currentUser||!content)return;content.insertAdjacentHTML('afterbegin','<button id="menu-chat-toggle" class="btn btn-ghost btn-full" onclick="toggleMenuChat()"></button><div id="menu-chat-recent" aria-live="polite"></div>');applyChatCollapse()};
 const communityApi=api;
-api=async function(method,url,data){const result=await communityApi(method,url,data);if(method==='GET'&&url.startsWith('/api/chat')&&Array.isArray(result.messages)){const channel=new URL(url,location.origin).searchParams.get('channel')||'global';if(recentChat[channel]){const messages=new Map(recentChat[channel].map(message=>[message.id,message]));for(const message of result.messages)messages.set(message.id,message);recentChat[channel]=[...messages.values()].sort((a,b)=>a.id-b.id).slice(-8);renderChatPreview()}}if(method==='GET'&&url.startsWith('/api/income')&&result.rates){incomeSnapshot=result;incomeUpdated=Date.now();applyIncomeTooltips()}return result};
+api=async function(method,url,data){const generation=sessionGeneration,faction=currentUser?.faction?.id;const result=await communityApi(method,url,data);if(generation!==sessionGeneration)return {error:'Session changed; please retry.'};if(method==='GET'&&url.startsWith('/api/chat')&&Array.isArray(result.messages)){const channel=new URL(url,location.origin).searchParams.get('channel')||'global';if(recentChat[channel]&&(channel!=='faction'||faction===currentUser?.faction?.id)){const messages=new Map(recentChat[channel].map(message=>[message.id,message]));for(const message of result.messages)messages.set(message.id,message);recentChat[channel]=[...messages.values()].sort((a,b)=>a.id-b.id).slice(-8);renderChatPreview()}}if(method==='GET'&&url.startsWith('/api/income')&&result.rates){incomeSnapshot=result;incomeUpdated=Date.now();applyIncomeTooltips()}return result};
 function applyIncomeTooltips(){if(!incomeSnapshot)return;document.querySelectorAll('#resource-bar .res-pill').forEach((pill,index)=>{const keys=['food','wood','metal','oil','money',...['steel','uranium','gems'].filter(key=>currentUser?.[key]>0)],key=keys[index];if(!key)return;const rate=incomeSnapshot.rates[key]||0,text=`${RES_CFG[key]?.label||key}: +${rate.toLocaleString()} per minute · +${(rate*60).toLocaleString()} per hour`;pill.title=text;pill.setAttribute('aria-label',text);pill.tabIndex=0;pill.onclick=()=>toast(text,'success')})}
 async function refreshIncomeTooltips(){if(!currentUser||incomeBusy||Date.now()-incomeUpdated<12000)return;incomeBusy=true;try{await api('GET','/api/income?minutes=1')}finally{incomeBusy=false}}
 const incomeNavbar=updateNavbar;
 updateNavbar=function(user){incomeNavbar(user);applyIncomeTooltips();refreshIncomeTooltips()};
 const communitySession=startSession;
-startSession=async function(user){recentChat={global:[],faction:[]};incomeSnapshot=null;incomeUpdated=0;chatCollapsed=true;await communitySession(user);if(user){await api('GET','/api/chat?channel=global&since=0');if(!localStorage.getItem('wc_tut')&&(currentUser?.territory_count||0)===0)showTutorial(0)}};
+startSession=async function(user){recentChat={global:[],faction:[]};incomeSnapshot=null;incomeUpdated=0;chatCollapsed=true;try{const started=await communitySession(user);if(started===false)return;if(user){await api('GET','/api/chat?channel=global&since=0');if(!localStorage.getItem('wc_tut')&&(currentUser?.territory_count||0)===0)showTutorial(0)}}catch{stopPolling();document.getElementById('game-screen').style.display='none';document.getElementById('auth-overlay').style.display='flex';document.getElementById('auth-msg').textContent='Unable to load the game. Check the connection and reload to try again.'}};
 startGame=startSession;startSpectatorMode=()=>startSession(null);
 const communityLogout=doLogout;
 doLogout=async function(){await communityLogout();recentChat={global:[],faction:[]};incomeSnapshot=null;document.body.classList.remove('is-admin')};
@@ -314,7 +317,7 @@ showTutorial=function(index=0){let overlay=document.getElementById('tut');if(ind
 function tryTutorialPanel(panel){document.getElementById('tut')?.classList.remove('open');if(isMobile())mobileNav(panel);else showPanel(panel)}
 document.addEventListener('keydown',event=>{const overlay=document.getElementById('tut');if(!overlay?.classList.contains('open'))return;if(event.key==='Escape'){event.preventDefault();showTutorial(TUT.length)}if(event.key==='Tab'){const buttons=[...overlay.querySelectorAll('button')];const first=buttons[0],last=buttons.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}}});
 
-async function checkIdeaStatus(){const status=await api('GET','/api/ideas'),button=document.getElementById('idea-submit');if(!button)return;if(status.error){toast(status.error,'error');return}if(status.banned){button.disabled=true;button.dataset.waiting='1';button.textContent='Ideas blocked by host';return}if(status.retry_after)startIdeaWait(status.retry_after)}
+async function checkIdeaStatus(){const button=document.getElementById('idea-submit');if(!button)return;const status=await api('GET','/api/ideas');if(!button.isConnected)return;if(status.error){toast(status.error,'error');return}if(status.banned){button.disabled=true;button.dataset.waiting='1';button.textContent='Ideas blocked by host';return}if(status.retry_after)startIdeaWait(status.retry_after)}
 function startIdeaWait(seconds){const button=document.getElementById('idea-submit');if(!button)return;const until=Date.now()+seconds*1000;button.dataset.waiting='1';button.disabled=true;const tick=()=>{if(!button.isConnected)return;const left=Math.max(0,Math.ceil((until-Date.now())/1000));button.textContent=left?'Wait '+left+'s':'📨 Send idea';if(left)setTimeout(tick,1000);else{delete button.dataset.waiting;button.disabled=false}};tick()}
 async function hostIdeaBan(enabled){const userId=+document.getElementById('host-player').value;if(!confirm((enabled?'Block':'Allow')+' idea submissions for this player?'))return;await act('/api/admin/player',{user_id:userId,action:'ideas_ban',enabled})}
 const playersWithIdeaControls=loadAdminUsers;
@@ -326,3 +329,31 @@ initMap=function(){islandHoverInitMap();map.on('mouseout',()=>{if(islandHoverLay
 function openResourceReset(userId,name='selected player'){if(!currentUser?.is_admin)return;openCommunityDialog('♻️ Reset resources',`<p>Reset resource balances for <b>${esc(name)}</b> to zero. Choose all resources or a single balance below.</p><label for="reset-resource">Resource</label><select id="reset-resource" class="form-input"><option value="all">All resources (including money)</option>${['money','food','wood','metal','oil','steel','uranium','gems'].map(key=>`<option value="${key}">${RES_CFG[key]?.icon||''} ${esc(RES_CFG[key]?.label||key)}</option>`).join('')}</select><p class="v4-sub">This only clears the selected balances. Normal income continues. Territory, buildings, army, fleet, research, wonders and stocks are kept.</p><div class="dialog-actions"><button class="btn btn-danger" id="reset-resources-submit">Reset to zero</button><button class="btn btn-ghost" onclick="closeCommunityDialog()">Cancel</button></div>`);document.getElementById('reset-resources-submit').onclick=async()=>{const resource=document.getElementById('reset-resource').value,label=resource==='all'?'ALL resource balances, including money':(RES_CFG[resource]?.label||resource);if(!confirm('Reset '+label+' to zero for '+name+'? This action is recorded in the audit log.'))return;const button=document.getElementById('reset-resources-submit');button.disabled=true;try{const result=await act('/api/admin/player',{user_id:userId,action:'reset_resources',resource,confirm:true});if(!result.error){closeCommunityDialog();await loadAdminUsers()}}finally{button.disabled=false}}}
 const playersWithResourceReset=loadAdminUsers;
 loadAdminUsers=async function(){await playersWithResourceReset();document.querySelectorAll('#admin-user-rows tr').forEach((row,index)=>{const user=adminUserList[index];if(!user||row.querySelector('.resource-reset-btn'))return;const button=document.createElement('button');button.className='btn btn-danger btn-sm resource-reset-btn';button.textContent='♻️ Reset resources';button.onclick=()=>openResourceReset(user.id,user.username);row.querySelector('.action-btns')?.appendChild(button)})};
+
+let chatFactionId=null;
+const auditedNavbar=updateNavbar;
+updateNavbar=function(user){
+  const faction=user.faction?.id||null;
+  if(faction!==chatFactionId){chatFactionId=faction;recentChat.faction=[];chatLastId.faction=0;if(chatCh==='faction'&&document.getElementById('chat-msgs'))buildChat();renderChatPreview()}
+  auditedNavbar(user);document.getElementById('admin-btn').style.display=user.is_admin?'inline-block':'none';
+};
+
+document.addEventListener('keydown',event=>{
+  const node=event.target.closest('[role="button"][tabindex="0"]');
+  if(node&&(event.key==='Enter'||event.key===' ')){event.preventDefault();node.click()}
+});
+const auditedOnline=toggleOnline;
+toggleOnline=function(){auditedOnline();document.getElementById('online-header').setAttribute('aria-expanded',!onlineCollapsed)};
+let settingsFocus=null,adminFocus=null,giftFocus=null;
+const auditedProfile=openProfile;
+openProfile=function(){settingsFocus=document.activeElement;auditedProfile();document.querySelector('#profile-modal button')?.focus()};
+const auditedCloseProfile=closeProfile;
+closeProfile=function(){auditedCloseProfile();settingsFocus?.focus()};
+const auditedAdmin=openAdmin;
+openAdmin=async function(){adminFocus=document.activeElement;await auditedAdmin();document.querySelector('#admin-modal button')?.focus()};
+const auditedCloseAdmin=closeAdmin;
+closeAdmin=function(){auditedCloseAdmin();adminFocus?.focus()};
+const auditedGift=openGiftModal;
+openGiftModal=async function(){giftFocus=document.activeElement;await auditedGift();document.getElementById('gift-recipient').focus()};
+const auditedCloseGift=closeGiftModal;
+closeGiftModal=function(){auditedCloseGift();giftFocus?.focus()};

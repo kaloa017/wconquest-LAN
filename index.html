@@ -22,23 +22,23 @@
   </div>
   <!-- LOGIN -->
   <div id="form-login" class="auth-form">
-   <input id="li-user" class="form-input" placeholder="Username" autocomplete="username"/>
-   <input id="li-pass" class="form-input" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()"/>
+   <input id="li-user" class="form-input" placeholder="Username" autocomplete="username"/ aria-label="Username">
+   <input id="li-pass" class="form-input" type="password" autocomplete="current-password" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()"/ aria-label="Password">
    <button class="btn btn-primary btn-full" onclick="doLogin()">Enter the World</button>
   </div>
   <!-- REGISTER -->
   <div id="form-register" class="auth-form" style="display:none">
-   <input id="rg-user" class="form-input" placeholder="Username (3–20 chars)"/>
-   <input id="rg-pass" class="form-input" type="password" placeholder="Password (min 8 chars)"/>
-   <input id="rg-pin" class="form-input" placeholder="Recovery code (4–8 digits, optional)" />
+   <input id="rg-user" class="form-input" placeholder="Username (3–20 chars)"/ aria-label="Username (3–20 chars)">
+   <input id="rg-pass" class="form-input" type="password" autocomplete="new-password" placeholder="Password (min 8 chars)"/ aria-label="Password (min 8 chars)">
+   <input id="rg-pin" class="form-input" placeholder="Recovery code (4–8 digits, optional)" / aria-label="Recovery code (4–8 digits, optional)">
    <div class="pin-hint">💡 Save the one-time recovery code shown after signup</div>
    <button class="btn btn-primary btn-full" onclick="doRegister()">Create Account</button>
   </div>
   <!-- FORGOT -->
   <div id="form-forgot" class="auth-form" style="display:none">
-   <input id="fp-user" class="form-input" placeholder="Username"/>
-   <input id="fp-pin" class="form-input" placeholder="Recovery code" />
-   <input id="fp-pass" class="form-input" type="password" placeholder="New Password"/>
+   <input id="fp-user" class="form-input" placeholder="Username"/ aria-label="Username">
+   <input id="fp-pin" class="form-input" placeholder="Recovery code" / aria-label="Recovery code">
+   <input id="fp-pass" class="form-input" type="password" placeholder="New Password"/ aria-label="New Password">
    <button class="btn btn-primary btn-full" onclick="doForgotPassword()">Reset Password</button>
    <div class="pin-hint" style="text-align:center">Lost your code? Ask the host for a one-time reset code.</div>
   </div>
@@ -104,7 +104,7 @@
 
  <!-- ONLINE WIDGET -->
  <div id="online-widget">
-  <div id="online-header" onclick="toggleOnline()">
+  <div id="online-header" onclick="toggleOnline()" role="button" tabindex="0" aria-expanded="true">
    <span id="online-title">🟢 Online</span>
    <span id="online-count">0</span>
   </div>
@@ -131,13 +131,13 @@
 <div id="battle-report"><div id="br-box"></div></div>
 
 <!-- TOAST -->
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <!-- NOTIFICATION POPUPS (top-right) -->
 <div id="notif-container"></div>
 
 <!-- GIFT MODAL -->
-<div id="gift-modal" class="modal-overlay">
+<div id="gift-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Gift money">
  <div class="modal-box">
   <div class="modal-header">
    <h2 class="accent">💸 GIFT MONEY</h2>
@@ -152,7 +152,7 @@
     </div>
     <div>
      <div class="section-label" style="margin-bottom:5px">Amount <span id="gift-balance-hint" style="color:var(--accent2)"></span></div>
-     <input id="gift-amount" class="form-input" type="number" min="1" placeholder="Enter amount…"/>
+     <input id="gift-amount" class="form-input" type="number" min="1" placeholder="Enter amount…"/ aria-label="Enter amount…">
     </div>
     <button class="btn btn-primary btn-full" onclick="doGiftMoney()" style="margin-top:4px">💸 Send Gift</button>
    </div>
@@ -171,8 +171,8 @@
    <div class="modal-section">
     <h3>Change Username</h3>
     <div style="display:flex;flex-direction:column;gap:8px">
-     <input id="pu-new" class="form-input" placeholder="New username (3–20 chars)"/>
-     <input id="pu-pass" class="form-input" type="password" placeholder="Confirm password"/>
+     <input id="pu-new" class="form-input" placeholder="New username (3–20 chars)"/ aria-label="New username (3–20 chars)">
+     <input id="pu-pass" class="form-input" type="password" placeholder="Confirm password"/ aria-label="Confirm password">
      <button class="btn btn-primary" onclick="doChangeUsername()">Change Username</button>
     </div>
    </div>
@@ -180,8 +180,8 @@
    <div class="modal-section">
     <h3>Change Password</h3>
     <div style="display:flex;flex-direction:column;gap:8px">
-     <input id="pp-curr" class="form-input" type="password" placeholder="Current password"/>
-     <input id="pp-new" class="form-input" type="password" placeholder="New password (min 8 chars)"/>
+     <input id="pp-curr" class="form-input" type="password" placeholder="Current password"/ aria-label="Current password">
+     <input id="pp-new" class="form-input" type="password" placeholder="New password (min 8 chars)"/ aria-label="New password (min 8 chars)">
      <button class="btn btn-primary" onclick="doChangePassword()">Change Password</button>
     </div>
    </div>
@@ -189,8 +189,8 @@
    <div class="modal-section">
     <h3>Recovery code <span id="pin-status" style="color:var(--green2);font-size:11px"></span></h3>
     <div style="display:flex;flex-direction:column;gap:8px">
-     <input id="ppin-pin" class="form-input" placeholder="One-time recovery code" />
-     <input id="ppin-pass" class="form-input" type="password" placeholder="Confirm password"/>
+     <input id="ppin-pin" class="form-input" placeholder="One-time recovery code" / aria-label="One-time recovery code">
+     <input id="ppin-pass" class="form-input" type="password" placeholder="Confirm password"/ aria-label="Confirm password">
      <button class="btn btn-ghost" onclick="doSetPin()">Set Recovery code</button>
     </div>
    </div>
@@ -199,7 +199,7 @@
 </div>
 
 <!-- ADMIN MODAL -->
-<div id="admin-modal" class="modal-overlay">
+<div id="admin-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="Admin dashboard">
  <div class="modal-box" style="max-width:820px">
   <div class="modal-header">
    <h2 class="gold">⚙ ADMIN DASHBOARD</h2>
@@ -222,7 +222,7 @@
    <div style="margin-bottom:14px">
     <div class="section-label" style="margin-bottom:7px">Post Announcement</div>
     <textarea id="ann-text" class="form-input" rows="3" placeholder="Announcement text…" style="resize:vertical;margin-bottom:6px"></textarea>
-    <input id="ann-img-url" class="form-input" placeholder="Image URL (optional, e.g. https://i.imgur.com/…)" style="margin-bottom:6px"/>
+    <input id="ann-img-url" class="form-input" placeholder="Image URL (optional, e.g. https://i.imgur.com/…)" style="margin-bottom:6px"/ aria-label="Image URL (optional, e.g. https://i.imgur.com/…)">
     <button class="btn btn-primary" onclick="postAnnouncement()">📢 Post Announcement</button>
    </div>
    <div class="section-label" style="margin-bottom:6px">Recent Announcements</div>
@@ -234,7 +234,7 @@
      <div class="section-label">Give Money to Player (Free)</div>
      <div class="input-row" style="margin-top:6px">
       <select class="input-sm" id="tool-uid-money-select"></select>
-      <input id="tool-give-amount" class="input-sm" type="number" min="1" placeholder="Amount" style="max-width:90px"/>
+      <input id="tool-give-amount" class="input-sm" type="number" min="1" placeholder="Amount" style="max-width:90px"/ aria-label="Amount">
       <button class="btn btn-success btn-sm" onclick="adminGiveMoney()">💰 Give</button>
      </div>
     </div>
@@ -242,7 +242,7 @@
      <div class="section-label">Edit Player Username</div>
      <div class="input-row" style="margin-top:6px">
       <select class="input-sm" id="tool-uid-select"></select>
-      <input id="tool-new-username" class="input-sm" placeholder="New username"/>
+      <input id="tool-new-username" class="input-sm" placeholder="New username"/ aria-label="New username">
       <button class="btn btn-primary btn-sm" onclick="adminChangeUsername()">Rename</button>
      </div>
     </div>
@@ -250,7 +250,7 @@
      <div class="section-label">Reset Player Password</div>
      <div class="input-row" style="margin-top:6px">
       <select class="input-sm" id="tool-uid-pw-select"></select>
-      <input id="tool-new-pw" class="input-sm" type="password" placeholder="New password"/>
+      <input id="tool-new-pw" class="input-sm" type="password" placeholder="New password"/ aria-label="New password">
       <button class="btn btn-danger btn-sm" onclick="adminResetPassword()">Reset PW</button>
      </div>
     </div>

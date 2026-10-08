@@ -93,7 +93,7 @@ function cellDist(k1,k2){const[a,b]=parseKey(k1),[c,d]=parseKey(k2);return Math.
 function hexRgba(hex,a){const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},${a})`}
 function fmtPop(n){if(!n)return'0';if(n>=1000000)return(n/1e6).toFixed(1)+'M';if(n>=1000)return(n/1000).toFixed(0)+'K';return String(n)}
 function getRank(tc){let r=RANKS[0];for(const x of RANKS)if(tc>=x.min)r=x;return r}
-function isMobile(){return window.innerWidth<768}
+function isMobile(){return window.innerWidth<=768}
 
 // ══════════════════════════════════════════════════
 //  LAND CHECK
@@ -144,7 +144,7 @@ function initMap(){
   }).addTo(map);
   map.on('mousemove',onMapMove);
   map.on('click',onMapClick);
-  window.addEventListener('resize',()=>map.invalidateSize());
+  // The active client installs one resize listener for the map and mobile sheet.
 }
 function onMapMove(e){
   const{lat,lng}=e.latlng;
@@ -792,7 +792,7 @@ function buildResearch(){
     }
   }
   const money=currentUser?.money||0;
-  el.innerHTML=`<div style="color:var(--accent2);font-size:12px;margin-bottom:10px;text-align:right">💰 ${money} available</div>${html}`;
+  el.innerHTML=`<div style="color:var(--accent2);font-size:12px;margin-bottom:10px;text-align:right">💰 ${money} available</div>${html}`;el.querySelectorAll('.tech-card[onclick]').forEach(node=>{node.setAttribute('role','button');node.tabIndex=0});
 }
 async function unlockResearch(tech){
   const r=await api('POST','/api/research/unlock',{tech});
@@ -1151,7 +1151,7 @@ async function pollNotifications(){
   if(!Array.isArray(list))return;
   for(const n of list){
     if(!seenNotifIds.has(n.id)){
-      seenNotifIds.add(n.id);
+      seenNotifIds.add(n.id);while(seenNotifIds.size>2048)seenNotifIds.delete(seenNotifIds.values().next().value);
       queueNotifPopup(n);
     }
   }
@@ -1420,7 +1420,7 @@ async function adminGiveMoney(){
 //  KEYBINDS
 // ══════════════════════════════════════════════════
 document.addEventListener('keydown',async(e)=>{
-  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+  if(e.target.matches('input,textarea,select,[contenteditable=true]')||document.querySelector('.modal-overlay.open,#v6-dialog,#tut.open'))return;
   if(!currentUser||!selectedKey)return;
   const t=territories[selectedKey];
   if(e.key.toLowerCase()==='c'){
@@ -1527,7 +1527,7 @@ function initMap(){
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',maxZoom:12,minZoom:2,noWrap:true,bounds:wb,className:'dark-tiles',crossOrigin:true}).addTo(map);
   map.on('mousemove',onMapMove);map.on('click',onMapClick);
   map.on('moveend',()=>updateHud());
-  window.addEventListener('resize',()=>map.invalidateSize());
+  // The active client installs one resize listener for the map and mobile sheet.
 }
 
 /* ── water / coast detection (client knows the land polygons; server caches what clients report) ── */
@@ -1561,7 +1561,7 @@ function updateHud(){
     if(u.event){const m=Math.max(1,Math.round((u.event.until-Date.now()/1000)/60));h+=`<span class="chip gold btnish" onclick="openPanel('quests')" title="${esc(u.event.desc)}">${u.event.icon} ${esc(u.event.name)} <small>${m}m</small></span>`}
     if(u.daily_ready)h+=`<span class="chip good btnish" onclick="openPanel('quests')">🎁 Daily ready</span>`;
   }
-  el.innerHTML=h;
+  el.innerHTML=h;el.querySelectorAll('.btnish[onclick]').forEach(node=>{node.setAttribute('role','button');node.tabIndex=0});
 }
 const _un=updateNavbar;updateNavbar=function(u){_un(u);updateHud();setDot('quests',!!u.daily_ready)};
 function setDot(panel,on){document.querySelector(`.stab[data-panel="${panel}"]`)?.classList.toggle('has-dot',on);if(panel==='chat'||panel==='quests')document.querySelector(`.mnav-btn[data-mn="${panel==='quests'?'more':panel}"]`)?.classList.toggle('has-dot',on)}
@@ -1609,8 +1609,10 @@ function onMapClick(e){
   if(isMobile())openMobileSheet(key);else{showPanel('territory');fetchAndBuildPanel(key)}
 }
 async function fetchAndBuildPanel(key){
+  const generation=sessionGeneration;
   await reportWater(key);
-  const t=await api('GET',`/api/territory/${key}`);if(t.error)return;
+  const t=await api('GET',`/api/territory/${key}`);if(generation!==sessionGeneration||key!==selectedKey)return;
+  if(t.error){const el=isMobile()?document.getElementById('mobile-sheet-content'):document.getElementById('territory-actions');if(el)el.textContent=t.error;return;}
   territories[key]={...(territories[key]||{}),...t};renderTerritories();
   window.__force=true;
   if(isMobile()){const c=document.getElementById('mobile-sheet-content');if(sheetPanel==='territory'&&c)buildTerritoryPanel(key,t,c)}
@@ -1805,11 +1807,13 @@ async function pollChat(first){
   if(!box){ // background: only unread dot for global
     const r=await api('GET','/api/chat?channel=global&since='+(chatLastId.global||0));
     if(r.messages?.length){if(chatLastId.global)setDot('chat',true);chatLastId.global=r.last_id}return}
-  const r=await api('GET',`/api/chat?channel=${chatCh}&since=${chatLastId[chatCh]||0}`);
+  const channel=chatCh,generation=sessionGeneration,faction=currentUser?.faction?.id;
+  const r=await api('GET',`/api/chat?channel=${channel}&since=${chatLastId[channel]||0}`);
+  if(generation!==sessionGeneration||channel!==chatCh||box!==document.getElementById('chat-msgs')||(channel==='faction'&&faction!==currentUser?.faction?.id))return;
   if(r.error&&chatCh==='faction'){box.innerHTML='<div class="v4-sub" style="margin:auto;text-align:center">Join or found a faction to unlock private chat 🚩</div>';return}
   if(!r.messages)return;
   const atBottom=box.scrollTop+box.clientHeight>=box.scrollHeight-40;
-  if(r.messages.length){box.insertAdjacentHTML('beforeend',r.messages.map(chatLine).join(''));chatLastId[chatCh]=r.last_id;if(first||atBottom)box.scrollTop=box.scrollHeight;if(!first&&!chatVisible()&&r.messages.some(m=>m.uid!==currentUser.id))setDot('chat',true)}
+  if(r.messages.length){box.insertAdjacentHTML('beforeend',r.messages.map(chatLine).join(''));chatLastId[channel]=r.last_id;while(box.querySelectorAll('.cm').length>200)box.querySelector('.cm').remove();if(first||atBottom)box.scrollTop=box.scrollHeight;if(!first&&!chatVisible()&&r.messages.some(m=>m.uid!==currentUser.id))setDot('chat',true)}
   else if(first)box.innerHTML='<div class="v4-sub" style="margin:auto">No messages yet — say hi!</div>';
 }
 async function sendChat(){
@@ -1939,14 +1943,15 @@ let capLayer=null,foLayer=null;
 function drawCaps(){
   if(!map)return;if(capLayer)map.removeLayer(capLayer);capLayer=L.layerGroup();
   for(const[k,t] of Object.entries(territories))if(t.capital){const[gl,gg]=parseKey(k);
-    L.marker([(gl+.5)*GRID,(gg+.5)*GRID],{icon:L.divIcon({className:'cap-star',html:'⭐',iconSize:[24,24]}),interactive:false,keyboard:false}).addTo(capLayer)}
+    const island=typeof pacificIslands!=='undefined'&&pacificIslands[k];
+    L.marker(island?[island.properties.lat,island.properties.lng]:[(gl+.5)*GRID,(gg+.5)*GRID],{icon:L.divIcon({className:'cap-star',html:'⭐',iconSize:[24,24]}),interactive:false,keyboard:false}).addTo(capLayer)}
   capLayer.addTo(map);
 }
 const _rtr=renderTerritories;renderTerritories=function(){_rtr();drawCaps()};
 async function drawFallout(){
   const list=await api('GET','/api/fallout');if(!Array.isArray(list)||!map)return;
   if(foLayer)map.removeLayer(foLayer);foLayer=L.layerGroup();
-  for(const k of list){const[gl,gg]=parseKey(k);L.rectangle([[gl*GRID,gg*GRID],[(gl+1)*GRID,(gg+1)*GRID]],{renderer:canvasR,color:'#b6ff00',weight:1,fillColor:'#201f00',fillOpacity:.6,interactive:false}).addTo(foLayer)}
+  for(const k of list){const island=pacificIslands[k];if(island){L.geoJSON(island,{style:{renderer:canvasR,color:'#b6ff00',weight:1,fillColor:'#201f00',fillOpacity:.6},interactive:false}).addTo(foLayer);continue}const[gl,gg]=parseKey(k);L.rectangle([[gl*GRID,gg*GRID],[(gl+1)*GRID,(gg+1)*GRID]],{renderer:canvasR,color:'#b6ff00',weight:1,fillColor:'#201f00',fillOpacity:.6,interactive:false}).addTo(foLayer)}
   foLayer.addTo(map);
 }
 
@@ -2170,7 +2175,7 @@ async function sendChat(){
 async function buildFaction(){
   const el=document.getElementById('faction-content');if(!el)return;
   if(!currentUser){el.innerHTML='<div class="empty-state">Log in to join a faction</div>';return}
-  const[inf,list]=await Promise.all([api('GET','/api/faction/info'),api('GET','/api/faction/list')]);const f=inf.faction;
+  const[inf,list]=await Promise.all([api('GET','/api/faction/info'),api('GET','/api/faction/list')]);const f=inf.faction;if(inf.error||!Array.isArray(list)){el.textContent=inf.error||list.error||'Unable to load factions';return;}
   const merge=inf.konami?`<div class="v4-card" style="border-color:#b46bff"><h4 style="color:#b46bff">🧬 Country Merge <span class="v4-sub">secret</span></h4><div class="v4-sub" style="margin-bottom:6px">Fuse two accounts into one. The player you invite is absorbed into YOUR country (land, resources, research, wonders…) and their account disappears.</div><div class="v4-row"><input class="form-input grow" id="mg-name" placeholder="Username to merge with"/><button class="btn btn-primary" onclick="mergeReq()">Propose</button></div></div>`:'';
   if(!f){
     el.innerHTML=`<div class="v4-card"><h4>🚩 Found a Faction <span class="v4-sub">500💰</span></h4><input class="form-input" id="fc-name" placeholder="Faction name (3–24)" style="margin-bottom:6px"/><div class="v4-row"><input class="form-input grow" id="fc-tag" placeholder="TAG" maxlength="4"/><button class="btn btn-primary" onclick="factionCreate()">Found</button></div>
@@ -2208,6 +2213,7 @@ async function buildEmpire(){
   if(!currentUser){el.innerHTML='<div class="empty-state">Log in to rule an empire</div>';return}
   const u=currentUser;
   const[w,emb,lb,research]=await Promise.all([api('GET','/api/wonders'),api('GET','/api/embassy/list'),api('GET','/api/leaderboard'),Promise.resolve(0)]);
+  if(!Array.isArray(w)||emb.error){el.textContent=w.error||emb.error||'Unable to load country information';return;}
   const players=(Array.isArray(lb)?lb:[]).filter(p=>p.id!==u.id&&!p.is_admin);window.__players=players;
   const opts=players.map(p=>`<option value="${p.id}">${esc(p.username)}</option>`).join('');
   const partners=[...new Set([...(emb.owned||[]).map(x=>x.host_id),...(emb.hosted||[]).map(x=>x.owner_id)])].map(id=>players.find(p=>p.id===id)).filter(Boolean);
