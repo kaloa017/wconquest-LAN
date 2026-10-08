@@ -620,8 +620,9 @@ def admin_player():
     elif action=='faction':
         fid=integer(d.get('faction_id',0),0);f=conn.execute('SELECT 1 FROM factions WHERE id=?',(fid,)).fetchone() if fid else None
         if fid and not f:raise ValueError('Faction not found')
-        leave_faction(conn,uid)
-        if fid:join_faction(conn,uid,fid)
+        if fid!=core['fac_id'](conn,uid):
+            leave_faction(conn,uid)
+            if fid:join_faction(conn,uid,fid)
     elif action in ('resources','give_money','give_resource'):
         key=d.get('resource');amount=integer(d.get('amount'),0,10**9)
         if action=='give_money':key='money'

@@ -9,8 +9,8 @@ def backup_before_upgrade(path):
     if not p.exists(): return
     with closing(sqlite3.connect(path)) as conn:
         if conn.execute("SELECT 1 FROM sqlite_master WHERE name='schema_migrations'").fetchone():
-            if conn.execute('SELECT 1 FROM schema_migrations WHERE version=10').fetchone(): return
-        backup=p.parent/'backups'/f'{p.stem}-before-v10-{time.time_ns()}.db'
+            if conn.execute('SELECT 1 FROM schema_migrations WHERE version=11').fetchone(): return
+        backup=p.parent/'backups'/f'{p.stem}-before-v11-{time.time_ns()}.db'
         backup.parent.mkdir(exist_ok=True)
         with closing(sqlite3.connect(backup)) as dest: conn.backup(dest)
 
@@ -155,5 +155,26 @@ def migrate_v10(get_db):
         for name,ddl in [('ideas_banned','INTEGER NOT NULL DEFAULT 0'),('idea_last_sent','INTEGER NOT NULL DEFAULT 0')]:
             if name not in columns:c.execute(f'ALTER TABLE users ADD COLUMN {name} {ddl}')
         c.execute('INSERT INTO schema_migrations VALUES(10,?)',(int(time.time()),));c.commit()
+    except Exception:c.rollback();raise
+    finally:c.close()
+
+
+def migrate_v11(get_db):
+    """Invalidate all affected defenses when territory counts/membership change."""
+    c=get_db()
+    try:
+        c.execute('BEGIN IMMEDIATE')
+        if c.execute('SELECT 1 FROM schema_migrations WHERE version=11').fetchone():c.commit();return
+        for event,owners in [('INSERT','NEW.owner_id'),('DELETE','OLD.owner_id'),('UPDATE OF owner_id','OLD.owner_id,NEW.owner_id')]:
+            name='group_tile_'+event.split()[0].lower()
+            c.execute(f"""CREATE TRIGGER IF NOT EXISTS {name} AFTER {event} ON territories BEGIN
+                INSERT INTO map_changes(grid_key) SELECT t.grid_key FROM territories t JOIN users u ON u.id=t.owner_id
+                WHERE u.id IN ({owners}) OR u.faction_id IN (SELECT faction_id FROM users WHERE id IN ({owners})); END""")
+        c.execute("""CREATE TRIGGER IF NOT EXISTS group_membership_update AFTER UPDATE OF faction_id ON users
+            WHEN OLD.faction_id IS NOT NEW.faction_id BEGIN
+            INSERT INTO map_changes(grid_key) SELECT t.grid_key FROM territories t JOIN users u ON u.id=t.owner_id
+            WHERE u.id=NEW.id OR u.faction_id IN (OLD.faction_id,NEW.faction_id); END""")
+        c.execute('UPDATE map_epoch SET value=value+1 WHERE id=1')
+        c.execute('INSERT INTO schema_migrations VALUES(11,?)',(int(time.time()),));c.commit()
     except Exception:c.rollback();raise
     finally:c.close()

@@ -946,7 +946,9 @@ def admin_factions():
 @require_admin
 def admin_disband():
     fid = int((request.json or {}).get('faction_id', 0)); conn = get_db()
-    conn.execute('UPDATE users SET faction_id=NULL WHERE faction_id=?', (fid,)); conn.execute('DELETE FROM factions WHERE id=?', (fid,))
+    if not conn.execute('SELECT 1 FROM factions WHERE id=?',(fid,)).fetchone():conn.close();return jsonify(error='Faction not found'),404
+    for member in conn.execute('SELECT id FROM users WHERE faction_id=? ORDER BY id',(fid,)).fetchall():_leave_faction(conn,member['id'])
+    conn.execute('DELETE FROM factions WHERE id=?',(fid,))
     conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Faction disbanded'})
 
 @app.route('/api/admin/set_water', methods=['POST'])
@@ -1573,7 +1575,9 @@ def auto_collect(uid, conn):
     if f: faction_tick(conn, f)
 
 def devastate(conn, gl, gg, R, until, reason):
-    keys = [f'{gl+a},{gg+b}' for a in range(-R, R+1) for b in range(-R, R+1) if a*a+b*b <= R*R]
+    from geography import islands_in_radius
+    keys = [f'{gl+a},{gg+b}' for a in range(-R, R+1) for b in range(-R, R+1) if a*a+b*b <= R*R and -473<=gl+a<=472 and -1000<=gg+b<=999]
+    keys += islands_in_radius(gl,gg,R)
     q = _in(keys)
     rows = conn.execute(f'SELECT grid_key,owner_id FROM territories WHERE owner_id IS NOT NULL AND grid_key IN ({q})', keys).fetchall()
     owners = {}
@@ -1777,8 +1781,13 @@ def do_game_reset(conn):
     conn.execute('UPDATE territories SET owner_id=NULL,garrison=0,boats=0,planes=0')
     for t in ('buildings', 'fallout', 'embassies', 'trades', 'loans', 'wonders', 'faction_rel', 'faction_research', 'faction_requests', 'merges','stock_prices','stock_history','stock_holdings','stock_transactions','eva_deployments','faction_contributions'):
         conn.execute(f'DELETE FROM {t}')
-    conn.execute('UPDATE users SET army=10,boats=0,planes=0,morale=50,steel=0,uranium=0,gems=0,nukes=0,capital_key=NULL')
+    conn.execute('UPDATE users SET army=CASE WHEN faction_id IS NULL THEN 10 ELSE 0 END,boats=0,planes=0,morale=50,steel=0,uranium=0,gems=0,nukes=0,capital_key=NULL')
     conn.execute('UPDATE factions SET army=10,boats=0,planes=0,treasury=0')
+    for faction in conn.execute('SELECT id FROM factions').fetchall():
+        members=[r['id'] for r in conn.execute('SELECT id FROM users WHERE faction_id=? ORDER BY id',(faction['id'],))]
+        if members:
+            q,r=divmod(10,len(members))
+            conn.executemany('INSERT INTO faction_contributions VALUES(?,?,?)',[(uid,faction['id'],q+(i<r)) for i,uid in enumerate(members)])
     conn.execute("UPDATE users SET food=100,wood=100,metal=100,oil=25,money=200,research='[]'")
     conn.execute("DELETE FROM game_settings WHERE key IN ('winner_id','winner_name','win_time')")
     conn.execute('DELETE FROM battle_log')
@@ -2702,9 +2711,9 @@ def detail_extra(conn, grid_key, row):
     return out
 
 from features import install_features, religion_for
-from migrations import migrate_v6, migrate_v7, migrate_v8, migrate_v9, migrate_v10, backup_before_upgrade
+from migrations import migrate_v6, migrate_v7, migrate_v8, migrate_v9, migrate_v10, migrate_v11, backup_before_upgrade
 backup_before_upgrade(DB_PATH)
-init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db)
+init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db)
 install_features(globals())
 
 if __name__ == '__main__':

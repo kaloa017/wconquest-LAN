@@ -106,3 +106,11 @@ def cell_coastal(key):
     if not (-473<=a<=472 and -1000<=b<=999):return False
     n=(a+473)*2000+b+1000
     return bool(_coasts[n>>3] & (1<<(n&7)))
+
+
+def islands_in_radius(a,b,radius):
+    """Include custom island centers in the same grid-distance blast rules."""
+    load();candidates=set()
+    for lat in range(a-radius,a+radius+1):
+        for lng in range(b-radius,b+radius+1):candidates.update(_island_cells.get((lat,lng),[]))
+    return sorted(key for key in candidates if not _islands[key]['properties'].get('grid_tiles') and sum((x-y)**2 for x,y in zip(island_grid(key),(a,b)))<=radius**2)
