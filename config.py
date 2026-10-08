@@ -528,7 +528,7 @@ CLAIM_METAL_RATIO = 0.02
 NUKE_MONEY = 100000000
 
 # Request counters/presence are batched; purchases/combat commit immediately.
-VERSION = '6.3.3'
+VERSION = '6.3.4'
 SAVE_INTERVAL = 30
 SCHEDULER_INTERVAL = 30
 REQUESTS_PER_MINUTE = 0  # 0 = unlimited, until changed in the admin panel.

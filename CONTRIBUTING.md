@@ -11,6 +11,7 @@ python -m pip check
 python -m unittest discover -s tests -v
 node --check static/client.js
 node --check static/legacy-client.js
+node tests/client_audit.cjs
 ```
 
 Node.js is needed only for the JavaScript syntax checks. Game tests use disposable
@@ -27,5 +28,4 @@ recovery codes, feedback files or copyrighted artwork.
 
 Open an issue to discuss a substantial change. Include the problem, resulting
 behavior and meaningful validation in pull requests. See SECURITY.md for security
-issues. The project owner chooses the repository's licence before accepting
-contributions under an open-source licence.
+issues. Contributions are accepted under the MIT licence in LICENSE.

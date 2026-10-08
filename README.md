@@ -1,4 +1,4 @@
-# World Conquest LAN — v6.3.3
+# World Conquest LAN — v6.3.4
 
 Persistent multiplayer strategy on a real-world grid: claim tiles, recruit armies,
 build an economy, research technology, form factions and fight for territory.
@@ -132,7 +132,7 @@ Do not run old and new servers against the same database.
   cover Raspberry Pi/Linux, with Apache/Nginx proxy and HTTPS instructions.
 - Cloudflare Tunnel instructions make public hosting possible without router port
   forwarding. A tunnel is not automatically installed, authenticated or started.
-- Automatic, idempotent save upgrades through schema v10 with a consistent pre-upgrade
+- Automatic, idempotent save upgrades through schema v11 with a consistent pre-upgrade
   backup. Accounts, balances, ownership and prior unlocks are retained; see
   [Migration notes](docs/MIGRATIONS.md) for intentional balance/permission changes.
 
@@ -169,3 +169,46 @@ behind CGNAT. The deployment guide covers a stable named tunnel and temporary
 quick tunnels. A stable public hostname requires your Cloudflare account/domain
 and installing a tunnel connector; the repository cannot create those credentials
 for you. The game remains private until you deliberately start the tunnel.
+
+## Audit fixes in 6.3.4
+
+- Escape host announcements and player names wherever they render as HTML.
+- Vehicle loans transfer only the lender's personally owned boats/planes. Optional
+  faction sharing never permits lending or returning another member's fleet.
+- Reject malformed text, toggle and non-finite settings values with a useful error.
+  Explicit SECRET_KEY values must contain at least 32 characters.
+- Preserve faction troops on admin disband, avoid duplicate armies after a round
+  reset, and make assigning a player's existing faction a safe no-op.
+- Refresh distributed defenses on every affected faction territory when ownership
+  or membership changes. Explosions also affect dedicated island territories.
+- Reset an expired winning round without requiring an online player. Poll win
+  status again in the browser; refresh spectator presence while spectating.
+- Avoid startup races when workers create the session key or load geography;
+  use unique temporary music uploads and tolerate concurrent music removal.
+- Discard late territory/chat responses after selection, channel or account changes.
+  End expired login sessions cleanly and show connection/startup errors.
+- Align tablet controls at 768px, add keyboard access and visible focus to controls,
+  preserve recovery-code acknowledgement, and focus the active dialog. Bound chat
+  elements and notification IDs during long sessions. Island capitals and EVA
+  positions use their actual island coordinates.
+- Batch stock faction reads: 67 to 4 SELECTs in a 64-country local benchmark.
+  Deduplicate and bound optional spectator geolocation work.
+
+See [Audit report](docs/AUDIT.md) for findings, tests, measurements and limitations.
+
+## GitHub publication
+
+The project is licensed under [MIT](LICENSE); copying and modifying it are allowed.
+Third-party data/assets retain the terms in [NOTICE](NOTICE.md). Public source
+excludes saves, IP/audit records, ideas, payment details, session keys, MP3s, EVA
+artwork and tunnel credentials. Keep COMMUNITY.vipps_number blank when publishing.
+Run `python tools/check_release.py` before committing or preparing a source archive;
+run `python tools/check_release.py --archive` in an extracted source archive.
+The check complements reviewing your own changes; it cannot recognize every secret.
+
+GitHub Actions checks Windows/Linux with Python 3.11–3.14, dependencies, release
+privacy/integrity, JavaScript syntax and regression tests. Node is a development
+check dependency, not required to host the game. No separate build, linter or type
+checker is configured. See [Contributing](CONTRIBUTING.md) and [Security](SECURITY.md).
+`.env.example` documents environment variables; the application does not load it
+or `.env` automatically. Set variables in your shell/service before starting.

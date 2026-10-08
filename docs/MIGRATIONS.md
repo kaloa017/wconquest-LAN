@@ -60,7 +60,7 @@ Legacy v4/v5 schema upgrades are retained for older saves. Do not remove backups
   interval survives restarts; admins can block/unblock ideas independently of game
   bans or chat mutes. Moderation changes are audited.
 
-The version displayed to players (6.3.1) is separate from SQLite schema version 10.
+The version displayed to players (6.3.4) is separate from SQLite schema version 11.
 Normal migration testing uses isolated databases; your live game.db is not a test fixture.
 
 ## Backup and rollback
@@ -87,3 +87,21 @@ IDs; a legacy large whole-island claim blocks overlapping regular-grid claims.
 Small islands remain single territories. New Antarctic land/ice-shelf claims use
 tundra; existing stored biomes are preserved. Cached map data uses the release
 version in its URL; refresh the browser after restarting the updated server.
+
+## Schema 11 — 6.3.4 audit
+
+Adds four SQLite triggers to invalidate the map defenses of all affected group
+members when territory ownership/counts or faction membership changes. Increments
+map_epoch once, so clients request a fresh map. The migration is transactional and
+idempotent; it does not rewrite accounts, password hashes, resources, armies,
+territory ownership, buildings or unlocks. A consistent `before-v11` database
+backup is made before upgrading an older save. All earlier migrations still run
+for older iterations.
+
+Army fixes affect future disbands and round resets. They cannot reconstruct troops
+lost or duplicated by an earlier iteration; inspect affected players and correct
+them with host tools if necessary. No public route was renamed or removed. Invalid
+JSON field types now return 400, and SECRET_KEY values shorter than 32 characters
+prevent startup; replace a weak configured key and expect players to log in again.
+The live save was not modified during the audit; compatibility was tested on a
+SQLite backup copy and isolated legacy fixtures.

@@ -1,3 +1,20 @@
+# 6.3.4 — audit and GitHub release preparation
+
+- Fixed unsafe HTML rendering in announcements, player names and battle history.
+- Prevented vehicle loans from transferring another faction member's shared fleet.
+- Added malformed-input checks and minimum length for explicit session secrets.
+- Preserved armies on faction disband/reset and fixed same-faction reassignment.
+- Added schema 11 map-defense invalidation triggers; existing player data is retained.
+- Included dedicated islands in blasts and positioned island capitals/EVA correctly.
+- Restored win polling and scheduler-only round expiry; kept spectators present.
+- Fixed worker startup, geography initialization and concurrent music-file races.
+- Discarded stale territory/chat/account responses and handled failed startup.
+- Improved tablet boundary, keyboard controls, focus states and dialog focus;
+  recovery codes require acknowledgement. Bounded long-running chat/notification UI.
+- Reduced stock list queries from 67 to 4 for 64 countries; bounded geolocation queue.
+- Added MIT licence, contributor/security guidance, private-file release checks,
+  cross-platform CI and audit regression tests. No private saves or artwork bundled.
+
 # 6.3.3
 
 - Fixed coastal landing controls on small islands and preserved inspected terrain
