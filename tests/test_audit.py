@@ -119,3 +119,20 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(self.post('/api/merge/respond',{'merge_id':mid,'accept':True}).status_code,409)
     def test_music_info_handles_concurrent_removal(self):
         with app.app.test_request_context('/api/music'),patch('features.Path.stat',side_effect=FileNotFoundError):self.assertIsNone(features.music_info().json['url'])
+
+    def test_concurrent_cold_geography_initializes_once(self):
+        import geography
+        from concurrent.futures import ThreadPoolExecutor
+        keys=('_land','_coasts','_japan','_islands','_island_cells')
+        saved={key:getattr(geography,key) for key in keys}
+        try:
+            for key in keys:setattr(geography,key,None)
+            original=geography.PolygonIndex
+            with patch.object(geography,'PolygonIndex',wraps=original) as constructor:
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    result=list(pool.map(lambda _:geography.island_neighbors(0,0),range(24)))
+                self.assertTrue(all(value==result[0] for value in result))
+                self.assertEqual(constructor.call_count,1)
+                self.assertIsNotNone(geography._island_cells)
+        finally:
+            for key,value in saved.items():setattr(geography,key,value)

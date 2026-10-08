@@ -1,5 +1,5 @@
 """Trusted bundled Natural Earth polygons; no map-colour or client-report trust."""
-import json, math
+import json, math, threading
 from pathlib import Path
 from functools import lru_cache
 from config import GRID
@@ -47,19 +47,21 @@ class PolygonIndex:
         return False
 
 _land=None;_coasts=None;_japan=None;_islands=None;_island_cells=None
+_load_lock=threading.RLock()
 def load():
     global _land,_coasts,_japan,_islands,_island_cells
-    root=Path(__file__).parent/'data'
-    if _land is None: _land=(root/'land-cells.bin').read_bytes()
-    if _coasts is None: _coasts=(root/'coastal-cells.bin').read_bytes()
-    if _islands is None:
-        _islands={f['properties']['key']:f for f in json.loads((root/'pacific-islands.geojson').read_text(encoding='utf-8'))['features']}
-        _island_cells={}
-        for key,feature in _islands.items():
-            a,b,c,d=feature['properties']['bounds']
-            for lat in range(math.floor(b/GRID),math.floor(d/GRID)+1):
-                for lng in range(math.floor(a/GRID),math.floor(c/GRID)+1):_island_cells.setdefault((lat,lng),[]).append(key)
-    if _japan is None: _japan=PolygonIndex(root/'countries.geojson','JPN')
+    with _load_lock:
+        root=Path(__file__).parent/'data'
+        if _land is None: _land=(root/'land-cells.bin').read_bytes()
+        if _coasts is None: _coasts=(root/'coastal-cells.bin').read_bytes()
+        if _islands is None:
+            _islands={f['properties']['key']:f for f in json.loads((root/'pacific-islands.geojson').read_text(encoding='utf-8'))['features']}
+            _island_cells={}
+            for key,feature in _islands.items():
+                a,b,c,d=feature['properties']['bounds']
+                for lat in range(math.floor(b/GRID),math.floor(d/GRID)+1):
+                    for lng in range(math.floor(a/GRID),math.floor(c/GRID)+1):_island_cells.setdefault((lat,lng),[]).append(key)
+        if _japan is None: _japan=PolygonIndex(root/'countries.geojson','JPN')
 
 def island_feature(key):
     load();return _islands.get(key)
