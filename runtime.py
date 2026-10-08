@@ -3,6 +3,7 @@ import os
 import sqlite3
 import secrets
 import ipaddress
+import time
 from pathlib import Path
 from flask import g, has_request_context, request
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -18,7 +19,12 @@ def initialize_security(app):
         try:
             fd = os.open(path, os.O_WRONLY|os.O_CREAT|os.O_EXCL, 0o600)
         except FileExistsError:
-            key = path.read_text().strip()
+            # Another WSGI worker may have created the file just before writing it.
+            deadline=time.monotonic()+2
+            while True:
+                key=path.read_text().strip()
+                if len(key)>=32 or time.monotonic()>=deadline:break
+                time.sleep(.02)
         else:
             key = secrets.token_hex(32)
             with os.fdopen(fd,'w') as f: f.write(key)

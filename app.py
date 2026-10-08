@@ -761,6 +761,9 @@ def current_event(conn):
         try: ev = json.loads(raw)
         except Exception: ev = None
     if ev and ev.get('until', 0) > now: return ev
+    # Event creation belongs to serialized gameplay/scheduler transactions.
+    from flask import has_request_context
+    if has_request_context() and request.method=='GET' and not conn.in_transaction:return None
     nxt = int(get_setting(conn, 'event_next', 0) or 0)
     if ev and ev.get('until', 0) <= now and nxt < ev['until'] + EVENT_GAP:
         nxt = ev['until'] + EVENT_GAP; set_setting(conn, 'event_next', nxt)
@@ -2614,6 +2617,7 @@ def do_merge(conn, keep, gone):
         if col: conn.execute(f'DELETE FROM {t} WHERE {col}=?', (gone,))
     try: conn.execute('DELETE FROM alliances WHERE requester_id=? OR target_id=?', (gone, gone))
     except Exception: pass
+    conn.execute("UPDATE merges SET status='cancelled' WHERE status='pending' AND (from_id=? OR to_id=?)",(gone,gone))
     conn.execute('DELETE FROM faction_requests WHERE user_id=?', (gone,)); conn.execute('DELETE FROM users WHERE id=?', (gone,))
     create_notification(conn, keep, 'info', f'🧬 {g["username"]} merged into your country!'); announce(conn, f'🧬 {g["username"]} and {k["username"]} merged into one nation!')
 
@@ -2623,6 +2627,7 @@ def merge_respond():
     d = request.json or {}; uid = session['user_id']; conn = get_db(); conn.execute('BEGIN IMMEDIATE')
     m = conn.execute("SELECT * FROM merges WHERE id=? AND to_id=? AND status='pending'", (int(d.get('merge_id', 0)), uid)).fetchone()
     if not m: conn.rollback(); conn.close(); return jsonify({'error': 'Proposal not found'}), 404
+    if d.get('accept') and not conn.execute('SELECT 1 FROM users WHERE id=? AND is_banned=0',(m['from_id'],)).fetchone():conn.rollback();conn.close();return jsonify(error='The inviting country is no longer available'),409
     conn.execute('UPDATE merges SET status=? WHERE id=?', ('done' if d.get('accept') else 'declined', m['id']))
     if d.get('accept'):
         try: do_merge(conn, m['from_id'], uid)

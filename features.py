@@ -505,6 +505,8 @@ def scheduler_tick():
         due=conn.execute('SELECT next_tick FROM scheduler_state WHERE id=1').fetchone()[0]
         if now>=due:
             conn.execute('UPDATE scheduler_state SET next_tick=? WHERE id=1',(now+SCHEDULER_INTERVAL,))
+            win_time=core['get_setting'](conn,'win_time')
+            if core['get_setting'](conn,'winner_id') and win_time and now-float(win_time)>=WIN_COUNTDOWN:core['do_game_reset'](conn)
             for u in conn.execute('SELECT id FROM users WHERE is_banned=0').fetchall():core['auto_collect'](u['id'],conn)
             targets=[]
             for r in conn.execute('SELECT u.id,COUNT(t.id) n,u.last_seen FROM users u LEFT JOIN territories t ON t.owner_id=u.id WHERE u.is_banned=0 GROUP BY u.id'):
@@ -656,11 +658,14 @@ def admin_player():
 def music_path():return Path(core['DB_PATH']).resolve().parent/'media'/'world.mp3'
 def music_info():
     with _music_lock:
-        path=music_path();return jsonify(url='/music.mp3?v='+str(path.stat().st_mtime_ns) if path.exists() else None)
+        try:stamp=music_path().stat().st_mtime_ns
+        except FileNotFoundError:stamp=None
+        return jsonify(url='/music.mp3?v='+str(stamp) if stamp is not None else None)
 def music_file():
     path=music_path()
     if not path.exists():abort(404)
-    return send_file(path,mimetype='audio/mpeg',conditional=True)
+    try:return send_file(path,mimetype='audio/mpeg',conditional=True)
+    except FileNotFoundError:abort(404)
 def music_upload():
     from mutagen.mp3 import MP3
     upload=request.files.get('file')
@@ -673,7 +678,9 @@ def music_upload():
     except Exception:raise ValueError('File is not a valid MP3 audio stream')
     path=music_path();path.parent.mkdir(parents=True,exist_ok=True)
     with _music_lock:
-        temporary=path.with_suffix('.upload');temporary.write_bytes(content);os.replace(temporary,path)
+        temporary=path.with_name('world-'+secrets.token_hex(12)+'.upload')
+        try:temporary.write_bytes(content);os.replace(temporary,path)
+        finally:temporary.unlink(missing_ok=True)
     audit(db(),'music_replaced',details={'bytes':len(content)})
     return jsonify(success=True,message='Shared music replaced')
 

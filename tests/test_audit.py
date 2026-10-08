@@ -102,3 +102,20 @@ class AuditTests(unittest.TestCase):
             for _ in range(100):app._touch_spectator('192.0.2.1')
             app._touch_spectator('192.0.2.2');app._touch_spectator('192.0.2.3')
             self.assertEqual(fake.qsize(),2);self.assertEqual(len(app._geo_pending),2)
+
+    def test_workers_wait_for_new_session_secret(self):
+        from runtime import initialize_security
+        with patch.dict(os.environ,{'SECRET_KEY':''}),patch('runtime.os.open',side_effect=FileExistsError),patch('runtime.Path.read_text',side_effect=['','a'*64]):
+            server=Flask('audit');initialize_security(server);self.assertEqual(server.secret_key,'a'*64)
+    def test_read_only_event_endpoint_does_not_write(self):
+        with app.app.test_request_context('/api/income'):
+            c=app.get_db();queries=[];c.set_trace_callback(queries.append);app.current_event(c);c.set_trace_callback(None)
+            self.assertFalse(any(q.lstrip().upper().startswith(('INSERT','UPDATE','DELETE')) for q in queries))
+    def test_scheduler_resets_expired_round_without_online_players(self):
+        conn=self.connection();app.set_setting(conn,'winner_id',self.uid);app.set_setting(conn,'win_time',int(time.time())-app.WIN_COUNTDOWN-1);conn.execute('UPDATE users SET money=999 WHERE id=?',(self.uid,));conn.execute('UPDATE scheduler_state SET next_tick=0 WHERE id=1');conn.commit();conn.close()
+        features.scheduler_tick();conn=self.connection();self.assertIsNone(app.get_setting(conn,'winner_id'));self.assertEqual(conn.execute('SELECT money FROM users WHERE id=?',(self.uid,)).fetchone()[0],200)
+    def test_merge_rejects_absent_inviting_country(self):
+        conn=self.connection();mid=conn.execute("INSERT INTO merges(from_id,to_id,status,ts) VALUES(999999,?,'pending',0)",(self.uid,)).lastrowid;conn.commit();conn.close()
+        self.assertEqual(self.post('/api/merge/respond',{'merge_id':mid,'accept':True}).status_code,409)
+    def test_music_info_handles_concurrent_removal(self):
+        with app.app.test_request_context('/api/music'),patch('features.Path.stat',side_effect=FileNotFoundError):self.assertIsNone(features.music_info().json['url'])
