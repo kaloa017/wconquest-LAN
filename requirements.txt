@@ -1,4 +1,4 @@
 Flask>=3.1,<4
-waitress>=3.0,<4
+waitress>=3.0.2,<4
 gunicorn>=23,<24; platform_system != "Windows"
 mutagen>=1.47,<2
