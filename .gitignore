@@ -1,1 +1,44 @@
 game.db
+*.db-wal
+*.db-shm
+.session-secret
+.venv/
+__pycache__/
+backups/
+media/
+static/eva/*.jpg
+EVA_IMAGES/
+!docs/EVA_IMAGES.md
+
+# Host-private data and configuration
+*.db
+ideas.txt
+.env
+.env.*
+
+tools/terrain-source/
+
+# Generated files and host credentials
+*.py[cod]
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.log
+*.zip
+.cloudflared/
+credentials*.json
+*.pem
+*.key
+.pytest_cache/
+.coverage
+htmlcov/
+tests/tmp*/
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+# Track the empty environment reference, not local configuration.
+!.env.example

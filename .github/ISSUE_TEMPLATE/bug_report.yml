@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a game or hosting problem.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Do not include passwords, recovery codes, tunnel tokens, player IPs or database files.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: Describe the menu, tile/action and steps that caused the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+  - type: input
+    id: version
+    attributes:
+      label: Game version
+      placeholder: For example, 6.3.3
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Browser, device and server OS
+      placeholder: Chrome on Android; server on Raspberry Pi OS
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant error or screenshot
+      description: Remove private details before sharing.

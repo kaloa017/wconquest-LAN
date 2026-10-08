@@ -1,12 +1,15 @@
 """
-World Conquest v4 — Full-Featured Multiplayer Strategy Game
-Run:  pip install flask && python app.py
+World Conquest v6 — Persistent Multiplayer Strategy Game
+Run:  pip install -r requirements.txt && python app.py
 Open: http://localhost:5000
-Admin: admin / admin123
-Note: Username 'Kasper' (any case) auto-gets admin on registration
+Host setup: python manage.py create-admin --username USERNAME
 """
 
 from flask import Flask, request, jsonify, session, send_file
+from config import *
+from runtime import connect_db, initialize_security
+from werkzeug.security import generate_password_hash, check_password_hash
+import hmac
 import sqlite3, hashlib, random, time, os, json, math
 import urllib.request, threading, queue
 
@@ -53,84 +56,25 @@ _geo_thread.start()
 
 def _touch_spectator(ip):
     """Record a spectator visit. Geo lookup is async via queue."""
+    while len(_spectators) >= MAX_TRACKED_CLIENTS: _spectators.pop(next(iter(_spectators)))
+    while len(_geo_cache) > MAX_TRACKED_CLIENTS: _geo_cache.pop(next(iter(_geo_cache)))
     geo = _geo_cache.get(ip, {'flag':'🌐','country':'?'})
     _spectators[ip] = {**geo, 'last_seen': time.time()}
-    if ip not in _geo_cache:
+    if os.getenv('ENABLE_IP_GEOLOOKUP') == '1' and ip not in _geo_cache:
         try: _geo_queue.put_nowait(ip)
         except queue.Full: pass
 
-
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'wc_v3_secret_xK9m_2024_!@#')
+initialize_security(app)
 
 DB_PATH = os.environ.get('DB_PATH', os.path.join(os.path.dirname(__file__), 'game.db'))
 
 # ── Game Constants ────────────────────────────────────────────────────────────
-GRID            = 0.18     # degrees per cell (~20 km)
-TROOP_COST      = 8        # money per troop
-BOAT_COST       = 800      # money per boat (single-use overseas landing)
-PLANE_COST      = 1200     # money per plane (single-use overseas strike)
-AUTO_COLLECT_CD = 10       # seconds between auto-accruals per territory
-MAX_ACCUM_MINS  = 120      # max offline accrual cap (2hrs)
-WIN_THRESHOLD   = 150      # territories to win a round
-WIN_COUNTDOWN   = 45       # seconds before game resets after win
-CLAIM_COST      = 25       # base claim cost (scales with territory count)
-BOAT_RANGE      = 4        # max cells for naval attack
-PLANE_RANGE_DEF = 5        # default plane range (cells)
-PLANE_RANGE_BLZ = 8        # plane range with blitzkrieg
-
-AUTO_ADMIN_NAMES = {'kasper'}
-SELL_RATES = {'food': 2, 'wood': 4, 'metal': 6, 'oil': 10}
-
-TERRAIN_RES = {
-    'plains':    ('food',   9),
-    'forest':    ('wood',   12),
-    'mountains': ('metal',  9),
-    'desert':    ('money',  7),
-    'tundra':    ('metal',  5),
-    'city':      ('money',  18),
-    'oil':       ('oil',    14),
-}
-
-POP_BASE  = {'city':80000,'plains':3000,'forest':1200,'mountains':800,'desert':300,'tundra':150,'oil':900}
-POP_RANGE = {'city':420000,'plains':17000,'forest':8000,'mountains':3200,'desert':1700,'tundra':850,'oil':6100}
-
-RANKS = [
-    (0,   '🪓', 'Settler'),
-    (3,   '⚔',  'Warrior'),
-    (10,  '🛡', 'Commander'),
-    (25,  '🏰', 'Warlord'),
-    (60,  '👑', 'Emperor'),
-    (150, '🌍', 'Conqueror'),
-]
-
-RESEARCH_TREE = {
-    'agri':      {'name':'Agriculture',      'icon':'🌾','cost':100,'branch':'economy', 'requires':[],           'desc':'+25% food & wood yield'},
-    'trade':     {'name':'Trade Routes',     'icon':'💹','cost':150,'branch':'economy', 'requires':['agri'],     'desc':'+15% money yield'},
-    'industry':  {'name':'Industrialization','icon':'⚙','cost':250,'branch':'economy', 'requires':['trade'],    'desc':'+25% metal & oil yield'},
-    'iron':      {'name':'Iron Weapons',     'icon':'⚔','cost':100,'branch':'military','requires':[],           'desc':'+20% attack strength'},
-    'castle':    {'name':'Castle Walls',     'icon':'🏰','cost':100,'branch':'military','requires':[],           'desc':'+30% defense bonus'},
-    'gunpowder': {'name':'Gunpowder',        'icon':'💥','cost':250,'branch':'military','requires':['iron'],     'desc':'+30% attack, -20% troop cost'},
-    'shipyard':  {'name':'Shipbuilding',     'icon':'⚓','cost':200,'branch':'naval',   'requires':[],           'desc':'Unlocks Boats (cross-water attacks)'},
-    'airforce':  {'name':'Air Force',        'icon':'✈','cost':400,'branch':'naval',   'requires':['shipyard'], 'desc':'Unlocks Planes (long-range attacks)'},
-    'blitz':     {'name':'Blitzkrieg',       'icon':'⚡','cost':600,'branch':'naval',   'requires':['airforce'], 'desc':'Planes range +3, +20% power'},
-}
-
-PLAYER_COLORS = [
-    '#e74c3c','#3498db','#2ecc71','#9b59b6','#e67e22','#1abc9c',
-    '#e91e63','#00bcd4','#ff5722','#8bc34a','#ff9800','#f06292',
-    '#4db6ac','#aed581','#ba68c8','#d35400','#16a085','#8e44ad',
-    '#c0392b','#27ae60',
-]
 
 # ── Database ──────────────────────────────────────────────────────────────────
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=10)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    return connect_db(DB_PATH)
 
 def init_db():
     conn = get_db(); c = conn.cursor()
@@ -209,12 +153,6 @@ def init_db():
         UNIQUE(requester_id, target_id)
     )''')
 
-    # Seed admin
-    ph = hashlib.sha256('admin123'.encode()).hexdigest()
-    c.execute('''INSERT OR IGNORE INTO users
-                 (username,password,is_admin,food,wood,metal,oil,money,color)
-                 VALUES (?,?,1,9999,9999,9999,9999,99999,'#ffd700')''', ('admin', ph))
-
     c.execute('''INSERT OR IGNORE INTO announcements (id,message,author)
                  VALUES (1,'🌍 Welcome to World Conquest! Claim your first territory to begin.','System')''')
 
@@ -229,11 +167,11 @@ def simple_hash(glat, glng):
 
 def get_terrain(glat, glng):
     h = simple_hash(glat, glng); lat = glat * GRID
-    if abs(lat) > 65:      return 'tundra'
+    if lat <= -60 or abs(lat) > 65: return 'tundra'
     elif abs(lat) > 55:    opts=['tundra','tundra','forest','mountains','plains']
     elif abs(lat) > 40:    opts=['plains','plains','forest','forest','mountains','city']
     elif abs(lat) > 20:    opts=['plains','desert','desert','mountains','city','oil','forest']
-    else:                  opts=['forest','forest','forest','plains','desert','city','oil']
+    else:                  opts=['tropical','tropical','forest','plains','desert','city','oil']
     return opts[h % len(opts)]
 
 def get_population(terrain, glat, glng):
@@ -241,10 +179,17 @@ def get_population(terrain, glat, glng):
     return POP_BASE[terrain] + (h % POP_RANGE[terrain])
 
 def parse_key(k):
-    p = k.split(','); return int(p[0]), int(p[1])
+    if isinstance(k,str) and k.startswith('island:'):
+        from geography import island_grid
+        return island_grid(k)
+    if not isinstance(k, str) or not re.fullmatch(r'-?\d+,-?\d+', k): raise ValueError('Invalid grid key')
+    a, b = map(int, k.split(','))
+    if k != f'{a},{b}' or not (-473 <= a <= 472 and -1000 <= b <= 999): raise ValueError('Grid outside world bounds')
+    return a, b
 
 def adj_keys(gl, gg):
-    return [f"{gl+dl},{gg+dg}" for dl in (-1,0,1) for dg in (-1,0,1) if dl or dg]
+    from geography import island_neighbors
+    return [f"{gl+dl},{gg+dg}" for dl in (-1,0,1) for dg in (-1,0,1) if dl or dg]+island_neighbors(gl,gg)
 
 def cell_distance(k1, k2):
     """Chebyshev distance between two grid keys."""
@@ -258,7 +203,12 @@ def get_rank(tc):
     return {'icon': r[1], 'name': r[2]}
 
 def ph(pw):
-    return hashlib.sha256(pw.encode()).hexdigest()
+    return generate_password_hash(pw)
+
+def password_matches(stored, password):
+    if stored and len(stored) == 64 and all(c in '0123456789abcdef' for c in stored):
+        return hmac.compare_digest(stored, hashlib.sha256(password.encode()).hexdigest())
+    return bool(stored and check_password_hash(stored, password))
 
 def get_setting(conn, key, default=None):
     row = conn.execute('SELECT value FROM game_settings WHERE key=?',(key,)).fetchone()
@@ -363,40 +313,6 @@ def require_admin(f):
 
 # ── Auto resource collection ──────────────────────────────────────────────────
 
-def auto_collect(uid, conn):
-    now = int(time.time())
-    rsch = user_research(conn, uid)
-    rows = conn.execute(
-        'SELECT t.grid_key,t.terrain,t.last_collected,b.type bt,b.level bl FROM territories t '
-        'LEFT JOIN buildings b ON b.grid_key=t.grid_key WHERE t.owner_id=?', (uid,)).fetchall()
-    ev = ev_type(conn); fb = faction_bonus(conn, uid)
-    gm = float(get_setting(conn, 'income_mult', 1) or 1)
-    totals = {'food':0.,'wood':0.,'metal':0.,'oil':0.,'money':0.}
-    troops = 0.; updated = []
-    for row in rows:
-        elapsed = now - (row['last_collected'] or 0)
-        if elapsed < AUTO_COLLECT_CD: continue
-        rt, rate = TERRAIN_RES[row['terrain']]
-        minutes  = min(elapsed/60., MAX_ACCUM_MINS)
-        m = res_mult(rt, rsch) * fb * gm
-        if 'banking' in rsch and rt == 'money': m *= 1.10 / 1.0
-        if ev == 'gold_rush' and rt == 'money': m *= 1.5
-        if ev == 'harvest' and rt in ('food', 'wood'): m *= 1.5
-        if ev == 'mining' and rt in ('metal', 'oil'): m *= 1.5
-        if row['bt'] == 'workshop': m *= 1 + 0.25*row['bl']
-        totals[rt] += rate * m * minutes
-        if row['bt'] == 'market': totals['money'] += 6*row['bl']*minutes*gm
-        if row['bt'] == 'barracks': troops += 3*row['bl']*minutes
-        updated.append(row['grid_key'])
-    if updated:
-        for k in updated:
-            conn.execute('UPDATE territories SET last_collected=? WHERE grid_key=?',(now,k))
-        sets = ','.join(f'{r}={r}+?' for r in totals)
-        conn.execute(f'UPDATE users SET {sets} WHERE id=?',list(totals.values())+[uid])
-        if troops >= 1:
-            cap = army_cap(conn, uid, rsch)
-            conn.execute('UPDATE users SET army=MIN(?,army+?) WHERE id=? AND army<?', (cap, int(troops), uid, cap))
-
 # ── Win-condition check ───────────────────────────────────────────────────────
 
 def check_win(uid, conn):
@@ -418,15 +334,6 @@ def check_win(uid, conn):
     set_setting(conn,'win_time', int(time.time()))
     return True
 
-def do_game_reset(conn):
-    conn.execute('UPDATE territories SET owner_id=NULL,garrison=0,boats=0,planes=0')
-    conn.execute('DELETE FROM buildings'); conn.execute('DELETE FROM achievements WHERE 0')
-    conn.execute('UPDATE users SET army=10,boats=0,planes=0,morale=50')
-    conn.execute('UPDATE users SET food=100,wood=100,metal=100,oil=25,money=200,research=\'[]\'')
-    conn.execute("DELETE FROM game_settings WHERE key IN ('winner_id','winner_name','win_time')")
-    conn.execute('DELETE FROM battle_log')
-    conn.execute("INSERT OR IGNORE INTO announcements (message,author) VALUES ('🔄 A new round has started! Claim territories and conquer the world.','System')")
-
 # ── Static ────────────────────────────────────────────────────────────────────
 
 @app.route('/')
@@ -445,7 +352,7 @@ def register():
     if len(pw)<4: return jsonify({'error':'Password must be at least 4 characters'}),400
     if pin and (not pin.isdigit() or len(pin)<4 or len(pin)>8):
         return jsonify({'error':'Reset PIN must be 4–8 digits'}),400
-    is_admin = 1 if un.lower() in AUTO_ADMIN_NAMES else 0
+    is_admin = 0
     color    = random.choice(PLAYER_COLORS)
     conn = get_db()
     try:
@@ -562,7 +469,7 @@ def me():
         'morale': u['morale'], 'wins': u['wins'], 'losses': u['losses'],
         'daily_ready': u['last_daily'] != int(time.time()//86400), 'daily_streak': u['daily_streak'],
         'event': ev_me, 'weather_slot': cur_slot(),
-        'claim_cost': claim_cost_for(tc, set(rsch)),
+        'claim_cost': claim_price(conn_me, uid, 'plains')['money'],
         'boat_range': boat_range(conn_me, uid, set(rsch)), 'plane_range': plane_range(set(rsch)),
         'troop_cost': troop_cost_for(conn_me, uid, set(rsch)), **me_extra(conn_me, u, uid),
     })
@@ -581,7 +488,7 @@ def change_password():
     if len(new)<4: return jsonify({'error':'New password must be at least 4 characters'}),400
     conn = get_db()
     u = conn.execute('SELECT password FROM users WHERE id=?',(session['user_id'],)).fetchone()
-    if u['password'] != ph(curr):
+    if not password_matches(u['password'], curr):
         conn.close()
         return jsonify({'error':'Current password is incorrect'}),401
     conn.execute('UPDATE users SET password=? WHERE id=?',(ph(new), session['user_id']))
@@ -595,10 +502,10 @@ def change_username():
     new = d.get('new_username','').strip()
     pw  = d.get('password','')
     if not new or not pw: return jsonify({'error':'New username and password required'}),400
-    if len(new)<3 or len(new)>20: return jsonify({'error':'Username must be 3–20 characters'}),400
+    if not re.fullmatch(r'[\w .-]{3,20}', new): return jsonify({'error':'Username must be 3–20 characters'}),400
     conn = get_db()
     u = conn.execute('SELECT password FROM users WHERE id=?',(session['user_id'],)).fetchone()
-    if u['password'] != ph(pw):
+    if not password_matches(u['password'], pw):
         conn.close()
         return jsonify({'error':'Incorrect password'}),401
     # Block auto-admin names for other users
@@ -627,7 +534,7 @@ def set_pin():
         return jsonify({'error':'PIN must be 4–8 digits'}),400
     conn = get_db()
     u = conn.execute('SELECT password FROM users WHERE id=?',(session['user_id'],)).fetchone()
-    if u['password'] != ph(pw):
+    if not password_matches(u['password'], pw):
         conn.close()
         return jsonify({'error':'Incorrect password'}),401
     conn.execute('UPDATE users SET reset_pin=? WHERE id=?',(pin, session['user_id']))
@@ -639,7 +546,7 @@ def set_pin():
 @app.route('/api/spectate', methods=['POST'])
 def spectate():
     """Called by guests to register their presence on the map."""
-    ip = request.headers.get('X-Forwarded-For', request.remote_addr or '').split(',')[0].strip()
+    ip = request.remote_addr or ''
     if ip:
         _touch_spectator(ip)  # fast: just dict update, geo is queued async
     return jsonify({'success': True})
@@ -664,10 +571,10 @@ def online_users():
     guests = []
     for ip, s in list(_spectators.items()):
         if now - s['last_seen'] < 180:
-            guests.append({'username': f"{s['flag']} {ip}", 'color':'#607090',
+            guests.append({'username': f"{s['flag']} Guest", 'color':'#607090',
                            'is_admin':False,'territories':0,'type':'spectator',
                            'flag': s['flag'], 'country': s.get('country','?'),
-                           'city': s.get('city',''), 'ip': ip})
+                           'city': s.get('city','')})
     return jsonify(players + guests)
 
 # ── Sell resources ────────────────────────────────────────────────────────────
@@ -681,7 +588,7 @@ def sell_resources():
     if rt not in SELL_RATES: return jsonify({'error':'Invalid resource'}),400
     conn = get_db()
     u = conn.execute(f'SELECT {rt} FROM users WHERE id=?',(session['user_id'],)).fetchone()
-    have = round(u[rt])
+    have = int(u[rt])
     if have < am:
         conn.close()
         return jsonify({'error':f'Not enough {rt}. Have {have}, need {am}'}),400
@@ -720,7 +627,7 @@ def unlock_research():
     u = conn.execute('SELECT money FROM users WHERE id=?',(session['user_id'],)).fetchone()
     disc = research_discount(conn, session['user_id'])
     info = {**info, 'cost': int(info['cost']*(1-disc))}
-    if round(u['money']) < info['cost']:
+    if u['money'] < info['cost']:
         conn.close()
         return jsonify({'error':f'Need {info["cost"]}💰, have {round(u["money"])}💰'}),400
     rsch.add(tech)
@@ -731,10 +638,6 @@ def unlock_research():
     return jsonify({'success':True,'message':f'Researched {info["name"]}!'})
 
 # ── Territories ───────────────────────────────────────────────────────────────
-
-def _army_map(conn):
-    rows = conn.execute('SELECT u.id,u.army,(SELECT COUNT(*) FROM territories WHERE owner_id=u.id) n FROM users u').fetchall()
-    return {r['id']: (r['army'], max(1, r['n'])) for r in rows}
 
 @app.route('/api/territories')
 def get_territories():
@@ -782,29 +685,18 @@ def territory_detail(grid_key):
         out = {'grid_key':grid_key,'owner_id':None,'owner':None,'terrain':terrain,'garrison':0,'boats':0,'planes':0,
                'population':get_population(terrain, gl, gg),'last_collected':0,'building':None,'blevel':None}
     out.update({'coastal': coastal, 'water': water, 'weather': wx, **detail_extra(conn, grid_key, row)})
+    if grid_key.startswith('island:'):
+        from geography import island_feature
+        from features import island_legacy_owner
+        out.update(island_name=island_feature(grid_key)['properties']['name'],legacy_tile=island_legacy_owner(conn,grid_key))
     conn.close(); return jsonify(out)
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  v4 — national army, modifiers, buildings, factions, chat, events, daily, quests
 # ══════════════════════════════════════════════════════════════════════════════
 
-BOAT_COST_M, BOAT_COST_W, BOAT_CAP = 250, 20, 12      # money, wood, troops carried
-PLANE_COST_M, PLANE_COST_X, PLANE_COST_O, PLANE_POWER = 700, 40, 30, 8
-BOAT_RANGE_BASE, PLANE_RANGE_BASE = 4, 5
-FACTION_COST = 500
-CHAT_COOLDOWN = 1.5
-
-TERRAIN_DEF = {'mountains':1.35,'forest':1.2,'city':1.25,'plains':1.0,'desert':0.95,'tundra':1.1,'oil':1.05}
-
 # weather — deterministic per 10-minute slot + region, so server & clients agree with zero network load
-WEATHER_TABLE = {
-    'polar':    [('clear',30),('snow',40),('fog',15),('storm',15)],
-    'temperate':[('clear',45),('rain',25),('fog',12),('snow',10),('storm',8)],
-    'tropical': [('clear',40),('rain',30),('storm',20),('fog',10)],
-}
-WEATHER_FX = {  # attacker land multiplier, air multiplier
-    'clear':(1.00,1.00),'rain':(0.93,0.90),'fog':(0.95,0.75),'snow':(0.88,0.85),'storm':(0.82,0.60),
-}
+
 def weather_for(slot, gl, gg):
     lat = abs(gl*GRID)
     band = 'polar' if lat > 55 else 'temperate' if lat > 25 else 'tropical'
@@ -819,60 +711,6 @@ def weather_for(slot, gl, gg):
         if h < acc: return name
     return 'clear'
 def cur_slot(): return int(time.time() // 600)
-
-BUILDINGS = {
-  'barracks':  {'name':'Barracks',  'icon':'🏕','desc':'+3 troops/min per level','cost':{'money':150,'wood':60,'metal':30}},
-  'fort':      {'name':'Fortress',  'icon':'🏯','desc':'+25% defense on this tile per level','cost':{'money':200,'metal':80}},
-  'market':    {'name':'Market',    'icon':'🏪','desc':'+6💰/min per level','cost':{'money':180,'wood':40}},
-  'workshop':  {'name':'Workshop',  'icon':'🔨','desc':'+25% yield of this tile per level','cost':{'money':200,'wood':50,'metal':40}},
-  'port':      {'name':'Port',      'icon':'⚓','desc':'Boats launch from here (coastal only). Lv2+ = +1 range','cost':{'money':250,'wood':100},'needs':'shipyard','coastal':True},
-  'airport':   {'name':'Airport',   'icon':'🛫','desc':'Planes launch from here. Lv2+ = +1 range','cost':{'money':500,'metal':120,'oil':40},'needs':'airforce'},
-  'university':{'name':'University','icon':'🎓','desc':'-8% research cost per level (max -30% total)','cost':{'money':300,'wood':60,'metal':40}},
-  'hospital':  {'name':'Hospital',  'icon':'🏥','desc':'-10% battle casualties per level (max -30% total)','cost':{'money':250,'wood':50}},
-}
-BUILD_MAX_LEVEL = 3
-def build_cost(btype, level):  # cost to build level (level = new level, 1..3)
-    mult = {1:1,2:2.2,3:4.5}[level]
-    return {k:int(v*mult) for k,v in BUILDINGS[btype]['cost'].items()}
-
-RESEARCH_TREE.update({
-  'tactics':   {'name':'Tactics',       'icon':'🧠','cost':180,'branch':'military','requires':['iron'],      'desc':'Morale never drops below 30; +5% attack'},
-  'medicine':  {'name':'Field Medicine','icon':'⚕','cost':200,'branch':'military','requires':['castle'],    'desc':'-25% casualties'},
-  'logistics': {'name':'Logistics',     'icon':'📦','cost':220,'branch':'military','requires':['iron'],      'desc':'+25% army capacity'},
-  'espionage': {'name':'Espionage',     'icon':'🕵','cost':260,'branch':'military','requires':['tactics'],   'desc':'See exact enemy defense & modifiers'},
-  'engineering':{'name':'Engineering',  'icon':'🏗','cost':200,'branch':'economy', 'requires':['trade'],     'desc':'-20% building costs'},
-  'banking':   {'name':'Banking',       'icon':'🏦','cost':300,'branch':'economy', 'requires':['trade'],     'desc':'-20% claim cost, +10% money'},
-  'navigation':{'name':'Navigation',    'icon':'🧭','cost':260,'branch':'naval',   'requires':['shipyard'],  'desc':'Boat range +2, boats carry +4 troops'},
-  'jets':      {'name':'Jet Engines',   'icon':'🛩','cost':500,'branch':'naval',   'requires':['airforce'],  'desc':'Plane range +2'},
-  'radar':     {'name':'Radar',         'icon':'📡','cost':350,'branch':'naval',   'requires':['airforce'],  'desc':'-30% damage from air strikes against you'},
-})
-
-EVENTS = {
-  'gold_rush': {'name':'Gold Rush','icon':'🪙','desc':'Money yield +50%'},
-  'harvest':   {'name':'Bumper Harvest','icon':'🌾','desc':'Food & wood yield +50%'},
-  'mining':    {'name':'Mining Boom','icon':'⛏','desc':'Metal & oil yield +50%'},
-  'conscription':{'name':'Conscription Drive','icon':'📯','desc':'Troops cost -40%'},
-  'war_fever': {'name':'War Fever','icon':'🔥','desc':'All attacks +15% stronger'},
-  'cold_snap': {'name':'Cold Snap','icon':'🧊','desc':'All attacks -12% weaker'},
-}
-EVENT_LEN, EVENT_GAP = 1800, 600
-
-ACHIEVEMENTS = {
-  'first_blood':{'name':'First Blood','icon':'🩸','desc':'Win a battle','reward':100},
-  'wins_10':    {'name':'Veteran','icon':'🎖','desc':'Win 10 battles','reward':300},
-  'wins_50':    {'name':'Warmonger','icon':'☠','desc':'Win 50 battles','reward':1000},
-  'land_10':    {'name':'Landowner','icon':'🏡','desc':'Own 10 territories','reward':200},
-  'land_30':    {'name':'Duke','icon':'🏰','desc':'Own 30 territories','reward':600},
-  'land_75':    {'name':'Emperor','icon':'👑','desc':'Own 75 territories','reward':2000},
-  'builder':    {'name':'Builder','icon':'🏗','desc':'Own 5 buildings','reward':300},
-  'scholar':    {'name':'Scholar','icon':'📚','desc':'Research 6 technologies','reward':400},
-  'admiral':    {'name':'Admiral','icon':'🚢','desc':'Win a naval landing','reward':400},
-  'ace':        {'name':'Ace','icon':'✈','desc':'Win an air strike','reward':500},
-  'rich':       {'name':'Tycoon','icon':'💎','desc':'Hold 10,000💰','reward':500},
-  'faction':    {'name':'Team Player','icon':'🚩','desc':'Join a faction','reward':150},
-  'chatty':     {'name':'Diplomat','icon':'💬','desc':'Send 10 chat messages','reward':100},
-  'daily_7':    {'name':'Loyal','icon':'📅','desc':'7-day login streak','reward':500},
-}
 
 def migrate_v4():
     conn = get_db(); c = conn.cursor()
@@ -952,25 +790,6 @@ def sum_levels(conn, uid, btype):
                      'WHERE t.owner_id=? AND b.type=?', (uid, btype)).fetchone()
     return r['s']
 
-def army_cap(conn, uid, rsch=None):
-    rsch = rsch if rsch is not None else user_research(conn, uid)
-    n = conn.execute('SELECT COUNT(*) c FROM territories WHERE owner_id=?', (uid,)).fetchone()['c']
-    cap = 60 + 30*n + 40*sum_levels(conn, uid, 'barracks')
-    return int(cap * (1.25 if 'logistics' in rsch else 1.0))
-
-def casualty_mult(conn, uid, rsch):
-    m = 1.0
-    if 'medicine' in rsch: m *= 0.75
-    m *= 1 - min(0.30, 0.10*sum_levels(conn, uid, 'hospital'))
-    return m
-
-def troop_cost2(conn, rsch):
-    c = TROOP_COST
-    if 'gunpowder' in rsch: c = c*0.75
-    if ev_type(conn) == 'conscription': c *= 0.6
-    c *= float(get_setting(conn, 'troop_cost_mult', 1) or 1)
-    return max(1, int(round(c)))
-
 def claim_cost_for(mc, rsch):
     cost = 1200 if mc>=200 else 400 if mc>=100 else 150 if mc>=50 else 80 if mc>=20 else 40 if mc>=8 else CLAIM_COST
     return int(cost*0.8) if 'banking' in rsch else cost
@@ -978,93 +797,15 @@ def claim_cost_for(mc, rsch):
 def boat_range(conn, uid, rsch):
     return BOAT_RANGE_BASE + (2 if 'navigation' in rsch else 0)
 def plane_range(rsch):
-    return PLANE_RANGE_DEF + (3 if 'blitz' in rsch else 0) + (2 if 'jets' in rsch else 0)
+    return PLANE_RANGE_BASE + sum(value for tech,value in PLANE_RANGE_BONUSES.items() if tech in rsch)
 
-def can_afford(u, cost): return all(round(u[k]) >= v for k, v in cost.items())
 def pay(conn, uid, cost):
     for k, v in cost.items(): conn.execute(f'UPDATE users SET {k}={k}-? WHERE id=?', (v, uid))
-def fmt_cost(cost): return ' '.join(f'{v}{ {"money":"💰","wood":"🌲","metal":"⚙","oil":"🛢","food":"🌾"}[k]}' for k, v in cost.items())
-
-def defense_of(conn, owner_id, gk, terrain):
-    """Defending force at one tile: share of the owner's national army + militia, with modifiers."""
-    if not owner_id:
-        return {'base': 3 + (random.Random(simple_hash(*parse_key(gk))).randint(0, 4)), 'mods': [], 'mult': 1.0, 'owner_army': 0}
-    row = conn.execute('SELECT army,research FROM users WHERE id=?', (owner_id,)).fetchone()
-    n = max(1, conn.execute('SELECT COUNT(*) c FROM territories WHERE owner_id=?', (owner_id,)).fetchone()['c'])
-    rs = set(json.loads(row['research'] or '[]'))
-    base = row['army'] / (n ** 0.55) + 3        # +3 militia per tile
-    mods = []; mult = 1.0
-    x = def_bonus(rs); mods.append(('Home ground' + (' + Castle Walls' if 'castle' in rs else ''), x)); mult *= x
-    x = TERRAIN_DEF.get(terrain, 1.0)
-    if x != 1.0: mods.append((f'Terrain ({terrain})', x)); mult *= x
-    b = conn.execute('SELECT level FROM buildings WHERE grid_key=? AND type="fort"', (gk,)).fetchone()
-    if b: x = 1 + 0.25*b['level']; mods.append((f'Fortress Lv{b["level"]}', x)); mult *= x
-    return {'base': base, 'mods': mods, 'mult': mult, 'owner_army': row['army']}
-
-def attack_mods(conn, uid, rsch, kind, tgl, tgg, rng=None):
-    """List of (label, multiplier) for the attacker."""
-    mods = []
-    if 'iron' in rsch: mods.append(('Iron Weapons', 1.2))
-    if 'gunpowder' in rsch: mods.append(('Gunpowder', 1.3))
-    if 'tactics' in rsch: mods.append(('Tactics', 1.05))
-    if kind == 'air' and 'blitz' in rsch: mods.append(('Blitzkrieg', 1.2))
-    if kind == 'naval' and 'navigation' in rsch: mods.append(('Navigation', 1.1))
-    w = weather_for(cur_slot(), tgl, tgg)
-    wf = WEATHER_FX[w][1 if kind == 'air' else 0]
-    if wf != 1.0: mods.append((f'Weather ({w})', wf))
-    u = conn.execute('SELECT morale FROM users WHERE id=?', (uid,)).fetchone()
-    morale = u['morale'] if u else 50
-    if 'tactics' in rsch: morale = max(30, morale)
-    mm = 0.90 + 0.25*(morale/100.0)
-    mods.append((f'Morale ({morale})', round(mm, 3)))
-    e = ev_type(conn)
-    if e == 'war_fever': mods.append(('War Fever', 1.15))
-    if e == 'cold_snap': mods.append(('Cold Snap', 0.88))
-    fb = faction_bonus(conn, uid)
-    if fb > 1.0: mods.append(('Faction unity', round(1 + (fb-1)/2, 3)))
-    if kind == 'naval': mods.append(('Amphibious landing', 0.9))
-    return mods, w
 
 def prod(mods):
     p = 1.0
     for _, m in mods: p *= m
     return p
-
-def resolve_battle(conn, uid, uname, target_key, force, kind, from_key, carried_units=0, dry=False):
-    """Core combat. `force` = raw attacking strength (troops, or boat/plane power). Returns dict."""
-    tgl, tgg = parse_key(target_key)
-    tt = conn.execute('SELECT * FROM territories WHERE grid_key=?', (target_key,)).fetchone()
-    terrain = tt['terrain'] if tt else get_terrain(tgl, tgg)
-    def_oid = tt['owner_id'] if tt else None
-    rsch = user_research(conn, uid)
-    amods, weather = attack_mods(conn, uid, rsch, kind, tgl, tgg)
-    d = defense_of(conn, def_oid, target_key, terrain)
-    dmods = list(d['mods'])
-    if kind == 'air' and def_oid:
-        drs = user_research(conn, def_oid)
-        if 'radar' in drs: dmods.append(('Radar', 1.3))
-    A = force * prod(amods); D = d['base'] * prod(dmods)
-    # luck: ±8% each side
-    ra = 1.0 if dry else random.uniform(0.92, 1.08); rd = 1.0 if dry else random.uniform(0.92, 1.08)
-    A *= ra; D *= rd
-    odds = A / (A + D) if (A + D) > 0 else 1
-    return {'A': A, 'D': D, 'odds': odds, 'weather': weather, 'terrain': terrain, 'def_oid': def_oid,
-            'def_force': d['base'], 'amods': amods, 'dmods': dmods, 'tt': tt, 'rsch': rsch,
-            'owner_army': d['owner_army']}
-
-def apply_victory(conn, uid, tk, terrain, tt, tgl, tgg):
-    pop = tt['population'] if tt else get_population(terrain, tgl, tgg)
-    now = int(time.time())
-    if tt:
-        conn.execute('UPDATE territories SET owner_id=?,garrison=0,boats=0,planes=0,last_collected=? WHERE grid_key=?', (uid, now, tk))
-        conn.execute('DELETE FROM buildings WHERE grid_key=? AND random()%3=0', (tk,))  # some buildings burn down
-    else:
-        conn.execute('INSERT INTO territories (grid_key,owner_id,terrain,garrison,boats,planes,population,last_collected) VALUES (?,?,?,0,0,0,?,?)',
-                     (tk, uid, terrain, pop, now))
-
-def morale_update(conn, uid, win):
-    conn.execute('UPDATE users SET morale=MAX(5,MIN(100,morale+?)),wins=wins+?,losses=losses+? WHERE id=?',
-                 (8 if win else -12, 1 if win else 0, 0 if win else 1, uid))
 
 def battle_response(res, extra=None):
     d = {'success': True, 'attacker_wins': res['win'], 'result': 'victory' if res['win'] else 'defeat', 'message': res['msg'],
@@ -1072,51 +813,6 @@ def battle_response(res, extra=None):
                        'atk_mods': [[a, round(b, 2)] for a, b in res['amods']], 'def_mods': [[a, round(b, 2)] for a, b in res['dmods']]}}
     if extra: d.update(extra)
     return jsonify(d)
-
-def do_assault(conn, uid, uname, fk, tk, force, kind, units_label, committed_troops, fleet_back=0.0):
-    """Shared assault flow for land / naval / air. Troops & fleet already validated."""
-    tgl, tgg = parse_key(tk)
-    r = resolve_battle(conn, uid, uname, tk, force, kind, fk)
-    rsch = r['rsch']; cm = casualty_mult(conn, uid, rsch)
-    win = r['A'] > r['D']
-    def_name = 'wilderness'
-    if r['def_oid']:
-        du = conn.execute('SELECT username FROM users WHERE id=?', (r['def_oid'],)).fetchone()
-        def_name = du['username'] if du else 'unknown'
-    ratio = r['D'] / max(r['A'], 0.01)
-    if win:
-        loss_frac = min(0.8, (0.12 + 0.55*min(1.0, ratio)) * cm)
-        lost = min(committed_troops - 1, int(committed_troops*loss_frac)) if committed_troops > 1 else 0
-        survivors = max(1, committed_troops - lost) if committed_troops else 0
-        conn.execute('UPDATE users SET army=army+? WHERE id=?', (survivors, uid))
-        apply_victory(conn, uid, tk, r['terrain'], r['tt'], tgl, tgg)
-        if r['def_oid']:
-            dl = int(r['owner_army'] * min(0.25, 0.04 + 0.05*(r['A']/max(r['D'], 1))))
-            conn.execute('UPDATE users SET army=MAX(0,army-?) WHERE id=?', (dl, r['def_oid']))
-        msg = f'Victory! Took {def_name}\'s tile. Lost {lost}, {survivors} troops hold the line.'
-        res_lost = lost
-    else:
-        lost = committed_troops
-        # survivors of a failed assault: a few retreat
-        retreat = int(committed_troops * max(0.0, 0.25 - 0.2*min(1.0, ratio-1)) * (2-cm)) if committed_troops else 0
-        retreat = max(0, min(committed_troops-1, retreat)) if committed_troops > 1 else 0
-        conn.execute('UPDATE users SET army=army+? WHERE id=?', (retreat, uid))
-        lost = committed_troops - retreat
-        if r['def_oid']:
-            dl = int(r['owner_army'] * min(0.12, 0.02 + 0.04*(r['A']/max(r['D'], 1))))
-            conn.execute('UPDATE users SET army=MAX(0,army-?) WHERE id=?', (dl, r['def_oid']))
-        msg = f'Defeat! {def_name} held. {lost} troops lost, {retreat} retreated.'
-        res_lost = lost
-    morale_update(conn, uid, win)
-    conn.execute('INSERT INTO battle_log (attacker,defender,grid_key,result,mode,details) VALUES (?,?,?,?,?,?)',
-                 (uname, def_name, tk, 'victory' if win else 'defeat', kind,
-                  f'{units_label}: {round(r["A"])} vs {round(r["D"])} · {r["weather"]} · {r["terrain"]}'))
-    if r['def_oid']:
-        create_notification(conn, r['def_oid'], 'attack',
-            f'⚔ {uname} {"captured" if win else "attacked"} your {r["terrain"]} tile ({tk}) by {kind} — {"you lost it!" if win else "you held!"}')
-    if win: check_win(uid, conn)
-    r.update({'win': win, 'msg': msg, 'lost': res_lost})
-    return r
 
 # ── Troops / army ───────────────────────────────────────────────────────────
 @app.route('/api/troops/move', methods=['POST'])
@@ -1159,10 +855,10 @@ def chat_get():
     ch = request.args.get('channel', 'global'); since = int(request.args.get('since', 0) or 0)
     conn = get_db(); key = _channel(conn, session['user_id'], ch)
     if not key: conn.close(); return jsonify({'messages': [], 'last_id': since, 'error': 'No faction'})
-    if since: rows = conn.execute('SELECT * FROM chat WHERE channel=? AND id>? ORDER BY id LIMIT 100', (key, since)).fetchall()
-    else: rows = list(reversed(conn.execute('SELECT * FROM chat WHERE channel=? ORDER BY id DESC LIMIT 60', (key,)).fetchall()))
+    if since: rows = conn.execute('SELECT c.*,u.is_donator,u.donator_title FROM chat c LEFT JOIN users u ON u.id=c.user_id WHERE c.channel=? AND c.id>? ORDER BY c.id LIMIT 100', (key, since)).fetchall()
+    else: rows = list(reversed(conn.execute('SELECT c.*,u.is_donator,u.donator_title FROM chat c LEFT JOIN users u ON u.id=c.user_id WHERE c.channel=? ORDER BY c.id DESC LIMIT 60', (key,)).fetchall()))
     conn.close()
-    msgs = [{'id': r['id'], 'user': r['username'], 'color': r['color'], 'text': r['message'], 'ts': r['ts'], 'uid': r['user_id'], 'edited': r['edited']} for r in rows]
+    msgs = [{'id': r['id'], 'user': r['username'], 'color': r['color'], 'text': r['message'], 'ts': r['ts'], 'uid': r['user_id'], 'edited': r['edited'],'is_donator':bool(r['is_donator']),'donator_title':r['donator_title']} for r in rows]
     return jsonify({'messages': msgs, 'last_id': msgs[-1]['id'] if msgs else since})
 
 _last_chat = {}
@@ -1178,6 +874,7 @@ def chat_send():
     key = _channel(conn, uid, d.get('channel', 'global'))
     if not key: conn.close(); return jsonify({'error': 'Join a faction first'}), 400
     _last_chat[uid] = time.time()
+    while len(_last_chat) > MAX_TRACKED_CLIENTS: _last_chat.pop(next(iter(_last_chat)))
     conn.execute('INSERT INTO chat(channel,user_id,username,color,message,ts) VALUES(?,?,?,?,?,?)', (key, uid, u['username'], u['color'], text, int(time.time())))
     conn.execute('UPDATE users SET chat_count=chat_count+1 WHERE id=?', (uid,))
     conn.execute('DELETE FROM chat WHERE id < (SELECT MAX(id)-1500 FROM chat)')
@@ -1185,26 +882,6 @@ def chat_send():
     return jsonify({'success': True, 'achievements': ach})
 
 # ── Daily bonus & achievements ──────────────────────────────────────────────
-def award_achievements(conn, uid):
-    u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
-    tc = conn.execute('SELECT COUNT(*) c FROM territories WHERE owner_id=?', (uid,)).fetchone()['c']
-    nb = conn.execute('SELECT COUNT(*) c FROM buildings b JOIN territories t ON t.grid_key=b.grid_key WHERE t.owner_id=?', (uid,)).fetchone()['c']
-    nr = len(json.loads(u['research'] or '[]'))
-    last = conn.execute("SELECT mode FROM battle_log WHERE attacker=? AND result='victory' ORDER BY id DESC LIMIT 1", (u['username'],)).fetchone()
-    have = {r['key'] for r in conn.execute('SELECT key FROM achievements WHERE user_id=?', (uid,))}
-    checks = {'first_blood': u['wins'] >= 1, 'wins_10': u['wins'] >= 10, 'wins_50': u['wins'] >= 50, 'land_10': tc >= 10,
-              'land_30': tc >= 30, 'land_75': tc >= 75, 'builder': nb >= 5, 'scholar': nr >= 6,
-              'admiral': bool(last and last['mode'] == 'naval'), 'ace': bool(last and last['mode'] == 'air'),
-              'rich': u['money'] >= 10000, 'faction': bool(u['faction_id']), 'chatty': u['chat_count'] >= 10,
-              'daily_7': u['daily_streak'] >= 7}
-    new = []
-    for k, ok in checks.items():
-        if ok and k not in have:
-            conn.execute('INSERT OR IGNORE INTO achievements(user_id,key,ts) VALUES(?,?,?)', (uid, k, int(time.time())))
-            conn.execute('UPDATE users SET money=money+? WHERE id=?', (ACHIEVEMENTS[k]['reward'], uid))
-            create_notification(conn, uid, 'info', f'🏅 Achievement: {ACHIEVEMENTS[k]["name"]} (+{ACHIEVEMENTS[k]["reward"]}💰)')
-            new.append({'key': k, **ACHIEVEMENTS[k]})
-    return new
 
 @app.route('/api/achievements')
 @require_login
@@ -1343,7 +1020,7 @@ def gift_money():
     if recipient['id'] == session['user_id']:
         conn.close(); return jsonify({'error': 'Cannot gift yourself'}), 400
     sender = conn.execute('SELECT username, money FROM users WHERE id=?', (session['user_id'],)).fetchone()
-    if round(sender['money']) < amount:
+    if sender['money'] < amount:
         conn.close(); return jsonify({'error': f'Not enough money (have {round(sender["money"])}💰)'}), 400
     conn.execute('UPDATE users SET money=money-? WHERE id=?', (amount, session['user_id']))
     conn.execute('UPDATE users SET money=money+? WHERE id=?', (amount, recipient['id']))
@@ -1492,7 +1169,7 @@ def cancel_alliance_invite():
 def leaderboard():
     conn = get_db()
     rows = conn.execute('''
-        SELECT u.username,u.color,u.is_admin,
+        SELECT u.username,u.color,u.is_admin,u.is_donator,u.donator_title,u.rank_override,
                COUNT(t.id) territories,
                COALESCE(SUM(t.population),0) total_pop, u.id, u.money, u.army, u.wins, f.tag
         FROM users u LEFT JOIN territories t ON t.owner_id=u.id LEFT JOIN factions f ON f.id=u.faction_id
@@ -1503,6 +1180,9 @@ def leaderboard():
     result = []
     for r in rows:
         rank = get_rank(r['territories'])
+        if r['rank_override']:
+            custom=next((entry for entry in RANKS if entry[2]==r['rank_override']),None)
+            if custom:rank={'icon':custom[1],'name':custom[2]}
         result.append({**dict(r),'rank':rank})
     return jsonify(result)
 
@@ -1568,7 +1248,7 @@ def game_status():
 def admin_users():
     conn = get_db()
     rows = conn.execute('''
-        SELECT u.id,u.username,u.is_admin,u.is_banned,u.created_at,u.money,u.color,u.last_seen,
+        SELECT u.id,u.username,u.is_admin,u.is_donator,u.donator_title,u.rank_override,u.ideas_banned,u.is_banned,u.created_at,u.money,u.color,u.last_seen,
                COUNT(t.id) territory_count, COALESCE(SUM(t.population),0) total_pop
         FROM users u LEFT JOIN territories t ON t.owner_id=u.id
         GROUP BY u.id ORDER BY u.created_at DESC
@@ -1599,7 +1279,7 @@ def admin_change_username():
     d   = request.json or {}
     uid = d.get('user_id')
     new = d.get('new_username','').strip()
-    if not new or len(new)<3 or len(new)>20:
+    if not new or not re.fullmatch(r'[\w .-]{3,20}', new):
         return jsonify({'error':'Username must be 3–20 characters'}),400
     conn = get_db()
     try:
@@ -1709,95 +1389,11 @@ import re
 # ══════════════════════════════════════════════════════════════════════════════
 #  v5 — faction pools/research/wars, embassies, trade, wonders, ideologies, nukes, merges…
 # ══════════════════════════════════════════════════════════════════════════════
-FOREVER = 4102444800
-SELL_RATES.update({'steel': 12, 'uranium': 40, 'gems': 60})
-RATE_VAL = {'money': 1, 'food': 2, 'wood': 4, 'metal': 6, 'oil': 10, 'steel': 12, 'uranium': 40, 'gems': 60}
-RES_EMOJI = {'money': '💰', 'wood': '🌲', 'metal': '⚙', 'oil': '🛢', 'food': '🌾', 'steel': '🔩', 'uranium': '☢', 'gems': '💎'}
-NUKE_RANGE, NUKE_COOLDOWN, NUKE_URANIUM, NUKE_STEEL = 40, 3600, 300, 3000
-NUCLEAR_MELTDOWN_P = 0.000004          # per minute, per plant level (~0.6%/day) — extremely slim
-VOYAGE_MONEY, VOYAGE_WOOD = 40, 5       # per boat, per cell sailed
-POOLS = ('army', 'boats', 'planes')
 
-BUILDINGS.update({
-  'steel_mill':   {'name':'Steel Mill','icon':'🔩','desc':'+4 steel/min per level','cost':{'money':400,'metal':150,'wood':60},'needs':'metallurgy'},
-  'gem_mine':     {'name':'Gem Mine','icon':'💎','desc':'+1.5 gems/min per level (mountains only)','cost':{'money':500,'metal':100},'needs':'mining','terrain':['mountains']},
-  'uranium_mine': {'name':'Uranium Mine','icon':'☢','desc':'+1.2 uranium/min per level (mountains/tundra/desert)','cost':{'money':1500,'metal':300,'steel':50},'needs':'nuclear_physics','terrain':['mountains','tundra','desert']},
-  'nuclear_plant':{'name':'Nuclear Plant','icon':'⚛','desc':'+40💰/min per level. Required for nukes. Tiny meltdown risk: permanently ruins the area!','cost':{'money':8000,'steel':300,'uranium':20},'needs':'nuclear_physics'},
-  'enrichment':   {'name':'Enrichment Plant','icon':'🧪','desc':'Required for nukes','cost':{'money':20000,'steel':500,'uranium':50},'needs':'nuclear_physics'},
-  'silo':         {'name':'Missile Silo','icon':'🚀','desc':'Nukes launch from here','cost':{'money':50000,'steel':1000},'needs':'rocketry'},
-})
 def build_cost(btype, level):
-    mult = {1: 1, 2: 2.2, 3: 4.5}[level]
+    mult = BUILD_LEVEL_MULTIPLIERS[level]
     return {k: int(v*mult) for k, v in BUILDINGS[btype]['cost'].items()}
 def fmt_cost(cost): return ' '.join(f'{v}{RES_EMOJI[k]}' for k, v in cost.items())
-
-RESEARCH_TREE['logistics'].update({'desc': 'Troops cost -10%'})
-RESEARCH_TREE.update({
- 'masonry':    {'name':'Masonry','icon':'🧱','cost':160,'branch':'military','requires':['castle'],'desc':'+15% defense'},
- 'cavalry':    {'name':'Cavalry','icon':'🐎','cost':150,'branch':'military','requires':['iron'],'desc':'+8% attack'},
- 'artillery':  {'name':'Artillery','icon':'💣','cost':400,'branch':'military','requires':['gunpowder'],'desc':'+12% land attack'},
- 'conscription':{'name':'Conscription','icon':'📜','cost':300,'branch':'military','requires':['logistics'],'desc':'Troops cost -15%'},
- 'fortification':{'name':'Fortification','icon':'🏰','cost':380,'branch':'military','requires':['masonry'],'desc':'Fortress bonus 25% → 32% per level'},
- 'propaganda': {'name':'Propaganda','icon':'📢','cost':320,'branch':'military','requires':['tactics'],'desc':'Victories give +4 extra morale'},
- 'irrigation': {'name':'Irrigation','icon':'💧','cost':170,'branch':'economy','requires':['agri'],'desc':'+20% food'},
- 'metallurgy': {'name':'Metallurgy','icon':'🔥','cost':320,'branch':'economy','requires':['industry'],'desc':'+20% metal; unlocks Steel Mills'},
- 'refining':   {'name':'Oil Refining','icon':'🛢','cost':320,'branch':'economy','requires':['industry'],'desc':'+20% oil'},
- 'mining':     {'name':'Deep Mining','icon':'⛏','cost':420,'branch':'economy','requires':['metallurgy'],'desc':'+15% metal; unlocks Gem Mines'},
- 'global_trade':{'name':'Global Trade','icon':'🌐','cost':520,'branch':'economy','requires':['banking'],'desc':'+10% money'},
- 'scientific': {'name':'Scientific Method','icon':'🔭','cost':380,'branch':'economy','requires':['trade'],'desc':'-10% research cost'},
- 'diplomacy':  {'name':'Diplomacy','icon':'🕊','cost':280,'branch':'economy','requires':['trade'],'desc':'Unlocks Embassies & trade deals'},
- 'shipping':   {'name':'Merchant Marine','icon':'🚢','cost':450,'branch':'naval','requires':['navigation'],'desc':'Boat voyage costs -25%'},
- 'stealth':    {'name':'Stealth Tech','icon':'🛸','cost':900,'branch':'naval','requires':['radar','jets'],'desc':'Planes +25% power'},
- 'nuclear_physics':{'name':'Nuclear Physics','icon':'⚛','cost':2500,'branch':'military','requires':['industry','scientific'],'desc':'Unlocks Uranium, Nuclear Plants, Enrichment'},
- 'rocketry':   {'name':'Rocketry','icon':'🚀','cost':4000,'branch':'military','requires':['jets','nuclear_physics'],'desc':'Unlocks Missile Silos'},
- 'manhattan':  {'name':'Manhattan Project','icon':'☢','cost':8000,'branch':'military','requires':['rocketry'],'desc':'Allows building nuclear weapons'},
-})
-
-FACTION_TECH = {
- 'f_unity':  {'name':'National Unity','icon':'🤝','cost':3000,'desc':'+5% yield for every member'},
- 'f_warcry': {'name':'War Cry','icon':'📯','cost':4000,'desc':'+6% attack for every member'},
- 'f_bulwark':{'name':'Bulwark','icon':'🛡','cost':4000,'desc':'+8% defense for every member'},
- 'f_logi':   {'name':'Joint Logistics','icon':'📦','cost':3000,'desc':'Troops cost -10%'},
- 'f_academy':{'name':'Faction Academy','icon':'🎓','cost':5000,'desc':'-10% research cost'},
- 'f_bank':   {'name':'Faction Bank','icon':'🏦','cost':6000,'desc':'Treasury payout 1% → 1.5% per 10 min'},
- 'f_navy':   {'name':'Combined Fleet','icon':'⚓','cost':4000,'desc':'Boat voyage costs -25%'},
- 'f_air':    {'name':'Joint Air Command','icon':'✈','cost':6000,'desc':'Planes +20% power'},
- 'f_spy':    {'name':'Intel Sharing','icon':'🕵','cost':5000,'desc':'Everyone gets Espionage'},
- 'f_medic':  {'name':'Field Hospitals','icon':'🏥','cost':5000,'desc':'Casualties -15%'},
-}
-IDEOLOGIES = {
- 'capitalism':{'name':'Capitalism','icon':'🏦','desc':'+12% money, claims -10% price, troops +10% cost','money':1.12,'claim':0.9,'troop':1.1},
- 'communism': {'name':'Communism','icon':'☭','desc':'+6% all yields, troops -15% cost, money -8%','yield':1.06,'troop':0.85,'money':0.92},
- 'militarism':{'name':'Militarism','icon':'🎖','desc':'+10% attack, troops -10% cost, yields -5%','atk':1.10,'troop':0.9,'yield':0.95},
- 'democracy': {'name':'Democracy','icon':'🗳','desc':'Research -15% cost, +5% defense, -3% attack','research':0.85,'def':1.05,'atk':0.97},
- 'theocracy': {'name':'Theocracy','icon':'⛪','desc':'+10% defense, morale floor 35, casualties -10%, money -5%','def':1.10,'floor':35,'casualty':0.9,'money':0.95},
-}
-WONDERS = {
- 'pyramids':     {'name':'Great Pyramid','icon':'🔺','cost':{'money':250000},'desc':'+8% all yields'},
- 'colossus':     {'name':'Colossus','icon':'🗿','cost':{'money':400000,'metal':2000},'desc':'+10% defense everywhere'},
- 'great_library':{'name':'Great Library','icon':'📚','cost':{'money':1000000,'gems':50},'desc':'Research -20% cost'},
- 'statue':       {'name':'Statue of Liberty','icon':'🗽','cost':{'money':2500000,'steel':500},'desc':'+5% attack, morale floor 40'},
- 'space_program':{'name':'Space Program','icon':'🚀','cost':{'money':10000000,'steel':2000,'gems':200},'desc':'+15% money'},
- 'dyson':        {'name':'Dyson Sphere','icon':'🌞','cost':{'money':50000000,'steel':10000,'gems':1000,'uranium':500},'desc':'+25% ALL yields. Ultimate flex.'},
-}
-ACHIEVEMENTS.update({
- 'land_150':{'name':'Conqueror','icon':'🌍','desc':'Own 150 territories','reward':5000},
- 'wins_100':{'name':'Legend','icon':'🏆','desc':'Win 100 battles','reward':3000},
- 'builder_20':{'name':'Architect','icon':'🏛','desc':'Own 20 buildings','reward':1200},
- 'scholar_15':{'name':'Professor','icon':'🎓','desc':'Research 15 technologies','reward':1500},
- 'scholar_25':{'name':'Nobel','icon':'🧪','desc':'Research 25 technologies','reward':4000},
- 'rich_100k':{'name':'Millionaire-ish','icon':'💰','desc':'Hold 100,000💰','reward':2000},
- 'rich_1m':{'name':'Billionaire','icon':'🤑','desc':'Hold 1,000,000💰','reward':10000},
- 'capital':{'name':'Seat of Power','icon':'⭐','desc':'Choose a capital','reward':200},
- 'ideology':{'name':'True Believer','icon':'🚩','desc':'Adopt an ideology','reward':200},
- 'embassy':{'name':'Ambassador','icon':'🏳','desc':'Open an embassy','reward':400},
- 'trader':{'name':'Merchant Prince','icon':'⚖','desc':'Have an active trade deal','reward':500},
- 'wonder':{'name':'Wonder Builder','icon':'🗿','desc':'Own a wonder','reward':3000},
- 'nuke':{'name':'Doomsday','icon':'☢','desc':'Launch a nuclear missile','reward':2000},
- 'daily_30':{'name':'Devoted','icon':'🔥','desc':'30-day login streak','reward':3000},
- 'chat_100':{'name':'Orator','icon':'📣','desc':'Send 100 chat messages','reward':500},
- 'war_hero':{'name':'War Hero','icon':'🎗','desc':'Capture 10 tiles in a faction war','reward':1500},
-})
 
 def migrate_v5():
     conn = get_db(); c = conn.cursor()
@@ -1883,34 +1479,32 @@ def yield_ctx(conn, uid):
     rs = user_research(conn, uid); ft = ftechs(conn, uid); ide = ideo(conn, uid); w = my_wonders(conn, uid)
     base = faction_bonus(conn, uid) * float(get_setting(conn, 'income_mult', 1) or 1) * ide.get('yield', 1.0)
     if 'f_unity' in ft: base *= 1.05
-    if 'pyramids' in w: base *= 1.08
-    if 'dyson' in w: base *= 1.25
-    return {'rs': rs, 'ft': ft, 'ide': ide, 'w': w, 'ev': ev_type(conn), 'base': base}
+    for key in w: base *= WONDERS.get(key, {}).get('yield', 1)
+    base *= religion_for(conn, uid).get('yield', 1)
+    return {'rs': rs, 'ft': ft, 'ide': ide, 'w': w, 'ev': ev_type(conn), 'base': base, 'religion': religion_for(conn, uid)}
 def res_mult2(rt, c):
-    rs = c['rs']; m = c['base']; ev = c['ev']
+    rs = c['rs']; m = c['base'] * c.get('religion', {}).get(rt, 1); ev = c['ev']
     if rt == 'food': m *= (1.25 if 'agri' in rs else 1) * (1.2 if 'irrigation' in rs else 1) * (1.5 if ev == 'harvest' else 1)
     if rt == 'wood': m *= (1.25 if 'agri' in rs else 1) * (1.5 if ev == 'harvest' else 1)
     if rt == 'money':
         m *= (1.15 if 'trade' in rs else 1) * (1.10 if 'banking' in rs else 1) * (1.10 if 'global_trade' in rs else 1)
-        m *= c['ide'].get('money', 1.0) * (1.15 if 'space_program' in c['w'] else 1) * (1.5 if ev == 'gold_rush' else 1)
+        m *= c['ide'].get('money', 1.0) * math.prod(WONDERS.get(k, {}).get('money', 1) for k in c['w']) * (1.5 if ev == 'gold_rush' else 1)
     if rt == 'metal': m *= (1.25 if 'industry' in rs else 1) * (1.2 if 'metallurgy' in rs else 1) * (1.15 if 'mining' in rs else 1) * (1.5 if ev == 'mining' else 1)
     if rt == 'oil': m *= (1.25 if 'industry' in rs else 1) * (1.2 if 'refining' in rs else 1) * (1.5 if ev == 'mining' else 1)
     return m
 def tile_yield(c, terrain, bt, bl):
     rt, rate = TERRAIN_RES[terrain]; bl = bl or 0
-    m = res_mult2(rt, c) * ((1 + 0.25*bl) if bt == 'workshop' else 1)
-    out = {rt: rate*m}; gold = res_mult2('money', c)
-    if bt == 'market': out['money'] = out.get('money', 0) + 6*bl*gold
-    if bt == 'nuclear_plant': out['money'] = out.get('money', 0) + 40*bl*gold
-    if bt == 'steel_mill': out['steel'] = 4*bl*c['base']
-    if bt == 'uranium_mine': out['uranium'] = 1.2*bl*c['base']
-    if bt == 'gem_mine': out['gems'] = 1.5*bl*c['base']
+    info = BUILDINGS.get(bt, {})
+    m = res_mult2(rt, c) * (1 + info.get('yield_per_level', 0)*bl)
+    out = {rt: rate*m}
+    for resource, amount in info.get('production', {}).items():
+        out[resource] = out.get(resource, 0) + amount*bl*res_mult2(resource, c)
     return out
 def income_rates(conn, uid):
     c = yield_ctx(conn, uid); rates = {k: 0.0 for k in RATE_VAL}; troops = 0
     for r in conn.execute('SELECT t.terrain,b.type bt,b.level bl FROM territories t LEFT JOIN buildings b ON b.grid_key=t.grid_key WHERE t.owner_id=?', (uid,)):
         for k, v in tile_yield(c, r['terrain'], r['bt'], r['bl']).items(): rates[k] += v
-        if r['bt'] == 'barracks': troops += 3*r['bl']
+        troops += BUILDINGS.get(r['bt'], {}).get('troops_per_level', 0)*(r['bl'] or 0)
     return rates, troops, c
 def claim_price(conn, uid, terrain):
     mc = conn.execute('SELECT COUNT(*) c FROM territories WHERE owner_id=?', (uid,)).fetchone()['c']
@@ -1918,17 +1512,18 @@ def claim_price(conn, uid, terrain):
     rates, _, c = income_rates(conn, uid)
     inc = sum(rates[k]*RATE_VAL[k] for k in rates)
     rt, rate = TERRAIN_RES[terrain]
-    price = (CLAIM_COST + 0.8*rate*RATE_VAL[rt] + 1.2*inc) * c['ide'].get('claim', 1.0) * (0.8 if 'banking' in c['rs'] else 1.0)
+    price = (CLAIM_COST + CLAIM_TILE_FACTOR*rate*RATE_VAL[rt] + CLAIM_INCOME_FACTOR*inc) * c['ide'].get('claim', 1.0) * c['religion'].get('claim', 1) * (0.8 if 'banking' in c['rs'] else 1.0)
     price = max(CLAIM_COST, int(price))
-    cost = {'money': price, 'wood': max(1, int(price*0.12/4)), 'food': max(1, int(price*0.08/2))}
-    if mc >= 15: cost['metal'] = max(1, int(price*0.05/6))
+    cost = {'money': price, 'wood': max(1, int(price*CLAIM_WOOD_RATIO/4)), 'food': max(1, int(price*CLAIM_FOOD_RATIO/2))}
+    if mc >= 15: cost['metal'] = max(1, int(price*CLAIM_METAL_RATIO/6))
     return cost
 def cost_value(cost): return sum(v*RATE_VAL.get(k, 1) for k, v in cost.items())
 def research_discount(conn, uid):
     c = yield_ctx(conn, uid); d = min(0.30, 0.08*sum_levels(conn, uid, 'university'))
     if 'scientific' in c['rs']: d += 0.10
     if 'f_academy' in c['ft']: d += 0.10
-    if 'great_library' in c['w']: d += 0.20
+    d += sum(WONDERS.get(k, {}).get('research_discount', 0) for k in c['w'])
+    d += 1 - religion_for(conn, uid).get('research', 1)
     d += 1 - c['ide'].get('research', 1.0)
     return min(0.7, d)
 
@@ -1950,7 +1545,7 @@ def casualty_mult(conn, uid, rsch):
     m = 1.0
     if 'medicine' in rsch: m *= 0.75
     if 'f_medic' in ftechs(conn, uid): m *= 0.85
-    m *= ideo(conn, uid).get('casualty', 1.0)
+    m *= ideo(conn, uid).get('casualty', 1.0) * religion_for(conn, uid).get('casualty', 1)
     m *= 1 - min(0.30, 0.10*sum_levels(conn, uid, 'hospital'))
     return m
 
@@ -2080,7 +1675,9 @@ def defense_of(conn, owner_id, gk, terrain):
     b = conn.execute('SELECT level FROM buildings WHERE grid_key=? AND type="fort"', (gk,)).fetchone()
     if b: add(f'Fortress Lv{b["level"]}', 1 + (0.32 if 'fortification' in rs else 0.25)*b['level'])
     if 'f_bulwark' in ft: add('Bulwark', 1.08)
-    if 'colossus' in w: add('Colossus', 1.10)
+    for key in w: add(WONDERS.get(key, {}).get('name', key), WONDERS.get(key, {}).get('def', 1))
+    add('Religion', religion_for(conn, owner_id).get('def', 1))
+    add('Radar stations', 1 + min(.09, BUILDINGS['radar_station']['def_per_level']*sum_levels(conn, owner_id, 'radar_station')))
     add('Ideology', ide.get('def', 1.0))
     cap = conn.execute('SELECT 1 FROM users WHERE id=? AND capital_key=?', (owner_id, gk)).fetchone()
     if cap: add('Capital', 1.15)
@@ -2100,13 +1697,16 @@ def attack_mods(conn, uid, rsch, kind, tgl, tgg, def_oid=None):
     if kind == 'air' and 'f_air' in ft: mods.append(('Joint Air Command', 1.2))
     if kind == 'naval' and 'navigation' in rsch: mods.append(('Navigation', 1.1))
     if 'f_warcry' in ft: mods.append(('War Cry', 1.06))
-    if 'statue' in w: mods.append(('Statue of Liberty', 1.05))
+    for key in w:
+        if WONDERS.get(key, {}).get('atk'): mods.append((WONDERS[key]['name'], WONDERS[key]['atk']))
+    religion = religion_for(conn, uid)
+    if religion: mods.append(('Religion: '+religion['name'], religion['atk']))
     if ide.get('atk'): mods.append(('Ideology', ide['atk']))
     wx = weather_for(cur_slot(), tgl, tgg)
     wf = WEATHER_FX[wx][1 if kind == 'air' else 0]
     if wf != 1.0: mods.append((f'Weather ({wx})', wf))
     morale = conn.execute('SELECT morale FROM users WHERE id=?', (uid,)).fetchone()['morale']
-    floor = max(30 if 'tactics' in rsch else 0, ide.get('floor', 0), 40 if 'statue' in w else 0)
+    floor = max(30 if 'tactics' in rsch else 0, ide.get('floor', 0), max([WONDERS.get(k, {}).get('floor', 0) for k in w] or [0]))
     morale = max(morale, floor)
     mods.append((f'Morale ({morale})', round(0.90 + 0.25*(morale/100.0), 3)))
     e = ev_type(conn)
@@ -2175,7 +1775,7 @@ def do_assault(conn, uid, uname_, fk, tk, force, kind, units_label, committed_tr
 
 def do_game_reset(conn):
     conn.execute('UPDATE territories SET owner_id=NULL,garrison=0,boats=0,planes=0')
-    for t in ('buildings', 'fallout', 'embassies', 'trades', 'loans', 'wonders', 'faction_rel', 'faction_research', 'faction_requests', 'merges'):
+    for t in ('buildings', 'fallout', 'embassies', 'trades', 'loans', 'wonders', 'faction_rel', 'faction_research', 'faction_requests', 'merges','stock_prices','stock_history','stock_holdings','stock_transactions','eva_deployments','faction_contributions'):
         conn.execute(f'DELETE FROM {t}')
     conn.execute('UPDATE users SET army=10,boats=0,planes=0,morale=50,steel=0,uranium=0,gems=0,nukes=0,capital_key=NULL')
     conn.execute('UPDATE factions SET army=10,boats=0,planes=0,treasury=0')
@@ -2221,7 +1821,7 @@ def award_achievements(conn, uid):
             new.append({'key': k, **ACHIEVEMENTS[k]})
     return new
 
-def can_afford(u, cost): return all(round(u[k]) >= v for k, v in cost.items())
+def can_afford(u, cost): return all(u[k] >= v for k, v in cost.items())
 
 def ingest_and_check_target(conn, tk):
     if is_water(conn, tk): return 'That is open water.'
@@ -2236,7 +1836,7 @@ def build_troops():
     am = max(1, min(int(d.get('amount', 1)), 10**9)); conn = get_db()
     rsch = user_research(conn, uid); cost = am * troop_cost_for(conn, uid, rsch)
     u = conn.execute('SELECT money FROM users WHERE id=?', (uid,)).fetchone()
-    if round(u['money']) < cost:
+    if u['money'] < cost:
         conn.close(); return jsonify({'error': f'Need {cost}💰, have {round(u["money"])}💰'}), 400
     conn.execute('UPDATE users SET money=money-? WHERE id=?', (cost, uid)); pool_add(conn, uid, 'army', am)
     conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'Recruited {am} troops for {cost}💰'})
@@ -2271,7 +1871,7 @@ def voyage_cost(conn, uid, fk, tk, boats):
     f = 1.0
     if 'shipping' in rs: f *= 0.75
     if 'f_navy' in ftechs(conn, uid): f *= 0.75
-    return {'money': int(boats*dist*VOYAGE_MONEY*f), 'wood': int(boats*dist*VOYAGE_WOOD*f), 'cells': dist}
+    return {'money': int(boats*dist*VOYAGE_MONEY*f), 'wood': round(boats*dist*VOYAGE_WOOD*f,2), 'cells': dist}
 
 def _target_checks(conn, uid, tk):
     msg = ingest_and_check_target(conn, tk)
@@ -2343,7 +1943,7 @@ def boats_attack():
         if not can_afford(u, cost): return bail(f'Voyage of {vc["cells"]} cells costs {fmt_cost(cost)}')
         pay(conn, uid, cost); pool_add(conn, uid, 'army', -troops); pool_add(conn, uid, 'boats', -n)
         r = do_assault(conn, uid, session['username'], fk, tk, troops, 'naval', f'{n} boats/{troops} troops', troops)
-        back = int(round(n*0.8)) if r['win'] else 0
+        back = int(round(n*BOAT_SURVIVAL)) if r['win'] else 0
         if back: pool_add(conn, uid, 'boats', back)
         ach = award_achievements(conn, uid); conn.commit(); conn.close()
         return battle_response(r, {'boats_back': back, 'troops_loaded': troops, 'voyage': vc, 'achievements': ach})
@@ -2379,12 +1979,12 @@ def planes_attack():
         m = _target_checks(conn, uid, tk)
         if m: return bail(m)
         if pool_get(conn, uid, 'planes') < n: return bail(f'You only have {pool_get(conn, uid, "planes")} plane(s)')
-        paras = min(pool_get(conn, uid, 'army'), n*5)
+        paras = min(pool_get(conn, uid, 'army'), n*PLANE_TROOP_CAPACITY)
         if paras < 1: return bail('No paratroopers available')
         pool_add(conn, uid, 'army', -paras); pool_add(conn, uid, 'planes', -n)
-        force = n*PLANE_POWER*(min(1.0, paras/(n*5))*0.5 + 0.5)
+        force = n*PLANE_POWER*(min(1.0, paras/(n*PLANE_TROOP_CAPACITY))*0.5 + 0.5)
         r = do_assault(conn, uid, session['username'], fk, tk, force, 'air', f'{n} planes/{paras} paras', paras)
-        back = int(round(n*0.7)) if r['win'] else int(n*0.2)
+        back = int(round(n*PLANE_VICTORY_SURVIVAL)) if r['win'] else int(n*PLANE_DEFEAT_SURVIVAL)
         if back: pool_add(conn, uid, 'planes', back)
         ach = award_achievements(conn, uid); conn.commit(); conn.close()
         return battle_response(r, {'planes_back': back, 'achievements': ach})
@@ -2425,7 +2025,7 @@ def territory_sell():
     uid = session['user_id']; gk = (request.json or {}).get('grid_key', ''); conn = get_db()
     t = conn.execute('SELECT invested FROM territories WHERE grid_key=? AND owner_id=?', (gk, uid)).fetchone()
     if not t: conn.close(); return jsonify({'error': 'Not your territory'}), 403
-    refund = int((t['invested'] or 0)*0.5)
+    refund = int((t['invested'] or 0)*TILE_REFUND)
     conn.execute('UPDATE territories SET owner_id=NULL,garrison=0 WHERE grid_key=?', (gk,)); conn.execute('DELETE FROM buildings WHERE grid_key=?', (gk,))
     conn.execute('UPDATE users SET money=money+?,capital_key=CASE WHEN capital_key=? THEN NULL ELSE capital_key END WHERE id=?', (refund, gk, uid))
     conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'Sold tile for {refund}💰 (50% of your investment)'})
@@ -2435,8 +2035,8 @@ def territory_sell():
 def territory_abandon_all():
     d = request.json or {}; uid = session['user_id']; conn = get_db()
     if d.get('confirm') != 'DELETE ALL MY TERRITORIES': conn.close(); return jsonify({'error': 'Confirmation text did not match'}), 400
-    u = conn.execute('SELECT 1 FROM users WHERE id=? AND password=?', (uid, ph(d.get('password', '')))).fetchone()
-    if not u: conn.close(); return jsonify({'error': 'Wrong password'}), 403
+    u = conn.execute('SELECT password FROM users WHERE id=?', (uid,)).fetchone()
+    if not u or not password_matches(u['password'], d.get('password', '')): conn.close(); return jsonify({'error': 'Wrong password'}), 403
     keys = [r['grid_key'] for r in conn.execute('SELECT grid_key FROM territories WHERE owner_id=?', (uid,))]
     for i in range(0, len(keys), 500):
         ch = keys[i:i+500]; conn.execute(f'DELETE FROM buildings WHERE grid_key IN ({_in(ch)})', ch)
@@ -2472,7 +2072,7 @@ def building_build():
     lvl = (cur['level'] if cur else 0) + 1
     if lvl > BUILD_MAX_LEVEL: conn.close(); return jsonify({'error': 'Already max level'}), 400
     cost = build_cost(bt, lvl)
-    if 'engineering' in rsch: cost = {k: int(v*0.8) for k, v in cost.items()}
+    if 'engineering' in rsch: cost = {k: int(v*ENGINEERING_DISCOUNT) for k, v in cost.items()}
     u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
     if not can_afford(u, cost): conn.close(); return jsonify({'error': f'Need {fmt_cost(cost)}'}), 400
     pay(conn, uid, cost)
@@ -2606,7 +2206,7 @@ def faction_create():
     if not (3 <= len(name) <= 24) or not (2 <= len(tag) <= 4) or not tag.isalnum(): return jsonify({'error': 'Name 3–24 chars, tag 2–4 letters/digits'}), 400
     conn = get_db(); u = conn.execute('SELECT money,faction_id,color,base_color FROM users WHERE id=?', (uid,)).fetchone()
     if u['faction_id']: conn.close(); return jsonify({'error': 'Leave your faction first'}), 400
-    if round(u['money']) < FACTION_COST: conn.close(); return jsonify({'error': f'Founding a faction costs {FACTION_COST}💰'}), 400
+    if u['money'] < FACTION_COST: conn.close(); return jsonify({'error': f'Founding a faction costs {FACTION_COST}💰'}), 400
     try: cur = conn.execute('INSERT INTO factions(name,tag,leader_id,color,last_tick) VALUES(?,?,?,?,?)', (name, tag, uid, u['base_color'] or u['color'], int(time.time())))
     except sqlite3.IntegrityError: conn.close(); return jsonify({'error': 'Name or tag already taken'}), 409
     conn.execute('UPDATE users SET money=money-? WHERE id=?', (FACTION_COST, uid)); _join_faction(conn, uid, cur.lastrowid)
@@ -2667,7 +2267,7 @@ def faction_donate():
     uid = session['user_id']; am = int((request.json or {}).get('amount', 0)); conn = get_db(); f, err = _my_fac(conn, uid)
     if err: conn.close(); return jsonify({'error': err[0]}), err[1]
     u = conn.execute('SELECT money FROM users WHERE id=?', (uid,)).fetchone()
-    if am < 1 or round(u['money']) < am: conn.close(); return jsonify({'error': 'Invalid amount'}), 400
+    if am < 1 or u['money'] < am: conn.close(); return jsonify({'error': 'Invalid amount'}), 400
     conn.execute('UPDATE users SET money=money-? WHERE id=?', (am, uid)); conn.execute('UPDATE factions SET treasury=treasury+? WHERE id=?', (am, f['id']))
     conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'Donated {am}💰. Every 10 min 1% of the treasury is paid out to all members, and the leader can buy faction research with it.'})
 
@@ -2687,11 +2287,11 @@ def faction_settings():
 def faction_rally():
     uid = session['user_id']; conn = get_db(); f, err = _my_fac(conn, uid, True)
     if err: conn.close(); return jsonify({'error': err[0]}), err[1]
-    if f['treasury'] < 1500: conn.close(); return jsonify({'error': 'Rally costs 1500💰 from the treasury'}), 400
+    if f['treasury'] < RALLY_COST: conn.close(); return jsonify({'error': 'Rally costs 1500💰 from the treasury'}), 400
     nxt = int(get_setting(conn, f'rally_{f["id"]}', 0) or 0)
     if nxt > time.time(): conn.close(); return jsonify({'error': f'Rally on cooldown ({int(nxt-time.time())//60} min)'}), 400
-    conn.execute('UPDATE factions SET treasury=treasury-1500 WHERE id=?', (f['id'],)); conn.execute('UPDATE users SET morale=100 WHERE faction_id=?', (f['id'],))
-    set_setting(conn, f'rally_{f["id"]}', int(time.time()) + 3600)
+    conn.execute('UPDATE factions SET treasury=treasury-? WHERE id=?', (RALLY_COST,f['id'])); conn.execute('UPDATE users SET morale=100 WHERE faction_id=?', (f['id'],))
+    set_setting(conn, f'rally_{f["id"]}', int(time.time()) + RALLY_COOLDOWN)
     for m in conn.execute('SELECT id FROM users WHERE faction_id=?', (f['id'],)).fetchall(): create_notification(conn, m['id'], 'info', f'📯 [{f["tag"]}] rally! Your morale is at maximum.')
     conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Rally called — every member is at 100 morale!'})
 
@@ -2784,7 +2384,7 @@ def ideology_set():
     cost = 0
     if u['ideology']:
         if time.time() - (u['ideology_ts'] or 0) < 86400: conn.close(); return jsonify({'error': 'You can change ideology once per 24h'}), 400
-        cost = 2000
+        cost = IDEOLOGY_CHANGE_COST
         if u['money'] < cost: conn.close(); return jsonify({'error': 'A revolution costs 2000💰'}), 400
     conn.execute('UPDATE users SET ideology=?,ideology_ts=?,money=money-? WHERE id=?', (k, int(time.time()), cost, uid))
     ach = award_achievements(conn, uid); conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'{IDEOLOGIES[k]["name"]} adopted!', 'achievements': ach})
@@ -2818,8 +2418,8 @@ def embassy_build():
     if hid == uid or not h: conn.close(); return jsonify({'error': 'Invalid country'}), 400
     if not h['capital_key']: conn.close(); return jsonify({'error': f'{h["username"]} has no capital yet'}), 400
     if conn.execute('SELECT 1 FROM embassies WHERE host_id=? AND owner_id=?', (hid, uid)).fetchone(): conn.close(); return jsonify({'error': 'You already have an embassy there'}), 400
-    if conn.execute('SELECT money FROM users WHERE id=?', (uid,)).fetchone()['money'] < 400: conn.close(); return jsonify({'error': 'An embassy costs 400💰'}), 400
-    conn.execute('UPDATE users SET money=money-400 WHERE id=?', (uid,)); conn.execute('INSERT INTO embassies VALUES(?,?,?)', (hid, uid, int(time.time())))
+    if conn.execute('SELECT money FROM users WHERE id=?', (uid,)).fetchone()['money'] < EMBASSY_COST: conn.close(); return jsonify({'error': 'An embassy costs 400💰'}), 400
+    conn.execute('UPDATE users SET money=money-? WHERE id=?', (EMBASSY_COST,uid)); conn.execute('INSERT INTO embassies VALUES(?,?,?)', (hid, uid, int(time.time())))
     create_notification(conn, hid, 'info', f'🏳 {session["username"]} opened an embassy in your capital.'); ach = award_achievements(conn, uid); conn.commit(); conn.close()
     return jsonify({'success': True, 'message': f'Embassy opened in {h["username"]}\'s capital', 'achievements': ach})
 
@@ -2909,7 +2509,7 @@ def loan_return():
     return jsonify({'success': True, 'message': f'Returned {back} {l["unit"]}'})
 
 # ── Nukes & fallout ──────────────────────────────────────────────────────────
-def nuke_cost(conn): return int(float(get_setting(conn, 'nuke_cost', 100000000) or 100000000))
+def nuke_cost(conn): return int(float(get_setting(conn, 'nuke_cost', NUKE_MONEY) or NUKE_MONEY))
 
 @app.route('/api/nuke/build', methods=['POST'])
 @require_login
@@ -2996,12 +2596,16 @@ def do_merge(conn, keep, gone):
     conn.execute('UPDATE OR IGNORE embassies SET owner_id=? WHERE owner_id=?', (keep, gone)); conn.execute('UPDATE OR IGNORE embassies SET host_id=? WHERE host_id=?', (keep, gone))
     conn.execute('DELETE FROM embassies WHERE owner_id=? OR host_id=? OR owner_id=host_id', (gone, gone))
     conn.execute('UPDATE OR IGNORE achievements SET user_id=? WHERE user_id=?', (keep, gone)); conn.execute('DELETE FROM achievements WHERE user_id=?', (gone,))
-    conn.execute('UPDATE wonders SET owner_id=? WHERE owner_id=?', (keep, gone))
+    conn.execute('UPDATE OR IGNORE wonders SET owner_id=? WHERE owner_id=?', (keep, gone)); conn.execute('DELETE FROM wonders WHERE owner_id=?', (gone,))
+    conn.execute('DELETE FROM faction_contributions WHERE user_id=?', (gone,))
+    for h in conn.execute('SELECT * FROM stock_holdings WHERE user_id=?', (gone,)).fetchall():
+        conn.execute('INSERT INTO stock_holdings VALUES(?,?,?,?) ON CONFLICT(user_id,symbol) DO UPDATE SET quantity=quantity+excluded.quantity,cost_basis=cost_basis+excluded.cost_basis', (keep,h['symbol'],h['quantity'],h['cost_basis']))
+    conn.execute('DELETE FROM stock_holdings WHERE user_id=?', (gone,))
     conn.execute("UPDATE trades SET status='cancelled' WHERE from_id=? OR to_id=?", (gone, gone)); conn.execute("UPDATE loans SET status='returned' WHERE lender_id=? OR borrower_id=?", (gone, gone))
     for t in ('notifications', 'alliances'):
         col = 'user_id' if t == 'notifications' else None
         if col: conn.execute(f'DELETE FROM {t} WHERE {col}=?', (gone,))
-    try: conn.execute('DELETE FROM alliances WHERE user_id=? OR ally_id=?', (gone, gone))
+    try: conn.execute('DELETE FROM alliances WHERE requester_id=? OR target_id=?', (gone, gone))
     except Exception: pass
     conn.execute('DELETE FROM faction_requests WHERE user_id=?', (gone,)); conn.execute('DELETE FROM users WHERE id=?', (gone,))
     create_notification(conn, keep, 'info', f'🧬 {g["username"]} merged into your country!'); announce(conn, f'🧬 {g["username"]} and {k["username"]} merged into one nation!')
@@ -3091,18 +2695,13 @@ def detail_extra(conn, grid_key, row):
         except Exception: pass
     return out
 
-
-init_db(); migrate_v4(); migrate_v5()
+from features import install_features, religion_for
+from migrations import migrate_v6, migrate_v7, migrate_v8, migrate_v9, migrate_v10, backup_before_upgrade
+backup_before_upgrade(DB_PATH)
+init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db)
+install_features(globals())
 
 if __name__ == '__main__':
-    print("\n" + "="*56)
-    print("  ⚔   World Conquest v3")
-    print("="*56)
-    print("  URL     :  http://localhost:5000")
-    print("  Admin   :  admin / admin123")
-    print("  Auto-mod:  Register as 'Kasper' for admin")
-    print(f"  Win at  :  {WIN_THRESHOLD} territories")
-    print("="*56 + "\n")
-    port = int(os.environ.get('PORT', 5000))
-    # use_reloader=False avoids multiprocessing semaphore leaks in dev
-    app.run(debug=os.environ.get('DEBUG') == '1', host='0.0.0.0', port=port, use_reloader=False)
+    from waitress import serve
+    print('World Conquest: production server. See README.md for host setup.')
+    serve(app, host=os.environ.get('HOST', '0.0.0.0'), port=int(os.environ.get('PORT', 5000)), threads=4)

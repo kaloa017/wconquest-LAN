@@ -1,164 +1,171 @@
-# World Conquest
+# World Conquest LAN — v6.3.3
 
-This is a game hosted locally on the internet. It's only accessible via the same Wi-Fi (or LAN) network. It's simply just a mix of [r/place](<https://en.wikipedia.org/wiki/R/place>) and territorial.io. 
+Persistent multiplayer strategy on a real-world grid: claim tiles, recruit armies,
+build an economy, research technology, form factions and fight for territory.
+Flask serves the game; SQLite stores accounts and saves. The browser uses Leaflet.
 
-In order for this to run, simply clone the project, install the Flask library, and run via
+## Start on Windows or Linux
 
-```bash
+```sh
+python -m venv .venv
+# Linux: source .venv/bin/activate
+# Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python manage.py create-admin --username YourHostName
 python app.py
 ```
 
-Then it should now be accessible via the LAN.
+Open http://localhost:5000. Other LAN players use the host's LAN address and port
+5000. `app.py` runs Waitress, a production WSGI server. Raspberry Pi deployment
+uses Gunicorn instead; see [Deployment](docs/DEPLOYMENT.md). No default password
+or special username grants administrator access. Passwords need eight characters.
 
-## Changes to Make
+Before upgrading, stop the old server and back up its folder. A consistent SQLite
+backup is automatically created in `backups/` before the current save migration. Keep it.
+Read [Migration notes](docs/MIGRATIONS.md), especially faction fleets and recovery.
+Do not run old and new servers against the same database.
 
-### Factions
-- [ ] Add faction research that provides bonuses to all faction members
-- [ ] Add a shared faction army that all faction members can contribute to/use
-- [ ] Allow factions to declare war on other factions
-- [ ] Treat factions as the alliance system
-- [ ] Remove the existing alliance proposal system
-- [ ] Add faction settings:
-  - [ ] Invite-only / join requests
-  - [ ] Open faction
-  - [ ] Closed faction
-  - [ ] Other configurable settings
-- [ ] When a player is kicked, prevent them from attempting to rejoin until the next day
-- [ ] All members of the same faction should share the same color
-- [ ] Faction members should be able to use faction-owned ports and airports
-- [ ] Add meaningful uses for the faction treasury
+## Changes included in this version
 
-### Research
-- [ ] Add more research options
-- [ ] Add faction-wide research
-- [ ] Add military research
-- [ ] Add nuclear research
-- [ ] Add economic research
-- [ ] Add transportation research
-- [ ] Make research provide meaningful strategic bonuses
+### Interface and everyday play
 
-### Diplomacy
-- [ ] Add embassies
-- [ ] Allow embassies to unlock additional trading options
-- [ ] Allow countries to specify what they want to receive in exchange for specific resources
-- [ ] Add country capitals
-- [ ] Display the capital as a star on the capital tile
-- [ ] Allow embassies to be established at capitals
-- [ ] Add ideologies
-- [ ] Add more diplomatic interactions
+- Reworked the desktop and mobile layout, colours, spacing, buttons, forms and
+  dialogs. The mobile bottom menu opens a scrollable sheet with a clear title,
+  close button and drag-to-close handle; Map reliably returns to the map.
+- Grouped navigation with emoji icons, descriptions and consistent Market/Stocks
+  controls. Scroll arrows remain only on the main menu strip, with click/hold support.
+- Territory purchase notifications and long claim prices wrap within the mobile
+  viewport, including when the notification is visible.
+- One Settings menu, reached by the gear at the top right. It contains saved music,
+  map-colour and fleet-sharing preferences plus account/recovery controls.
+- A centered status strip with Help, weather, morale and daily reward indicators.
+  A 15-step beginner guide explains claiming, income, buildings, combat, transport,
+  factions, country choices, wonders, stocks, chat, rewards and settings. Relevant
+  steps have buttons to open their menu; Help reopens the guide at any time.
+- Money and resource pills show actual server-calculated production per minute and
+  per hour on hover or keyboard focus. On mobile, expand Resources and tap a pill.
+  Values refresh during normal user polling; trades and one-off rewards are excluded.
+- Chat collapses **inside the side-menu Chat tab**, next to the territory menus.
+  The compact view shows the three newest messages. Expanding restores the full
+  conversation, composer and existing admin chat tools. Global/faction previews
+  stay separate, and expanding scrolls to the newest messages. There is no floating
+  chat widget on the map.
+- My country returns the map to your capital/owned land; Explore islands jumps to
+  a random island. Country has a quick overview and suggestions for the next move.
+- An Ideas button lets logged-in players submit feedback. It is saved privately
+  to `ideas.txt` beside `game.db`; Host tools show the latest 64 KB. Ideas are limited
+  to one accepted submission per minute per account, even when general throttles
+  are unlimited; tune `IDEAS_COOLDOWN` near the top of `config.py`. Hosts can block/
+  unblock ideas per player without banning gameplay. Neither ideas
+  nor IP tracking are exposed to normal players.
+- Editable `CHANGELOG.md` is shown once per player per version. Increment `VERSION`
+  in `config.py` when publishing an update.
 
-### Economy
-- [ ] Add a "Sell All" button to markets
-- [ ] Allow players to sell individual tiles
-- [ ] Selling a tile should return 50% of its purchase price
-- [ ] Add more things to spend money on during the late game
-- [ ] Add more resources
-- [ ] Add buildings that generate specific resources
-- [ ] Add resource costs when purchasing territories
-- [ ] Rework territory pricing
-- [ ] Base territory prices on approximate economic output and income
-- [ ] Make territory prices more realistic based on how much they generate
-- [ ] Add an economic statistics menu
-- [ ] Show how much money/resources are generated over a selected period of time
-- [ ] Give the treasury a meaningful purpose
-- [ ] Make treasury donations useful
-- [ ] Add treasury income of 1% of the treasury's current amount every 10 minutes
+### Host tools, accounts and music
 
-### Territory Management
-- [ ] Add an option to delete/release all owned territories
-- [ ] Require multiple confirmations before deleting all territories
-- [ ] Improve land/water tile detection
-- [ ] Make land and water tiles much more accurate
-- [ ] Make it visually easier to distinguish land from water
-- [ ] Show tile coordinates when hovering over tiles
-- [ ] Add more useful information when hovering over tiles
+- Restored the earlier admin dashboard layout: Players, Announce, Tools, World,
+  and Factions & Chat, with additional Host tools alongside it.
+- Private client/peer IP tracking, per-user request totals, sortable top requesters
+  and audit records. The panel shows LAN join URLs detected on the host.
+- Ban/unban, kick, mute, edit resources, assign/delete tiles, force faction,
+  reset players, recovery codes, chat management, ideas submission bans and existing world controls.
+- Resource-reset controls in Players and Host tools clear all eight balances
+  (including money) or a single chosen resource to **zero**, with confirmation and
+  before/after audit entries. They keep units, territory, buildings, research,
+  wonders and stocks; normal production continues.
+- Hosts can grant/revoke a cosmetic Donator badge and set a displayed player rank.
+  Donators can choose a supporter title. These never grant admin permissions,
+  income bonuses or combat advantages; donations do not automatically assign ranks.
+- The admin cheat menu requires action confirmation and records use in the audit
+  log, with the requested fairness warnings.
+- Request, login, chat and stock-trade throttles default to **unlimited**. In Host
+  tools, 0 means unlimited; positive limits persist across restarts. Upgrade v7
+  clears old finite throttle settings once. Gameplay rules such as religion's
+  cooldown, stock fees/position limits and vehicle costs still apply.
+- Salted passwords, CSRF checks, session revocation and single-use account recovery.
+  Players receive a recovery code at signup; admins can issue expiring reset codes.
+- One validated MP3 (maximum 15 MB), replace/remove controls, and each player's
+  saved mute/volume preferences. Removing it stops clients at their next sync.
 
-### Boats & Transportation
-- [ ] Boats should not require a nearby port to land
-- [ ] Boats should have infinite range over sea tiles
-- [ ] Boats should consume additional resources based on the number of sea tiles traveled
-- [ ] Allow players to request to borrow another player's plane or ship
-- [ ] Send the owner a notification when someone requests to borrow a vehicle
-- [ ] Allow the requester to include a custom message
-- [ ] Allow the owner to accept or deny the request
-- [ ] Allow faction members to borrow vehicles from each other more freely
-- [ ] Add a hotkey for attacking
+### Geography, progression and economy
 
-### Nuclear Weapons
-- [ ] Add nuclear bombs
-- [ ] Make nuclear bombs extremely expensive
-- [ ] Initial proposed cost: $100,000,000
-- [ ] Require multiple research technologies before nuclear weapons can be created
-- [ ] Require multiple specialized buildings for nuclear weapons
-- [ ] Add a nuclear weapons progression system
-- [ ] Nuclear attacks should remove territory ownership within a randomized radius
-- [ ] Nuclear attack radius should be randomized between 3-10 tiles
-- [ ] Apply a significant penalty to the country that gets hit
-- [ ] Add nuclear power plants as a requirement for nuclear weapons
-- [ ] Give nuclear power plants an extremely small chance of catastrophic failure
-- [ ] If a nuclear power plant explodes, make nearby tiles permanently uninhabitable
+- Server-authoritative land checks use bundled Natural Earth 1:10m land and minor
+  islands rather than browser pixels. This improves Iceland and other coastlines.
+  Stale client-reported water flags are cleared; owned save tiles are preserved.
+- Coastline checks recognise shorelines inside partially coastal grid cells,
+  even when all neighbouring cells also touch land. Small island landing/Port
+  controls retain the coastal flag through map updates.
+- Tropical terrain produces food near the equator. The bundled Pacific-region
+  dataset contains 3,268 distinct island polygons: 3,084 small islands remain single
+  territories and 184 larger islands use the ordinary grid. Unclaimed islands have
+  no persistent coloured outline or marker; they appear only on hover/selection.
+  Owned island tiles display ownership like regular territories. An island overlapping a previously
+  owned grid tile cannot be claimed again until that legacy ownership is released.
+- Antarctica includes mainland land and bundled year-round ice-shelf polygons,
+  with tundra for new Antarctic claims. Open ocean remains water. The current
+  Web Mercator map/grid reaches about 85° south; the South Pole itself lies beyond
+  the supported map projection.
+- Eight maximum new factions with exclusive colour-wheel segments, personal RGB
+  colours and saved faction-colour display preferences. Optional per-player sharing
+  of boats and planes defaults to off and is enforced on the server.
+- Cheaper tile claims, transports and landings; single-vehicle landing defaults
+  with a quantity selector; base plane range increased to 40 cells.
+- Six additional ideologies, eight religions with attack/secondary modifiers and
+  a stored 24-hour religion-change cooldown displayed in the UI.
+- Added Farm, Lumberyard, Refinery, Solar Farm and Radar Station. Building production
+  and balance values live in `config.py` alongside costs, ranges and wonder effects.
+- Every player can own each wonder once. Ordinary wonders apply to the **whole
+  country**, require at least one owned tile, and have reduced bonuses. No landmark
+  or selected-tile requirement remains.
+- Scheduled country/faction stock exchange, buy/sell, portfolio and price-history
+  chart. Prices use a bounded random walk with mean reversion and country activity/
+  territory/event influences; fees, position limits and self-investment checks apply.
 
-### Administration & Chat
-- [ ] Allow admins to edit messages sent by any player
-- [ ] Allow admins to send messages as other accounts
-- [ ] Add appropriate admin controls for managing messages
-- [ ] Clearly distinguish administrator actions where necessary
+### Server, compatibility and deployment
 
-### Country Merging
-- [ ] Add a secret country merge feature
-- [ ] Hide the merge feature from the normal UI
-- [ ] Entering the Konami Code in chat should unlock the merge button
-- [ ] Add the merge button to the faction menu
-- [ ] Allow two accounts/countries to merge into one
-- [ ] Require multiple confirmations before merging
-- [ ] Correctly merge territories, money, resources, buildings, research, etc.
+- Changed-tile synchronization avoids assembling/resending the whole map on an
+  unchanged poll; public map responses support gzip and cached geography downloads.
+- Request-scoped transactions protect spending. Gameplay commits immediately;
+  request counters and presence are batched every 30 seconds. History/log growth
+  is bounded. The map's browser referrer policy was corrected for tile requests.
+- Waitress replaces the development server on Windows; Gunicorn/systemd examples
+  cover Raspberry Pi/Linux, with Apache/Nginx proxy and HTTPS instructions.
+- Cloudflare Tunnel instructions make public hosting possible without router port
+  forwarding. A tunnel is not automatically installed, authenticated or started.
+- Automatic, idempotent save upgrades through schema v10 with a consistent pre-upgrade
+  backup. Accounts, balances, ownership and prior unlocks are retained; see
+  [Migration notes](docs/MIGRATIONS.md) for intentional balance/permission changes.
 
-### Population
-- [ ] Add total population to countries
-- [ ] Display population in country statistics
-- [ ] Make population interact with buildings, territories, resources, or other systems
+## Can it run on a Raspberry Pi 4 with 8 GB?
 
-### Achievements
-- [ ] Add more achievements
-- [ ] Add economic achievements
-- [ ] Add territory achievements
-- [ ] Add military achievements
-- [ ] Add faction achievements
-- [ ] Add research achievements
-- [ ] Add diplomatic achievements
-- [ ] Add nuclear achievements
-- [ ] Add population achievements
-- [ ] Add long-term progression achievements
+Yes, this architecture is a reasonable fit for a small server. Start with **10–30
+simultaneous players**, around **5,000 owned tiles**, and one Gunicorn process with
+four threads. This is a conservative planning estimate, not a measured Pi capacity
+or performance guarantee. Combat bursts, large empires, mobile browsers and slow
+storage may reduce capacity. Measure before inviting more players.
 
-### Customization
-- [ ] Add custom country colors
-- [ ] Make faction colors work consistently
-- [ ] Countries in the same faction should use the faction's shared color
+Budget roughly **150–500 MB RAM** for the Python service once geography is loaded,
+plus the OS/proxy/tunnel; this is an estimate to verify on your device. CPU should
+be intermittent for a small game, with peaks during map changes, geography load
+and scheduled collection. A 30-player unchanged map poll load is about 2.5 polls/s
+at the default 12-second polling interval; user/chat/presence calls add load.
 
-### Tutorial
-- [ ] Add a tutorial for new players
-- [ ] Explain how territory purchasing works
-- [ ] Explain the economy
-- [ ] Explain resources
-- [ ] Explain buildings
-- [ ] Explain research
-- [ ] Explain factions
-- [ ] Explain diplomacy
-- [ ] Explain transportation
-- [ ] Explain markets
-- [ ] Explain military systems
-- [ ] Explain other important game mechanics
+Use 64-bit Raspberry Pi OS, a cooled Pi, Ethernet and an SSD if available. Start
+with `--workers 1 --threads 4`; SQLite permits one writer at a time. More workers
+duplicate caches and per-process request-limit buckets and usually do not help.
+Do not use Gunicorn `--preload`: the scheduler starts per process at import time.
+Stock updates run every five minutes. `SAVE_INTERVAL=30` batches counters; raising
+it reduces writes but delays online presence and can lose that interval of counters
+on a crash. Game purchases are never delayed. WAL and batched counters reduce SD
+card churn, but gameplay still writes; use a good card or preferably an SSD. Keep
+regular backups on another device. Monitor RSS, CPU, disk latency and response
+timings; public API replies expose `Server-Timing`.
 
-### General Improvements
-- [ ] Improve the overall UI clarity
-- [ ] Make land and water tiles easier to identify
-- [ ] Make economic information easier to understand
-- [ ] Make faction mechanics easier to discover
-- [ ] Add more strategic depth through research, resources, diplomacy, military, and economy
-- [ ] Add confirmation dialogs for destructive actions
-- [ ] Make sure all new systems integrate properly with existing mechanics
-- [ ] Review existing mechanics for inconsistencies and improve them
+## Hosting without port forwarding
 
-## Want to contribute to this project?
-
-Feel free to fork the project and do a merge request to contribute to this game. Thank you!
+[Cloudflare Tunnel](https://developers.cloudflare.com/tunnel/) makes outbound
+connections from the host, so no incoming router port is required, including
+behind CGNAT. The deployment guide covers a stable named tunnel and temporary
+quick tunnels. A stable public hostname requires your Cloudflare account/domain
+and installing a tunnel connector; the repository cannot create those credentials
+for you. The game remains private until you deliberately start the tunnel.
