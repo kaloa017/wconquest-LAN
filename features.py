@@ -454,10 +454,14 @@ def eva_deployments():
 
 def market():
     conn=db();uid=session['user_id'];fid=core['fac_id'](conn,uid)
-    rows=conn.execute('''SELECT p.*,CASE WHEN p.kind='country' THEN u.username ELSE f.name END name
+    rows=conn.execute('''SELECT p.*,u.faction_id target_faction,CASE WHEN p.kind='country' THEN u.username ELSE f.name END name
         FROM stock_prices p LEFT JOIN users u ON p.kind='country' AND p.target_id=u.id
         LEFT JOIN factions f ON p.kind='faction' AND p.target_id=f.id ORDER BY p.symbol''').fetchall()
-    assets=[dict(r,investable=not (r['kind']=='country' and (r['target_id']==uid or (fid and core['fac_id'](conn,r['target_id'])==fid))) and not (r['kind']=='faction' and r['target_id']==fid)) for r in rows]
+    assets=[]
+    for row in rows:
+        item=dict(row);target_faction=item.pop('target_faction')
+        item['investable']=not (item['kind']=='country' and (item['target_id']==uid or (fid and target_faction==fid))) and not (item['kind']=='faction' and item['target_id']==fid)
+        assets.append(item)
     holdings=[dict(r) for r in conn.execute('SELECT h.*,p.price,h.quantity*p.price value FROM stock_holdings h JOIN stock_prices p USING(symbol) WHERE user_id=?',(uid,))]
     symbol=request.args.get('symbol','');history=[dict(r) for r in conn.execute('SELECT ts,price FROM stock_history WHERE symbol=? ORDER BY ts',(symbol,))]
     return jsonify(assets=assets,portfolio=holdings,history=history,fee=STOCK_FEE,interval=STOCK_INTERVAL)

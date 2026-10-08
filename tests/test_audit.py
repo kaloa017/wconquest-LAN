@@ -84,3 +84,21 @@ class AuditTests(unittest.TestCase):
         conn=self.connection();conn.execute('INSERT INTO territories(grid_key,owner_id,terrain,population) VALUES("102,100",?,"plains",100)',(mate,));conn.commit();conn.close()
         delta=self.client.get('/api/map/sync?since='+first['version']).json;changed={t['grid_key']:t for t in delta['changed']}
         self.assertIn('100,100',changed);self.assertIn('101,100',changed);self.assertEqual(changed['100,100']['garrison'],int(100/3**.55+3))
+
+    def test_stock_list_uses_constant_query_count(self):
+        from flask import session
+        conn=self.connection();mate=self.user(conn,'Mate');fid=self.faction(conn,[self.uid,mate])
+        for uid in (self.uid,mate):conn.execute('INSERT INTO stock_prices VALUES(?,?,?,?,?,0)',('C'+str(uid),'country',uid,100,100))
+        conn.commit();conn.close()
+        with app.app.test_request_context('/api/stocks'):
+            session['user_id']=self.uid;c=app.get_db();queries=[];c.set_trace_callback(queries.append)
+            assets=features.market().json['assets'];c.set_trace_callback(None)
+            self.assertLessEqual(sum(q.lstrip().upper().startswith('SELECT') for q in queries),4)
+            self.assertFalse(next(a for a in assets if a['symbol']=='C'+str(mate))['investable']);self.assertTrue(all('target_faction' not in a for a in assets))
+    def test_spectator_queue_is_bounded_and_deduplicated(self):
+        import queue
+        fake=queue.Queue(maxsize=2)
+        with patch.object(app,'_geo_queue',fake),patch.object(app,'_geo_pending',set()),patch.object(app,'_geo_cache',{}),patch.object(app,'_spectators',{}),patch.dict(os.environ,{'ENABLE_IP_GEOLOOKUP':'1'}):
+            for _ in range(100):app._touch_spectator('192.0.2.1')
+            app._touch_spectator('192.0.2.2');app._touch_spectator('192.0.2.3')
+            self.assertEqual(fake.qsize(),2);self.assertEqual(len(app._geo_pending),2)

@@ -16,7 +16,10 @@ import urllib.request, threading, queue
 # ── Spectator tracking ────────────────────────────────────────────────────────
 _spectators = {}   # ip -> {flag, country, last_seen}
 _geo_cache  = {}   # ip -> {flag, country}  — persists for process lifetime
-_geo_queue  = queue.Queue()   # IPs to geo-lookup, processed by one background thread
+_geo_queue  = queue.Queue(maxsize=MAX_TRACKED_CLIENTS)   # IPs to geo-lookup, processed by one background thread
+
+_spectator_lock = threading.RLock()
+_geo_pending = set()
 
 def _country_flag(code):
     if not code or len(code) != 2: return '🌐'
@@ -24,45 +27,38 @@ def _country_flag(code):
     except: return '🌐'
 
 def _geo_worker():
-    """Single long-lived thread that processes geo lookups from the queue."""
+    """Bounded, deduplicated lookups; shared dictionaries are lock protected."""
     while True:
+        ip = _geo_queue.get()
         try:
-            ip = _geo_queue.get(timeout=60)
-            if ip in _geo_cache:
-                _geo_queue.task_done(); continue
             if ip in ('127.0.0.1', '::1', ''):
-                _geo_cache[ip] = {'flag':'🖥','country':'Localhost','city':''}
-                _geo_queue.task_done(); continue
-            try:
-                url = f'http://ip-api.com/json/{ip}?fields=countryCode,country,city,status'
-                with urllib.request.urlopen(url, timeout=4) as r:
-                    data = json.loads(r.read())
-                if data.get('status') == 'success':
-                    _geo_cache[ip] = {'flag':_country_flag(data['countryCode']), 'country':data.get('country','?'), 'city':data.get('city','')}
-                else:
-                    _geo_cache[ip] = {'flag':'🌐','country':'Unknown'}
-            except:
-                _geo_cache[ip] = {'flag':'🌐','country':'Unknown'}
+                geo = {'flag':'🖥','country':'Localhost','city':''}
+            else:
+                try:
+                    url = f'http://ip-api.com/json/{ip}?fields=countryCode,country,city,status'
+                    with urllib.request.urlopen(url, timeout=4) as r:data = json.loads(r.read())
+                    geo = {'flag':_country_flag(data['countryCode']), 'country':data.get('country','?'), 'city':data.get('city','')} if data.get('status') == 'success' else {'flag':'🌐','country':'Unknown'}
+                except Exception:geo = {'flag':'🌐','country':'Unknown'}
+            with _spectator_lock:
+                _geo_cache[ip] = geo
+                while len(_geo_cache)>MAX_TRACKED_CLIENTS:_geo_cache.pop(next(iter(_geo_cache)))
+        finally:
+            with _spectator_lock:_geo_pending.discard(ip)
             _geo_queue.task_done()
-        except queue.Empty:
-            continue
-        except Exception:
-            try: _geo_queue.task_done()
-            except: pass
 
-# Start one persistent worker thread (not a new thread per request)
 _geo_thread = threading.Thread(target=_geo_worker, daemon=True)
 _geo_thread.start()
 
 def _touch_spectator(ip):
-    """Record a spectator visit. Geo lookup is async via queue."""
-    while len(_spectators) >= MAX_TRACKED_CLIENTS: _spectators.pop(next(iter(_spectators)))
-    while len(_geo_cache) > MAX_TRACKED_CLIENTS: _geo_cache.pop(next(iter(_geo_cache)))
-    geo = _geo_cache.get(ip, {'flag':'🌐','country':'?'})
-    _spectators[ip] = {**geo, 'last_seen': time.time()}
-    if os.getenv('ENABLE_IP_GEOLOOKUP') == '1' and ip not in _geo_cache:
-        try: _geo_queue.put_nowait(ip)
-        except queue.Full: pass
+    """Record presence and enqueue at most one pending lookup per IP."""
+    with _spectator_lock:
+        if ip not in _spectators:
+            while len(_spectators)>=MAX_TRACKED_CLIENTS:_spectators.pop(next(iter(_spectators)))
+        geo = _geo_cache.get(ip, {'flag':'🌐','country':'?'})
+        _spectators[ip] = {**geo, 'last_seen':time.time()}
+        if os.getenv('ENABLE_IP_GEOLOOKUP')=='1' and ip not in _geo_cache and ip not in _geo_pending:
+            try:_geo_queue.put_nowait(ip);_geo_pending.add(ip)
+            except queue.Full:pass
 
 app = Flask(__name__)
 initialize_security(app)
@@ -569,7 +565,8 @@ def online_users():
     player_ips = set()  # we don't track player IPs, just avoid double-count
     now = time.time()
     guests = []
-    for ip, s in list(_spectators.items()):
+    with _spectator_lock:spectators=list(_spectators.items())
+    for ip, s in spectators:
         if now - s['last_seen'] < 180:
             guests.append({'username': f"{s['flag']} Guest", 'color':'#607090',
                            'is_admin':False,'territories':0,'type':'spectator',
