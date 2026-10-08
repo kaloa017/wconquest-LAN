@@ -60,7 +60,7 @@ Legacy v4/v5 schema upgrades are retained for older saves. Do not remove backups
   interval survives restarts; admins can block/unblock ideas independently of game
   bans or chat mutes. Moderation changes are audited.
 
-The version displayed to players (6.3.4) is separate from SQLite schema version 11.
+The version displayed to players (6.3.5) is separate from SQLite schema version 11.
 Normal migration testing uses isolated databases; your live game.db is not a test fixture.
 
 ## Backup and rollback
@@ -105,3 +105,11 @@ JSON field types now return 400, and SECRET_KEY values shorter than 32 character
 prevent startup; replace a weak configured key and expect players to log in again.
 The live save was not modified during the audit; compatibility was tested on a
 SQLite backup copy and isolated legacy fixtures.
+
+## 6.3.5 — round safety correction
+
+No additional schema migration. AUTO_RESET_ROUNDS is False by default, preventing
+status polling or the scheduler from erasing a world with a historical winner.
+The explicit admin reset remains available. Restart the server and reload clients.
+The original audit's automatic-expiry change was unsafe for existing saves and
+has been superseded.

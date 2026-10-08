@@ -1,4 +1,4 @@
-# World Conquest LAN — v6.3.4
+# World Conquest LAN — v6.3.5
 
 Persistent multiplayer strategy on a real-world grid: claim tiles, recruit armies,
 build an economy, research technology, form factions and fight for territory.
@@ -212,3 +212,13 @@ check dependency, not required to host the game. No separate build, linter or ty
 checker is configured. See [Contributing](CONTRIBUTING.md) and [Security](SECURITY.md).
 `.env.example` documents environment variables; the application does not load it
 or `.env` automatically. Set variables in your shell/service before starting.
+
+## Round safety in 6.3.5
+
+Automatic round resets are **off by default** (`AUTO_RESET_ROUNDS = False` in
+config.py). Reaching the victory threshold records a winner but keeps the world.
+Start another round only with the explicit admin reset action. This also protects
+older saves containing a stale winner timestamp. Do not enable automatic resets
+unless you deliberately want the world erased after WIN_COUNTDOWN seconds.
+Restart the server and reload browsers after upgrading; changing files alone does
+not change a server process that is already running.

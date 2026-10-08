@@ -1,3 +1,11 @@
+# 6.3.5 — protect existing rounds
+
+- Automatic round resets are disabled by default, including both status polling
+  and scheduled tasks. A stale winner in an older save cannot erase an existing
+  world. Only an explicit host reset starts a new round with the default config.
+- Removed the destructive countdown overlay when automatic resets are disabled.
+- Added a regression covering a day-old winner with existing territory/resources.
+
 # 6.3.4 — audit and GitHub release preparation
 
 - Fixed unsafe HTML rendering in announcements, player names and battle history.

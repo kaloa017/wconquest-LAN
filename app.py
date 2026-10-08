@@ -1222,6 +1222,9 @@ def game_status():
     wname = get_setting(conn,'winner_name')
     wtime = get_setting(conn,'win_time')
     if wid and wtime:
+        if not AUTO_RESET_ROUNDS:
+            conn.close()
+            return jsonify(status='winner',winner=wname,reset_in=None,automatic_reset=False,threshold=WIN_THRESHOLD)
         elapsed = time.time() - float(wtime)
         if elapsed >= WIN_COUNTDOWN:
             do_game_reset(conn); conn.commit(); conn.close()

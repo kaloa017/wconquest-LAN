@@ -17,5 +17,7 @@ assert(source.includes('window.innerWidth<=768'));
 // Failed bootstrap must become a useful API error, not an unhandled rejection.
 const active=fs.readFileSync(path.join(__dirname,'../static/client.js'),'utf8');const startup=active.slice(0,active.indexOf('function card('));
 const failedContext={Audio:function(){},fetch:async()=>({ok:false,status:503}),api:null};vm.createContext(failedContext);vm.runInContext(startup,failedContext);const failed=await failedContext.api('GET','/api/me');assert.match(failed.error,/Connection interrupted/);
-console.log('Client security, stale territory, stale chat and tablet breakpoint regressions passed.');
+const statusStart=source.indexOf('async function checkGameStatus('),statusEnd=source.indexOf('\n}',statusStart)+2;
+let hidden=false;const statusContext={api:async()=>({status:'winner',automatic_reset:false,reset_in:null}),hideWinScreen:()=>{hidden=true},showWinScreen:()=>{throw Error('Must not start a destructive countdown')},winShowing:false};vm.createContext(statusContext);vm.runInContext(source.slice(statusStart,statusEnd),statusContext);await statusContext.checkGameStatus();assert.equal(hidden,true);
+console.log('Client security, stale responses, startup and safe win-status regressions passed.');
 })().catch(error=>{console.error(error);process.exitCode=1});

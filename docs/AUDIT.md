@@ -1,3 +1,19 @@
+# Round-reset correction — 6.3.5
+
+The audit incorrectly re-enabled destructive automatic round expiry on an existing
+world. Its pre-reset backup contains winner_id and win_time from October 7; the
+old status endpoint erased the round after 45 seconds. Restored browser polling
+could trigger it immediately. The audit also added scheduler expiry. This was
+unsafe behavior to reactivate during a compatibility-preserving audit.
+
+6.3.5 disables both automatic paths by default and suppresses the countdown UI.
+A regression covers a stale winner, owned territory and resources across status
+polling and scheduler ticks. The full suite now has 48 tests. With host approval, the most-progress compatibility-check copy was restored:
+17,656 owned tiles, 593 buildings, all 10 accounts. Its stale winner was cleared,
+and the post-reset save was preserved separately. The running server was restarted
+and verified as 6.3.5. The report below records the
+original 6.3.4 audit; its automatic-reset change is superseded by this correction.
+
 # Audit and release report — 6.3.4
 
 Audit branch: `audit/github-readiness`. The local source is prepared for GitHub;

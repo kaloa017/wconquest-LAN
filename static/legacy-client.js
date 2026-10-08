@@ -660,6 +660,7 @@ async function pollAnnouncements(){
 async function checkGameStatus(){
   const r=await api('GET','/api/game/status');
   if(!r||r.error)return;
+  if(r.status==='winner'&&r.automatic_reset===false){hideWinScreen();return}
   if(r.status==='winner'&&!winShowing){showWinScreen(r.winner,r.reset_in);}
   else if(r.status==='reset'){hideWinScreen();await refreshAll();}
   else if(r.status==='playing'&&winShowing){hideWinScreen();}

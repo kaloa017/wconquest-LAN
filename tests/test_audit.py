@@ -113,7 +113,8 @@ class AuditTests(unittest.TestCase):
             self.assertFalse(any(q.lstrip().upper().startswith(('INSERT','UPDATE','DELETE')) for q in queries))
     def test_scheduler_resets_expired_round_without_online_players(self):
         conn=self.connection();app.set_setting(conn,'winner_id',self.uid);app.set_setting(conn,'win_time',int(time.time())-app.WIN_COUNTDOWN-1);conn.execute('UPDATE users SET money=999 WHERE id=?',(self.uid,));conn.execute('UPDATE scheduler_state SET next_tick=0 WHERE id=1');conn.commit();conn.close()
-        features.scheduler_tick();conn=self.connection();self.assertIsNone(app.get_setting(conn,'winner_id'));self.assertEqual(conn.execute('SELECT money FROM users WHERE id=?',(self.uid,)).fetchone()[0],200)
+        with patch.object(features,'AUTO_RESET_ROUNDS',True):features.scheduler_tick()
+        conn=self.connection();self.assertIsNone(app.get_setting(conn,'winner_id'));self.assertEqual(conn.execute('SELECT money FROM users WHERE id=?',(self.uid,)).fetchone()[0],200)
     def test_merge_rejects_absent_inviting_country(self):
         conn=self.connection();mid=conn.execute("INSERT INTO merges(from_id,to_id,status,ts) VALUES(999999,?,'pending',0)",(self.uid,)).lastrowid;conn.commit();conn.close()
         self.assertEqual(self.post('/api/merge/respond',{'merge_id':mid,'accept':True}).status_code,409)
@@ -136,3 +137,14 @@ class AuditTests(unittest.TestCase):
                 self.assertIsNotNone(geography._island_cells)
         finally:
             for key,value in saved.items():setattr(geography,key,value)
+
+    def test_stale_winner_cannot_reset_existing_world_by_default(self):
+        conn=self.connection();app.set_setting(conn,'winner_id',self.uid);app.set_setting(conn,'winner_name','Previous winner');app.set_setting(conn,'win_time',int(time.time())-86400)
+        conn.execute('UPDATE users SET money=999 WHERE id=?',(self.uid,))
+        conn.execute("INSERT INTO territories(grid_key,owner_id,terrain,population,last_collected) VALUES('20,20',?,'plains',100,?) ON CONFLICT(grid_key) DO UPDATE SET owner_id=excluded.owner_id",(self.uid,int(time.time())))
+        conn.execute('UPDATE scheduler_state SET next_tick=0 WHERE id=1');conn.commit();conn.close()
+        with patch.object(app,'AUTO_RESET_ROUNDS',False),patch.object(features,'AUTO_RESET_ROUNDS',False):
+            status=self.client.get('/api/game/status');self.assertEqual(status.status_code,200);self.assertFalse(status.json['automatic_reset']);self.assertIsNone(status.json['reset_in'])
+            features.scheduler_tick()
+        conn=self.connection();self.assertEqual(conn.execute('SELECT money FROM users WHERE id=?',(self.uid,)).fetchone()[0],999)
+        self.assertEqual(conn.execute("SELECT owner_id FROM territories WHERE grid_key='20,20'").fetchone()[0],self.uid);self.assertEqual(int(app.get_setting(conn,'winner_id')),self.uid);conn.close()
