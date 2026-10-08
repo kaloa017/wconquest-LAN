@@ -220,3 +220,66 @@ admin endpoints reject ordinary users, a fake forwarded IP is ignored on a direc
 connection, stocks move on schedule, and a 24-hour religion cooldown survives restart.
 Never serve `/var/lib/wconquest`, `.session-secret`, environment files or backups
 through a static alias.
+
+## Alternatives to Cloudflare without port forwarding
+
+These options do not require opening a router port. A tunnel exposes the game
+running at http://127.0.0.1:5000; a VPS runs the game on a separate public server.
+No connector is installed or enabled automatically by this project.
+
+### Tailscale Funnel — easiest option to try on your own computer
+
+Install [Tailscale](https://tailscale.com/download), sign in and connect the host.
+Keep the game running, open a new terminal, then run:
+
+```powershell
+tailscale funnel --bg 5000
+```
+
+If the CLI is not on PATH on Windows, use the installed executable:
+
+```powershell
+& "$env:ProgramFiles\Tailscale	ailscale.exe" funnel --bg 5000
+```
+
+Follow the enablement link if prompted to permit Funnel/HTTPS. Share the displayed
+HTTPS .ts.net URL: visitors do not need the Tailscale app or a tailnet account.
+Funnel provides HTTPS, only supports tailnet .ts.net names, and has
+non-configurable bandwidth limits. Its public ports are 443/8443/10000; your game
+can still use local port 5000. This is Funnel, not private Tailscale Serve.
+The host must remain powered on and connected. See the
+[Funnel documentation](https://tailscale.com/docs/features/tailscale-funnel) and
+[CLI guide](https://tailscale.com/docs/reference/tailscale-cli/funnel).
+
+### ngrok — simple public HTTPS tunnel
+
+Install [ngrok](https://ngrok.com/download), create/sign in to your account, and
+configure the agent with the token from your dashboard. Keep the token private.
+Run `ngrok http 5000` and share its HTTPS URL. The free plan currently allows
+20,000 HTTP requests and 1 GB of outbound transfer per month and displays a
+browser interstitial. Frequent multiplayer polling can consume these quotas
+quickly; consider a paid plan for continuous use. See
+[free-plan limits](https://ngrok.com/docs/pricing-limits/free-plan-limits).
+
+### playit.gg — an alternative with more HTTPS setup
+
+Run the playit agent on the host and create an HTTPS tunnel in the dashboard.
+Its documented website setup uses a configured domain and Caddy for local TLS
+termination, then reverse-proxies to http://127.0.0.1:5000. Do not assume the
+basic game tunnel supplies browser HTTPS automatically. Follow the
+[official HTTPS tutorial](https://playit.gg/support/https-tunnel/).
+
+### Public VPS — suitable for a persistent public game
+
+Rent a Linux VPS with persistent storage and run the game there using the
+Gunicorn/systemd/HTTPS steps above, adapting paths and firewall configuration.
+A service such as [DigitalOcean Droplets](https://docs.digitalocean.com/products/droplets/how-to/create/)
+provides a public server; no home router forwarding or home tunnel is involved.
+This costs money and requires server administration but keeps the game running
+when your personal computer is off. Transfer game.db using a consistent backup
+and preserve the session secret/private assets separately. Never put these in Git.
+
+For non-Cloudflare tunnels, do not use PROXY_MODE=cloudflare. Apply the trusted
+proxy guidance above for the actual connector and verify HTTPS/client addresses
+in Host tools. Proxy header behavior varies; do not trust forwarded IP headers
+from arbitrary internet clients. Choose a provider before enabling a public URL.
