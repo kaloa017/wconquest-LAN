@@ -107,3 +107,11 @@
 - Added Raspberry Pi, Apache, Nginx and no-port-forwarding deployment instructions.
 
 Hosts: edit this file and increment VERSION in config.py for the next popup.
+# 6.4.1 — war required before combat
+
+- Require an active faction war before land, naval or air attacks on another player.
+- Validate every country affected by rocket/nuclear blasts before spending weapons
+  or damaging territory; peaceful bystanders and allies are protected.
+- Stop ongoing offensives when their war ends; return surviving committed troops.
+- Update the faction help text. Neutral territory remains available without war.
+- No save migration or reset.

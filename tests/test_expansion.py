@@ -24,7 +24,7 @@ class ExpansionTests(unittest.TestCase):
 
     def setUp(self):
         self.conn=app.get_db(); self.addCleanup(self.conn.close)
-        self.conn.execute('DELETE FROM campaigns'); self.conn.execute('DELETE FROM territories'); self.conn.execute('DELETE FROM buildings')
+        self.conn.execute('DELETE FROM campaigns'); self.conn.execute('DELETE FROM territories'); self.conn.execute('DELETE FROM buildings'); self.conn.execute('DELETE FROM fallout')
         self.a=self.player('Sender'); self.b=self.player('Receiver'); self.admin=self.player('Admin',admin=1); self.mod=self.player('Moderator',moderator=1)
         self.conn.commit(); self.client=self.login(self.a)
 
@@ -47,6 +47,11 @@ class ExpansionTests(unittest.TestCase):
     def faction(self,uid):
         fid=self.conn.execute('INSERT INTO factions(name,tag,leader_id,color) VALUES(?,?,?,?)',('Faction'+str(uid),str(uid),uid,'#123456')).lastrowid
         features.join_faction(self.conn,uid,fid);self.conn.commit();return fid
+
+    def declare_war(self):
+        fa=self.faction(self.a);fb=self.faction(self.b)
+        rid=self.conn.execute("INSERT INTO faction_rel(a,b,kind,status,ts) VALUES(?,?,'war','active',?)",(fa,fb,int(time.time()))).lastrowid
+        self.conn.commit();return rid
 
     def test_roles_and_timeout_enforced_on_reads_and_writes(self):
         self.assertEqual(self.client.get('/api/moderation/players').status_code,403)
@@ -119,20 +124,95 @@ class ExpansionTests(unittest.TestCase):
         expansion.run_trades(self.conn,self.a);self.conn.commit();self.assertEqual(self.balance(self.a,'money'),before-10)
 
     def test_campaign_commit_commands_tick_and_refund(self):
+        self.declare_war()
         self.tile('200,200',self.a);self.tile('200,201',self.b)
         r=self.post('/api/attack',{'from_key':'200,200','target_key':'200,201','troops':100,'tactic':'careful'});self.assertEqual(r.status_code,200,r.json);cid=r.json['campaign_id']
-        self.assertEqual(self.balance(self.a,'army'),900)
+        self.assertEqual(app.pool_get(self.conn,self.a,'army'),900)
         self.assertEqual(self.post('/api/campaigns/order',{'campaign_id':cid,'action':'retreat'},self.login(self.b)).status_code,403)
         self.assertEqual(self.post('/api/campaigns/order',{'campaign_id':cid,'action':'posture','posture':'entrench'},self.login(self.b)).status_code,200)
         expansion.tick_campaigns(self.conn,int(time.time())+20);self.conn.commit()
         campaign=self.conn.execute('SELECT * FROM campaigns WHERE id=?',(cid,)).fetchone();self.assertLess(campaign['attack_org'],100);self.assertLess(campaign['defense_org'],100)
         remaining=campaign['troops'];self.assertEqual(self.post('/api/campaigns/order',{'campaign_id':cid,'action':'retreat'}).status_code,200)
-        self.assertEqual(self.balance(self.a,'army'),900+remaining)
+        self.assertEqual(app.pool_get(self.conn,self.a,'army'),900+remaining)
         self.assertEqual(self.post('/api/campaigns/order',{'campaign_id':cid,'action':'retreat'}).status_code,404)
 
-    def test_campaign_can_capture_and_survives_migration(self):
+    def test_peacetime_attack_rejected_without_spending_troops(self):
         self.tile('200,200',self.a);self.tile('200,201',self.b)
-        self.conn.execute('UPDATE users SET army=1 WHERE id=?',(self.b,));self.conn.commit()
+        r=self.post('/api/attack',{'from_key':'200,200','target_key':'200,201','troops':100})
+        self.assertEqual(r.status_code,400,r.json);self.assertIn('Declare war',r.json['error'])
+        self.assertEqual(self.balance(self.a,'army'),1000)
+        self.assertEqual(self.conn.execute('SELECT COUNT(*) FROM campaigns').fetchone()[0],0)
+
+    def test_neutral_land_does_not_require_war(self):
+        self.tile('200,200',self.a);self.tile('200,201',None)
+        r=self.post('/api/attack',{'from_key':'200,200','target_key':'200,201','troops':100})
+        self.assertEqual(r.status_code,200,r.json)
+
+    def test_naval_and_air_attacks_require_war_without_spending_units(self):
+        self.tile('200,200',self.a,'port');self.tile('200,210',self.b)
+        self.conn.execute('UPDATE users SET boats=2,planes=2 WHERE id=?',(self.a,));self.conn.commit()
+        with patch.object(app,'is_coastal',return_value=True):
+            r=self.post('/api/boats/attack',{'from_key':'200,200','target_key':'200,210','boats':1})
+        self.assertEqual(r.status_code,400,r.json);self.assertIn('Declare war',r.json['error'])
+        self.conn.execute("UPDATE buildings SET type='airport' WHERE grid_key='200,200'");self.conn.commit()
+        r=self.post('/api/planes/attack',{'from_key':'200,200','target_key':'200,210','planes':1})
+        self.assertEqual(r.status_code,400,r.json);self.assertIn('Declare war',r.json['error'])
+        for key,amount in (('army',1000),('boats',2),('planes',2)):
+            self.assertEqual(self.balance(self.a,key),amount)
+
+    def test_peace_stops_campaign_and_refunds_survivors(self):
+        rid=self.declare_war();self.tile('200,200',self.a);self.tile('200,201',self.b)
+        r=self.post('/api/attack',{'from_key':'200,200','target_key':'200,201','troops':100})
+        self.assertEqual(r.status_code,200,r.json)
+        self.conn.execute("UPDATE faction_rel SET status='ended' WHERE id=?",(rid,));self.conn.commit()
+        expansion.tick_campaigns(self.conn,int(time.time())+20);self.conn.commit()
+        self.assertEqual(self.conn.execute('SELECT status FROM campaigns').fetchone()[0],'ended')
+        self.assertEqual(app.pool_get(self.conn,self.a,'army'),1000)
+        self.assertEqual(self.conn.execute('SELECT owner_id FROM territories WHERE grid_key=?',('200,201',)).fetchone()[0],self.b)
+
+    def test_war_check_covers_individuals_allies_and_ended_wars(self):
+        self.assertIsNotNone(app.attack_block(self.conn,self.a,self.b))
+        rid=self.declare_war();self.assertIsNone(app.attack_block(self.conn,self.a,self.b))
+        self.assertIsNone(app.attack_block(self.conn,self.a,None))
+        self.conn.execute("UPDATE faction_rel SET kind='ally' WHERE id=?",(rid,))
+        self.assertIsNotNone(app.attack_block(self.conn,self.a,self.b))
+        self.conn.execute("UPDATE faction_rel SET kind='war',status='ended' WHERE id=?",(rid,))
+        self.assertIsNotNone(app.attack_block(self.conn,self.a,self.b))
+
+    def test_rocket_cannot_damage_peaceful_bystander(self):
+        self.declare_war();self.tile('200,200',self.a,'rocket_pad');self.tile('200,201',self.b)
+        self.tile('200,202',self.mod,'farm')
+        self.conn.execute('UPDATE users SET rockets=1 WHERE id=?',(self.a,));self.conn.commit()
+        r=self.post('/api/rockets/launch',{'from_key':'200,200','target_key':'200,201'})
+        self.assertEqual(r.status_code,400,r.json);self.assertIn('Declare war',r.json['error'])
+        self.assertEqual(self.balance(self.a,'rockets'),1)
+        self.assertEqual(self.conn.execute('SELECT owner_id FROM territories WHERE grid_key=?',('200,201',)).fetchone()[0],self.b)
+        self.assertIsNotNone(self.conn.execute('SELECT * FROM buildings WHERE grid_key=?',('200,202',)).fetchone())
+
+    def test_nuke_cannot_damage_peaceful_bystander(self):
+        self.declare_war();self.tile('200,180',self.a,'silo');self.tile('200,201',self.b)
+        self.tile('200,202',self.mod,'farm')
+        self.conn.execute('UPDATE users SET nukes=1 WHERE id=?',(self.a,));self.conn.commit()
+        with patch.object(app.random,'randint',return_value=5):
+            r=self.post('/api/nuke/launch',{'from_key':'200,180','target_key':'200,201'})
+        self.assertEqual(r.status_code,400,r.json);self.assertIn('Declare war',r.json['error'])
+        self.assertEqual(self.balance(self.a,'nukes'),1)
+        self.assertEqual(self.conn.execute('SELECT COUNT(*) FROM fallout').fetchone()[0],0)
+        self.assertEqual(self.conn.execute('SELECT owner_id FROM territories WHERE grid_key=?',('200,201',)).fetchone()[0],self.b)
+
+    def test_nuke_allowed_against_country_at_war(self):
+        self.declare_war();self.tile('200,180',self.a,'silo');self.tile('200,201',self.b)
+        self.conn.execute('UPDATE users SET nukes=1 WHERE id=?',(self.a,));self.conn.commit()
+        with patch.object(app.random,'randint',return_value=5):
+            r=self.post('/api/nuke/launch',{'from_key':'200,180','target_key':'200,201'})
+        self.assertEqual(r.status_code,200,r.json)
+        self.assertEqual(self.balance(self.a,'nukes'),0)
+        self.assertIsNone(self.conn.execute('SELECT owner_id FROM territories WHERE grid_key=?',('200,201',)).fetchone()[0])
+
+    def test_campaign_can_capture_and_survives_migration(self):
+        self.declare_war()
+        self.tile('200,200',self.a);self.tile('200,201',self.b)
+        self.conn.execute('UPDATE factions SET army=1 WHERE id=?',(app.fac_id(self.conn,self.b),));self.conn.commit()
         r=self.post('/api/attack',{'from_key':'200,200','target_key':'200,201','troops':1000,'tactic':'balanced'});self.assertEqual(r.status_code,200,r.json)
         expansion.migrate(app.get_db)
         for tick in range(1,12): expansion.tick_campaigns(self.conn,int(time.time())+tick*11);self.conn.commit()
@@ -148,6 +228,7 @@ class ExpansionTests(unittest.TestCase):
         r=self.post('/api/faction/war/end',{'rel_id':rid,'action':'surrender'},self.login(member));self.assertEqual(r.status_code,200,r.json)
 
     def test_rocket_cost_damage_cooldown_and_ownership(self):
+        self.declare_war()
         self.tile('200,200',self.a,'rocket_pad');self.tile('200,201',self.b,'fort',2)
         money=self.balance(self.a,'money');r=self.post('/api/rockets/build',{'amount':2});self.assertEqual(r.status_code,200,r.json);self.assertEqual(self.balance(self.a,'money'),money-3000)
         r=self.post('/api/rockets/launch',{'from_key':'200,200','target_key':'200,201'});self.assertEqual(r.status_code,200,r.json)

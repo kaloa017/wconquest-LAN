@@ -1606,6 +1606,15 @@ def attack_block(conn, uid, oid):
     if are_allied(uid, oid, conn): return '🤝 Cannot attack an ally or faction mate!'
     fa, fb = fac_id(conn, uid), fac_id(conn, oid)
     if fa and fb and rel_between(conn, fa, fb, 'ally'): return '🤝 Your factions are allied!'
+    if not war_between(conn, uid, oid): return '⚔ Declare war through your faction before attacking this player.'
+    return None
+
+def blast_attack_block(conn, uid, keys):
+    """Check every affected country before spending weapons or damaging tiles."""
+    for row in conn.execute(f'SELECT DISTINCT owner_id FROM territories WHERE owner_id IS NOT NULL AND grid_key IN ({_in(keys)})', keys):
+        if row['owner_id'] != uid:
+            error = attack_block(conn, uid, row['owner_id'])
+            if error: return error
     return None
 def war_score(conn, uid, oid):
     r = war_between(conn, uid, oid)
@@ -2520,6 +2529,11 @@ def nuke_launch():
     if time.time() - (u['last_nuke'] or 0) < NUKE_COOLDOWN: return bail(f'Silo reloading ({int((NUKE_COOLDOWN-(time.time()-u["last_nuke"]))//60)+1} min)')
     if cell_distance(fk, tk) > NUKE_RANGE: return bail(f'Out of range ({NUKE_RANGE} cells)')
     R = random.randint(NUKE_RADIUS_MIN, NUKE_RADIUS_MAX)
+    from geography import islands_in_radius
+    keys = [f'{tl+a},{tg+b}' for a in range(-R, R+1) for b in range(-R, R+1) if a*a+b*b <= R*R and -473<=tl+a<=472 and -1000<=tg+b<=999]
+    keys += islands_in_radius(tl, tg, R)
+    blocked = blast_attack_block(conn, uid, keys)
+    if blocked: return bail(blocked)
     owners, n = devastate(conn, tl, tg, R, int(time.time()) + FALLOUT_DURATION, 'nuke')
     conn.execute('UPDATE users SET nukes=nukes-1,last_nuke=? WHERE id=?', (int(time.time()), uid)); seen = set()
     for o, cnt in owners.items():

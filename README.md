@@ -225,3 +225,9 @@ additional migration. Restart the server and reload clients after updating.
 
 See [Cloudflare alternatives](docs/DEPLOYMENT.md#alternatives-to-cloudflare-without-port-forwarding)
 for Tailscale Funnel, ngrok, playit.gg and running on a public VPS.
+Combat against another player requires an active faction war. Join or create a
+faction, then have its leader declare war in the Faction menu. Land, naval and air
+attacks follow this rule; rockets and nukes also check every country in their blast
+area. A strike is rejected before spending weapons if it would damage an ally or
+a country outside the war. Neutral land does not need a declaration. Ongoing
+offensives stop and return surviving troops when peace is agreed.

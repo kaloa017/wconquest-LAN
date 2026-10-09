@@ -390,6 +390,8 @@ def rocket_launch():
     a,b=core['parse_key'](tk);radius=2
     keys=[f'{a+x},{b+y}' for x in range(-radius,radius+1) for y in range(-radius,radius+1) if x*x+y*y<=radius*radius and -473<=a+x<=472 and -1000<=b+y<=999]
     keys+=islands_in_radius(a,b,radius);marks=','.join('?' for _ in keys)
+    error=core['blast_attack_block'](conn,uid,keys)
+    if error: raise ValueError(error)
     victims=conn.execute(f'SELECT grid_key,owner_id FROM territories WHERE grid_key IN ({marks}) AND owner_id IS NOT NULL',keys).fetchall()
     for campaign in conn.execute(f"SELECT * FROM campaigns WHERE status='active' AND (from_key IN ({marks}) OR target_key IN ({marks}))",keys+keys).fetchall():
         finish_campaign(conn,campaign,'ended','Rocket strike cleared the battlefield; survivors returned')
