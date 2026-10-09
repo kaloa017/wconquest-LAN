@@ -1,7 +1,7 @@
 """
 World Conquest v6 — Persistent Multiplayer Strategy Game
 Run:  pip install -r requirements.txt && python app.py
-Open: http://localhost:5000
+Open: http://localhost:5055
 Host setup: python manage.py create-admin --username USERNAME
 """
 
@@ -1557,9 +1557,9 @@ def devastate(conn, gl, gg, R, until, reason):
 
 def meltdown(conn, gk):
     gl, gg = parse_key(gk); R = random.randint(3, 6)
-    owners, n = devastate(conn, gl, gg, R, FOREVER, 'meltdown')
+    owners, n = devastate(conn, gl, gg, R, int(time.time()) + FALLOUT_DURATION, 'meltdown')
     announce(conn, f'☢ NUCLEAR MELTDOWN near {gl*GRID:.1f}°, {gg*GRID:.1f}°! A reactor exploded — a {R}-tile radius is uninhabitable forever.')
-    for o, cnt in owners.items(): create_notification(conn, o, 'info', f'☢ A nuclear plant melted down! You lost {cnt} tiles to permanent fallout.')
+    for o, cnt in owners.items(): create_notification(conn, o, 'info', f'☢ A nuclear plant melted down! You lost {cnt} tiles to three days of fallout.')
 
 # ── trades ────────────────────────────────────────────────────────────────────
 def run_trades(conn, uid):
@@ -1605,9 +1605,7 @@ def attack_block(conn, uid, oid):
     if not oid: return None
     if are_allied(uid, oid, conn): return '🤝 Cannot attack an ally or faction mate!'
     fa, fb = fac_id(conn, uid), fac_id(conn, oid)
-    if fa and fb:
-        if rel_between(conn, fa, fb, 'ally'): return '🤝 Your factions are allied!'
-        if not rel_between(conn, fa, fb, 'war'): return '🕊 Your factions are at peace. A faction leader must declare war first.'
+    if fa and fb and rel_between(conn, fa, fb, 'ally'): return '🤝 Your factions are allied!'
     return None
 def war_score(conn, uid, oid):
     r = war_between(conn, uid, oid)
@@ -1745,9 +1743,9 @@ def do_assault(conn, uid, uname_, fk, tk, force, kind, units_label, committed_tr
 
 def do_game_reset(conn):
     conn.execute('UPDATE territories SET owner_id=NULL,garrison=0,boats=0,planes=0')
-    for t in ('buildings', 'fallout', 'embassies', 'trades', 'loans', 'wonders', 'faction_rel', 'faction_research', 'faction_requests', 'merges','stock_prices','stock_history','stock_holdings','stock_transactions','eva_deployments','faction_contributions'):
+    for t in ('bank_loans', 'bank_offers', 'campaigns', 'exchanges', 'moderation_confirmations', 'strike_events', 'casino_rounds', 'buildings', 'fallout', 'embassies', 'trades', 'loans', 'wonders', 'faction_rel', 'faction_research', 'faction_requests', 'merges','stock_prices','stock_history','stock_holdings','stock_transactions','eva_deployments','faction_contributions'):
         conn.execute(f'DELETE FROM {t}')
-    conn.execute('UPDATE users SET army=CASE WHEN faction_id IS NULL THEN 10 ELSE 0 END,boats=0,planes=0,morale=50,steel=0,uranium=0,gems=0,nukes=0,capital_key=NULL')
+    conn.execute('UPDATE users SET army=CASE WHEN faction_id IS NULL THEN 10 ELSE 0 END,boats=0,planes=0,morale=50,steel=0,uranium=0,gems=0,nukes=0,rockets=0,capital_key=NULL')
     conn.execute('UPDATE factions SET army=10,boats=0,planes=0,treasury=0')
     for faction in conn.execute('SELECT id FROM factions').fetchall():
         members=[r['id'] for r in conn.execute('SELECT id FROM users WHERE faction_id=? ORDER BY id',(faction['id'],))]
@@ -1808,7 +1806,7 @@ def ingest_and_check_target(conn, tk):
 @require_login
 def build_troops():
     d = request.json or {}; uid = session['user_id']
-    am = max(1, min(int(d.get('amount', 1)), 10**9)); conn = get_db()
+    am = int(d.get('amount', 1)); conn = get_db()
     rsch = user_research(conn, uid); cost = am * troop_cost_for(conn, uid, rsch)
     u = conn.execute('SELECT money FROM users WHERE id=?', (uid,)).fetchone()
     if u['money'] < cost:
@@ -1884,7 +1882,7 @@ def attack():
 @app.route('/api/boats/build', methods=['POST'])
 @require_login
 def build_boats():
-    d = request.json or {}; uid = session['user_id']; am = max(1, min(int(d.get('amount', 1)), 1000)); conn = get_db()
+    d = request.json or {}; uid = session['user_id']; am = int(d.get('amount', 1)); conn = get_db()
     if 'shipyard' not in user_research(conn, uid): conn.close(); return jsonify({'error': 'Research Shipbuilding first'}), 400
     if group_levels(conn, uid, 'port') == 0: conn.close(); return jsonify({'error': 'You (or your faction) need a Port to build boats'}), 400
     cost = {'money': am*BOAT_COST_M, 'wood': am*BOAT_COST_W}
@@ -1928,7 +1926,7 @@ def boats_attack():
 @app.route('/api/planes/build', methods=['POST'])
 @require_login
 def build_planes():
-    d = request.json or {}; uid = session['user_id']; am = max(1, min(int(d.get('amount', 1)), 500)); conn = get_db()
+    d = request.json or {}; uid = session['user_id']; am = int(d.get('amount', 1)); conn = get_db()
     if 'airforce' not in user_research(conn, uid): conn.close(); return jsonify({'error': 'Research Air Force first'}), 400
     if group_levels(conn, uid, 'airport') == 0: conn.close(); return jsonify({'error': 'You (or your faction) need an Airport'}), 400
     cost = {'money': am*PLANE_COST_M, 'metal': am*PLANE_COST_X, 'oil': am*PLANE_COST_O}
@@ -2296,7 +2294,7 @@ def war_declare():
     if rel_between(conn, f['id'], tid, status='active'): conn.close(); return jsonify({'error': 'You already have a treaty or war with them — end it first'}), 400
     conn.execute("INSERT INTO faction_rel(a,b,kind,status,ts) VALUES(?,?,'war','active',?)", (f['id'], tid, int(time.time())))
     announce(conn, f'⚔ WAR! [{f["tag"]}] {f["name"]} has declared war on [{t["tag"]}] {t["name"]}!')
-    _notify_faction(conn, tid, f'⚔ [{f["tag"]}] declared WAR on your faction! First to capture 25 enemy tiles wins.'); _notify_faction(conn, f['id'], f'⚔ We are at war with [{t["tag"]}]! First to capture 25 enemy tiles wins.')
+    _notify_faction(conn, tid, f'⚔ [{f["tag"]}] declared WAR on your faction! No time or capture limit. Either side can end the war or surrender.'); _notify_faction(conn, f['id'], f'⚔ We are at war with [{t["tag"]}]! No time or capture limit. Either side can end the war or surrender.')
     conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'War declared on {t["name"]}!'})
 
 @app.route('/api/faction/war/end', methods=['POST'])
@@ -2521,8 +2519,8 @@ def nuke_launch():
     if u['nukes'] < 1: return bail('You have no nuclear warheads')
     if time.time() - (u['last_nuke'] or 0) < NUKE_COOLDOWN: return bail(f'Silo reloading ({int((NUKE_COOLDOWN-(time.time()-u["last_nuke"]))//60)+1} min)')
     if cell_distance(fk, tk) > NUKE_RANGE: return bail(f'Out of range ({NUKE_RANGE} cells)')
-    R = random.randint(3, 10)
-    owners, n = devastate(conn, tl, tg, R, int(time.time()) + 6*3600, 'nuke')
+    R = random.randint(NUKE_RADIUS_MIN, NUKE_RADIUS_MAX)
+    owners, n = devastate(conn, tl, tg, R, int(time.time()) + FALLOUT_DURATION, 'nuke')
     conn.execute('UPDATE users SET nukes=nukes-1,last_nuke=? WHERE id=?', (int(time.time()), uid)); seen = set()
     for o, cnt in owners.items():
         g = fac_id(conn, o) or ('u', o)
@@ -2680,11 +2678,13 @@ def detail_extra(conn, grid_key, row):
 
 from features import install_features, religion_for
 from migrations import migrate_v6, migrate_v7, migrate_v8, migrate_v9, migrate_v10, migrate_v11, backup_before_upgrade
+from expansion import migrate as migrate_v12
+from economy import migrate as migrate_v13
 backup_before_upgrade(DB_PATH)
-init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db)
+init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db); migrate_v12(get_db); migrate_v13(get_db)
 install_features(globals())
 
 if __name__ == '__main__':
     from waitress import serve
     print('World Conquest: production server. See README.md for host setup.')
-    serve(app, host=os.environ.get('HOST', '0.0.0.0'), port=int(os.environ.get('PORT', 5000)), threads=4)
+    serve(app, host=os.environ.get('HOST', '0.0.0.0'), port=int(os.environ.get('PORT', 5055)), threads=4)

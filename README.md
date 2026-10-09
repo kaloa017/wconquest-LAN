@@ -15,8 +15,8 @@ python manage.py create-admin --username YourHostName
 python app.py
 ```
 
-Open http://localhost:5000. Other LAN players use the host's LAN address and port
-5000. `app.py` runs Waitress, a production WSGI server. Raspberry Pi deployment
+Open http://localhost:5055. Other LAN players use the host's LAN address and port
+5055. `app.py` runs Waitress, a production WSGI server. Raspberry Pi deployment
 uses Gunicorn instead; see [Deployment](docs/DEPLOYMENT.md). No default password
 or special username grants administrator access. Passwords need eight characters.
 

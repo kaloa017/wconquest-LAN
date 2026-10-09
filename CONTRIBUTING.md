@@ -11,6 +11,8 @@ python -m pip check
 python -m unittest discover -s tests -v
 node --check static/client.js
 node --check static/legacy-client.js
+node --check static/expansion.js
+node --check static/economy.js
 node tests/client_audit.cjs
 ```
 

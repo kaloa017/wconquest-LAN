@@ -524,7 +524,7 @@ CLAIM_METAL_RATIO = 0.02
 NUKE_MONEY = 100000000
 
 # Request counters/presence are batched; purchases/combat commit immediately.
-VERSION = '6.3.6'
+VERSION = '6.4.0'
 SAVE_INTERVAL = 30
 SCHEDULER_INTERVAL = 30
 REQUESTS_PER_MINUTE = 0  # 0 = unlimited, until changed in the admin panel.
@@ -542,8 +542,8 @@ STOCK_VOLATILITY = .04
 STOCK_REVERSION = .08
 STOCK_HISTORY_LIMIT = 288
 STOCK_TRADE_COOLDOWN = 0
-STOCK_MAX_QUANTITY = 10000
-STOCK_MAX_POSITION = 100000
+STOCK_MAX_QUANTITY = 2**53-1  # Numeric precision bound, not a gameplay purchase cap.
+STOCK_MAX_POSITION = 0  # No gameplay position cap.
 STOCK_EVENT_SHIFT = {'gold_rush':.01,'harvest':.006,'mining':.008,'conscription':-.004,'war_fever':-.01,'cold_snap':-.006}
 # Legacy prices preserved here; v6 only reduces claims, vehicles and voyages.
 IDEOLOGY_CHANGE_COST = 2000
@@ -604,3 +604,25 @@ WONDERS = {
  'eva_02': {'name':'EVA-02','icon':'🤖','cost':{'money':85000,'steel':70},'desc':'Unlocks EVA-02 JPG portraits; cosmetic only, no stat effects','country':'JPN','hidden':True},
 }
 
+
+# Campaign / ordnance / casino balance (in-game currency only).
+COMBAT_TICK = 2
+ROCKET_COST = {'money': 1500, 'metal': 120, 'oil': 40}
+ROCKET_RANGE = 25
+ROCKET_COOLDOWN = 60
+CASINO_MAX_BET = 3000
+BUILDINGS['rocket_pad'] = {'name': 'Rocket Pad', 'icon': '🚀', 'desc': 'Build and launch conventional rockets: 25-cell range, clears land in a 2-cell radius, no new fallout.', 'cost': {'money': 1200, 'metal': 200, 'oil': 60}}
+BUILDINGS['casino'] = {'name': 'Casino', 'icon': '🎲', 'desc': 'Play two-dice games with in-game money. Bet limit: 1,000 per level. No passive income.', 'cost': {'money': 800, 'wood': 150, 'metal': 50}}
+
+# Money-building output is per minute per level before research/ideology modifiers.
+BUILDINGS['market']['production'] = {'money': 30}
+BUILDINGS['market']['desc'] = '+30 money/min per level'
+BUILDINGS['solar_farm']['production'] = {'money': 45}
+BUILDINGS['solar_farm']['desc'] = '+45 money/min per level without meltdown risk'
+BUILDINGS['nuclear_plant']['production'] = {'money': 180}
+BUILDINGS['nuclear_plant']['desc'] = '+180 money/min per level; meltdown risk remains'
+BUILDINGS['bank'] = {'name': 'Bank', 'icon': '🏦', 'desc': '+120 money/min per level; offer player loans at your own interest rate.', 'cost': {'money': 1800, 'wood': 150, 'metal': 100}, 'production': {'money': 120}}
+BUILDINGS['shopping_center'] = {'name': 'Shopping Center', 'icon': '🛍', 'desc': '+300 money/min per level.', 'cost': {'money': 4500, 'wood': 350, 'metal': 200}, 'production': {'money': 300}}
+FALLOUT_DURATION = 3 * 24 * 60 * 60
+NUKE_RADIUS_MIN = 5
+NUKE_RADIUS_MAX = 15

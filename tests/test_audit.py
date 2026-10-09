@@ -12,7 +12,7 @@ class AuditTests(unittest.TestCase):
         cls.saved_db=app.DB_PATH;cls.scratch=tempfile.TemporaryDirectory(dir=Path(__file__).parent)
         app.DB_PATH=str(Path(cls.scratch.name)/'game.db')
         app.init_db();app.migrate_v4();app.migrate_v5()
-        for migrate in (migrate_v6,migrate_v7,migrate_v8,migrate_v9,migrate_v10,migrate_v11):migrate(app.get_db)
+        for migrate in (migrate_v6,migrate_v7,migrate_v8,migrate_v9,migrate_v10,migrate_v11,app.migrate_v12,app.migrate_v13):migrate(app.get_db)
         features._map_cache.clear()
     @classmethod
     def tearDownClass(cls):

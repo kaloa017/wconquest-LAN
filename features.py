@@ -189,7 +189,7 @@ def before_request():
                 if key in ('message','text','name','tag','descr','color','resource','unit','kind','channel','action','rank','type','key','give_res','get_res','symbol','side','idea','image','image_url','recovery_code','reset_pin','pin') and not isinstance(value,str):raise ValueError('Expected text for '+key)
                 if key in ('ban','promote','accept','enabled','water','from_treasury','display_faction_colors','share_boats','share_planes','music_muted') and not isinstance(value,bool) and key!='water':raise ValueError('Expected true or false for '+key)
                 if key in ('amount','troops','boats','planes','minutes','user_id','faction_id','to_id','host_id','request_id','loan_id','rel_id','merge_id','trade_id','give_amt','get_amt'):
-                    integer(value,0,10**9)
+                    integer(value,0,2**53-1)
                 if key in ('grid_key','from_key','target_key') and value:core['parse_key'](value)
                 if key in ('username','new_username','to_username') and not isinstance(value,str):raise ValueError('Expected a name')
                 if 'password' in key and (not isinstance(value,str) or len(value)>256):raise ValueError('Invalid password')
@@ -477,7 +477,7 @@ def stock_trade():
     h=conn.execute('SELECT * FROM stock_holdings WHERE user_id=? AND symbol=?',(uid,symbol)).fetchone();owned=h['quantity'] if h else 0
     value=qty*p['price'];fee=value*STOCK_FEE
     if side=='buy':
-        if owned+qty>STOCK_MAX_POSITION:raise ValueError('Position limit reached')
+        if STOCK_MAX_POSITION and owned+qty>STOCK_MAX_POSITION:raise ValueError('Position limit reached')
         if u['money']<value+fee:raise ValueError('Insufficient money including fee')
         conn.execute('UPDATE users SET money=money-? WHERE id=?',(value+fee,uid))
         conn.execute('INSERT INTO stock_holdings VALUES(?,?,?,?) ON CONFLICT(user_id,symbol) DO UPDATE SET quantity=quantity+excluded.quantity,cost_basis=cost_basis+excluded.cost_basis',(uid,symbol,qty,value+fee))
@@ -502,6 +502,11 @@ def scheduler_tick():
             if s['user_id']:conn.execute('UPDATE users SET last_seen=? WHERE id=?',(s['last_seen'],s['user_id']))
         settings=core['get_setting'](conn,'rate_limits')
         if settings:_rate_settings.update(json.loads(settings));core['CHAT_COOLDOWN']=_rate_settings['chat']
+        from expansion import tick_campaigns
+        from economy import refresh_catalog, process_loans
+        refresh_catalog(conn)
+        tick_campaigns(conn, now)
+        process_loans(conn, now)
         due=conn.execute('SELECT next_tick FROM scheduler_state WHERE id=1').fetchone()[0]
         if now>=due:
             conn.execute('UPDATE scheduler_state SET next_tick=? WHERE id=1',(now+SCHEDULER_INTERVAL,))
@@ -548,7 +553,7 @@ def scheduler_loop():
     while True:
         try:scheduler_tick()
         except Exception:core['app'].logger.exception('Scheduled update failed')
-        time.sleep(SAVE_INTERVAL)
+        time.sleep(min(SAVE_INTERVAL, COMBAT_TICK))
 
 def admin_requests():
     conn=db();rows={r['client']:dict(r) for r in conn.execute('SELECT r.*,u.username FROM request_stats r LEFT JOIN users u ON u.id=r.user_id')}
@@ -704,7 +709,7 @@ def admin_network():
         try:ip=ipaddress.ip_address(address)
         except ValueError:continue
         if ip.version==4 and ip.is_private and not (ip.is_loopback or ip.is_unspecified or ip.is_link_local or ip.is_multicast or ip.is_reserved):lan.append(str(ip))
-    port=int(request.environ.get('SERVER_PORT') or os.environ.get('PORT',5000))
+    port=int(request.environ.get('SERVER_PORT') or os.environ.get('PORT',5055))
     try:local_only=ipaddress.ip_address(bind_host).is_loopback
     except ValueError:local_only=bind_host.lower()=='localhost'
     return jsonify(urls=[f'http://{ip}:{port}' for ip in sorted(lan)],local_only=local_only,
@@ -784,4 +789,8 @@ def install_features(namespace):
     app.add_url_rule('/api/admin/ideas','admin_ideas',core['require_admin'](admin_ideas),methods=['GET'])
     app.add_url_rule('/api/eva/deploy','eva_deploy',core['require_login'](eva_deploy),methods=['POST'])
     app.add_url_rule('/api/eva/deployments','eva_deployments',eva_deployments)
+    from expansion import install
+    install(namespace)
+    from economy import install as install_economy
+    install_economy(namespace)
     if os.getenv('DISABLE_SCHEDULER')!='1':threading.Thread(target=scheduler_loop,name='game-scheduler',daemon=True).start()

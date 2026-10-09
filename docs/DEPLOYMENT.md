@@ -51,7 +51,7 @@ User=wconquest
 Group=wconquest
 WorkingDirectory=/opt/wconquest
 EnvironmentFile=/etc/wconquest.env
-ExecStart=/opt/wconquest/.venv/bin/gunicorn --bind 127.0.0.1:5000 --workers 1 --threads 4 --timeout 60 --forwarded-allow-ips=127.0.0.1,::1 app:app
+ExecStart=/opt/wconquest/.venv/bin/gunicorn --bind 127.0.0.1:5055 --workers 1 --threads 4 --timeout 60 --forwarded-allow-ips=127.0.0.1,::1 app:app
 Restart=on-failure
 RestartSec=5
 UMask=0077
@@ -99,8 +99,8 @@ Create `/etc/apache2/sites-available/wconquest.conf`:
     Require all granted
     Options -Indexes
   </Directory>
-  ProxyPass / http://127.0.0.1:5000/
-  ProxyPassReverse / http://127.0.0.1:5000/
+  ProxyPass / http://127.0.0.1:5055/
+  ProxyPassReverse / http://127.0.0.1:5055/
   AddOutputFilterByType DEFLATE application/javascript text/css text/html
   ErrorLog ${APACHE_LOG_DIR}/wconquest-error.log
   CustomLog ${APACHE_LOG_DIR}/wconquest-access.log combined
@@ -139,7 +139,7 @@ server {
     autoindex off;
   }
   location / {
-    proxy_pass http://127.0.0.1:5000;
+    proxy_pass http://127.0.0.1:5055;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;
@@ -174,7 +174,7 @@ architecture. Then choose one option:
 ### Temporary testing URL
 
 ```sh
-cloudflared tunnel --url http://localhost:5000
+cloudflared tunnel --url http://localhost:5055
 ```
 
 It prints a random `trycloudflare.com` HTTPS URL. Share that URL with testers.
@@ -189,7 +189,7 @@ whether your connector supplies `CF-Connecting-IP` before relying on it.
    setup. Create a tunnel in the dashboard and install its connector on the Pi.
    Keep the connector token private; it is not a player recovery code.
 2. Add a public hostname `game.example.com` with service
-   `http://localhost:5000`. Connect directly to Gunicorn; Apache/Nginx is optional.
+   `http://localhost:5055`. Connect directly to Gunicorn; Apache/Nginx is optional.
 3. Add `PROXY_MODE=cloudflare` to `/etc/wconquest.env`; retain loopback-only trust,
    one hop and `COOKIE_SECURE=1`. The application uses Cloudflare's validated
    `CF-Connecting-IP` when the trusted local connector supplies it.
@@ -208,7 +208,7 @@ an additional invite-only gate, and configure them to allow your intended player
 ## Firewall, backups and checks
 
 For a direct proxy deployment, allow incoming TCP 80/443 and forward those ports
-on the router only if you choose that approach. Keep port 5000 private. With a
+on the router only if you choose that approach. Keep port 5055 private. With a
 tunnel, **no incoming ports or router forwarding are needed**; permit connector
 outbound traffic according to the official network requirements. Allow SSH only
 where needed before enabling a firewall, so you do not lock yourself out.
@@ -224,7 +224,7 @@ through a static alias.
 ## Alternatives to Cloudflare without port forwarding
 
 These options do not require opening a router port. A tunnel exposes the game
-running at http://127.0.0.1:5000; a VPS runs the game on a separate public server.
+running at http://127.0.0.1:5055; a VPS runs the game on a separate public server.
 No connector is installed or enabled automatically by this project.
 
 ### Tailscale Funnel — easiest option to try on your own computer
@@ -233,20 +233,20 @@ Install [Tailscale](https://tailscale.com/download), sign in and connect the hos
 Keep the game running, open a new terminal, then run:
 
 ```powershell
-tailscale funnel --bg 5000
+tailscale funnel --bg 5055
 ```
 
 If the CLI is not on PATH on Windows, use the installed executable:
 
 ```powershell
-& "$env:ProgramFiles\Tailscale	ailscale.exe" funnel --bg 5000
+& "$env:ProgramFiles\Tailscale	ailscale.exe" funnel --bg 5055
 ```
 
 Follow the enablement link if prompted to permit Funnel/HTTPS. Share the displayed
 HTTPS .ts.net URL: visitors do not need the Tailscale app or a tailnet account.
 Funnel provides HTTPS, only supports tailnet .ts.net names, and has
 non-configurable bandwidth limits. Its public ports are 443/8443/10000; your game
-can still use local port 5000. This is Funnel, not private Tailscale Serve.
+can still use local port 5055. This is Funnel, not private Tailscale Serve.
 The host must remain powered on and connected. See the
 [Funnel documentation](https://tailscale.com/docs/features/tailscale-funnel) and
 [CLI guide](https://tailscale.com/docs/reference/tailscale-cli/funnel).
@@ -255,7 +255,7 @@ The host must remain powered on and connected. See the
 
 Install [ngrok](https://ngrok.com/download), create/sign in to your account, and
 configure the agent with the token from your dashboard. Keep the token private.
-Run `ngrok http 5000` and share its HTTPS URL. The free plan currently allows
+Run `ngrok http 5055` and share its HTTPS URL. The free plan currently allows
 20,000 HTTP requests and 1 GB of outbound transfer per month and displays a
 browser interstitial. Frequent multiplayer polling can consume these quotas
 quickly; consider a paid plan for continuous use. See
@@ -265,7 +265,7 @@ quickly; consider a paid plan for continuous use. See
 
 Run the playit agent on the host and create an HTTPS tunnel in the dashboard.
 Its documented website setup uses a configured domain and Caddy for local TLS
-termination, then reverse-proxies to http://127.0.0.1:5000. Do not assume the
+termination, then reverse-proxies to http://127.0.0.1:5055. Do not assume the
 basic game tunnel supplies browser HTTPS automatically. Follow the
 [official HTTPS tutorial](https://playit.gg/support/https-tunnel/).
 

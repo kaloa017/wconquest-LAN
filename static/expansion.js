@@ -1,0 +1,108 @@
+/* v6.4: campaigns, item exchange, moderation and map effects. */
+let expansionPollBusy=false, strikeCursor=0, expansionTimeoutTimer=null;
+const expansionAssets=['money','food','wood','metal','oil','steel','uranium','gems','army','boats','planes','nukes','rockets'];
+function expansionDialog(title,html){
+  document.getElementById('expansion-dialog')?.remove();
+  const previous=document.activeElement, overlay=document.createElement('div');overlay.id='expansion-dialog';overlay.className='v6-overlay';
+  overlay.innerHTML=`<section class="v6-dialog expansion-dialog" role="dialog" aria-modal="true" aria-labelledby="expansion-title"><h2 id="expansion-title">${esc(title)}</h2>${html}<button class="btn btn-ghost" data-close>Close</button></section>`;
+  const close=()=>{overlay.remove();previous?.focus()};overlay.querySelector('[data-close]').onclick=close;
+  overlay.addEventListener('keydown',e=>{if(e.key==='Escape')close();if(e.key==='Tab'){const nodes=[...overlay.querySelectorAll('button,input,select,textarea')].filter(n=>!n.disabled);const first=nodes[0],last=nodes.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}});
+  document.body.appendChild(overlay);overlay.querySelector('input,select,button')?.focus();return overlay;
+}
+function showTimeout(info){
+  let overlay=document.getElementById('timeout-overlay');
+  if(!overlay){overlay=document.createElement('div');overlay.id='timeout-overlay';overlay.className='v6-overlay';overlay.setAttribute('role','alertdialog');overlay.setAttribute('aria-modal','true');document.body.appendChild(overlay)}
+  clearInterval(expansionTimeoutTimer);
+  const draw=()=>{const seconds=Math.max(0,Math.ceil(info.until-Date.now()/1000));overlay.innerHTML=`<section class="v6-dialog"><h2>Account timeout</h2><p>${esc(info.message)}</p><p>Issued by <b>${esc(info.moderator)}</b> for ${Math.ceil(info.duration/60)} minutes.</p><p>Ends ${esc(new Date(info.until*1000).toLocaleString())}</p><p aria-live="polite">${Math.floor(seconds/60)}m ${seconds%60}s remaining</p><button class="btn btn-primary" onclick="checkTimeout()">${seconds?'Check status':'Return to game'}</button><button class="btn btn-ghost" onclick="location.reload()">Reload</button></section>`};
+  draw();overlay.querySelector('button').focus();expansionTimeoutTimer=setInterval(draw,1000);
+}
+async function checkTimeout(){const r=await api('GET','/api/moderation/status');if(r.error)return toast(r.error,'error');if(!r.timeout.remaining){clearInterval(expansionTimeoutTimer);document.getElementById('timeout-overlay')?.remove();await refreshUser()}else showTimeout(r.timeout)}
+const expansionApi=api;
+api=async function(method,path,data){const result=await expansionApi(method,path,data);if(result.timeout?.remaining)showTimeout(result.timeout);if(method==='POST'&&!result.error&&['/api/nuke/launch','/api/rockets/launch'].includes(path))await pollStrikes();return result};
+
+function buildingHover(key){
+  const tile=territories[key];if(!tile)return 'No building';
+  const name=tile.building?(BLD[tile.building]?.name||tile.building):null;
+  const count=currentUser?.building_counts?.[tile.building]?.count||0;
+  return name?`${name} · level ${tile.blevel||1} · you own ${count}`:'No building';
+}
+hoverInfo=function(ll){
+  let el=document.getElementById('hover-info');if(!el){el=document.createElement('div');el.id='hover-info';document.getElementById('map').parentElement.appendChild(el)}
+  const island=typeof islandAt==='function'?islandAt(ll.lat,ll.lng):null;
+  const a=Math.floor(ll.lat/GRID),b=Math.floor(ll.lng/GRID),key=island?.properties.key||`${a},${b}`,tile=territories[key];
+  el.innerHTML=`<b>${esc(island?.properties.name||key)}</b>${tile?' · '+esc(tile.owner):''}<br>${esc(buildingHover(key))}`;
+};
+const expansionRender=renderTerritories;
+renderTerritories=function(){expansionRender();for(const [key,layer] of Object.entries(tlayers)){if(layer.bindTooltip)layer.bindTooltip(`${esc(territories[key]?.owner||key)}<br>${esc(buildingHover(key))}`)}};
+
+const expansionTerritory=buildTerritoryPanel;
+buildTerritoryPanel=function(key,t,container){
+  expansionTerritory(key,t,container);const el=container||document.getElementById('territory-actions');if(!el||!currentUser)return;
+  el.querySelectorAll('.expansion-tile-tools').forEach(n=>n.remove());const box=document.createElement('div');box.className='expansion-tile-tools';
+  const tile=territories[key],owned=tile?.owner_id===currentUser.id;
+  box.innerHTML=card('Buildings',`<p>${esc(buildingHover(key))}</p><button class="btn btn-ghost" onclick="showBuildingInventory()">All my building counts</button>`);
+  if(owned&&tile.building==='casino')box.innerHTML+=card('Casino',`<p>Two dice. Low (2–6) or high (8–12) returns 2× your stake; seven returns 5×. Odds: 15/36, 15/36, 6/36. Expected return: 83.3%. In-game money only.</p><button class="btn btn-primary" onclick="openCasino('${key}')">Play dice</button>`);
+  if(owned&&tile.building==='rocket_pad')box.innerHTML+=card('Rocket Pad',`<p>You have ${currentUser.rockets||0} rockets. Each costs 1,500 money, 120 metal and 40 oil.</p><button class="btn btn-primary" onclick="act('/api/rockets/build',{amount:1})">Build rocket</button>`);
+  if(tile?.owner_id&&!owned){const pads=Object.keys(territories).filter(k=>territories[k].owner_id===currentUser.id&&territories[k].building==='rocket_pad');if(pads.length)box.innerHTML+=card('Conventional strike',`<p>25-cell range. Clears a 2-cell radius, including friendly land and buildings. Produces no new fallout; cleared land can be claimed immediately.</p><button class="btn btn-danger" onclick="launchRocket('${key}')">Launch rocket (${currentUser.rockets||0})</button>`)}
+  if(currentUser.is_admin||currentUser.is_moderator)box.innerHTML+=`<button class="btn btn-danger btn-full" onclick="moderatorTakeover('${key}')">Moderated territory transfer…</button>`;
+  el.appendChild(box);
+};
+function showBuildingInventory(){const counts=currentUser?.building_counts||{};expansionDialog('Your buildings',`<div class="expansion-table">${Object.entries(BLD).map(([key,info])=>`<div><span>${esc(info.name)}</span><b>${counts[key]?.count||0} buildings · ${counts[key]?.levels||0} total levels</b></div>`).join('')}</div>`)}
+function openCasino(key){const overlay=expansionDialog('Casino · two dice',`<p>In-game money only. Low/high wins on 15 of 36 outcomes and pays 2×; seven wins on 6 of 36 and pays 5×. Payout includes your stake. Expected return: 83.3%.</p>${control('Stake (maximum 1,000 per level)','casino-bet','number',100)}<label>Prediction<select id="casino-choice" class="form-input"><option value="low">Low: 2–6 (2×)</option><option value="high">High: 8–12 (2×)</option><option value="seven">Exactly 7 (5×)</option></select></label><div id="casino-result" aria-live="polite">Ready to roll</div><button class="btn btn-primary" id="casino-roll">Roll dice</button>`);overlay.querySelector('#casino-roll').onclick=async e=>{e.target.disabled=true;const r=await act('/api/casino/play',{grid_key:key,bet:+document.getElementById('casino-bet').value,choice:document.getElementById('casino-choice').value});const result=overlay.querySelector('#casino-result');result.textContent=r.error||r.message;if(r.dice){result.classList.remove('dice-roll');void result.offsetWidth;result.classList.add('dice-roll')}setTimeout(()=>{e.target.disabled=false},3000)}}
+async function launchRocket(key){const pads=Object.keys(territories).filter(k=>territories[k].owner_id===currentUser.id&&territories[k].building==='rocket_pad');if(!pads.length)return toast('Build a Rocket Pad first','error');const [ta,tb]=parseKey(key);pads.sort((a,b)=>{const [aa,ab]=parseKey(a),[ba,bb]=parseKey(b);return Math.max(Math.abs(aa-ta),Math.abs(ab-tb))-Math.max(Math.abs(ba-ta),Math.abs(bb-tb))});if(!confirm('Launch a rocket at '+key+'? It clears land and buildings within radius 2, including your own land. No new fallout.'))return;const r=await act('/api/rockets/launch',{from_key:pads[0],target_key:key});if(!r.error){await refreshTerritories();fetchAndBuildPanel(key)}}
+
+const instantAttack=doAttack;
+doAttack=async function(kind,key){
+  if(kind!=='land')return instantAttack(kind,key);
+  if(!requireLogin())return;
+  const source=document.getElementById('src-land')?.value,amount=+(document.getElementById('sl-land')?.value||1);
+  if(!source)return toast('Choose an attacking territory first','error');
+  const tactic=document.getElementById('quick-tactic')?.value||'balanced';
+  const r=await api('POST','/api/attack',{from_key:source,target_key:key,troops:amount,tactic});
+  if(r.error)return toast(r.error,'error');toast('Offensive started · '+amount+' troops','success');await refreshUser();
+  if(selectedKey===key)await fetchAndBuildPanel(key);
+};
+async function buildOperations(){
+  const el=document.getElementById('operations-content');if(!currentUser){el.textContent='Log in to manage operations.';return}
+  const r=await api('GET','/api/campaigns');if(r.error){el.textContent=r.error;return}
+  el.innerHTML=card('Operations',`<p>Land battles advance every ${r.tick_seconds}s. No attack-count cap: commit any available troops. Organization reaching zero forces retreat. Food shortages and a lost source tile reduce supply. Mountains and forts help defenders. Naval and airborne assaults remain immediate landings.</p>`)+(r.campaigns.length?r.campaigns.map(c=>{
+    const mine=c.attacker===currentUser.id,active=c.status==='active';return card(`#${c.id} · ${c.target_key} · ${c.status}`,`<p>${c.troops}/${c.initial_troops} troops · ${c.lost} lost · ${Math.round(c.supply*100)}% supply</p><label>Attacker organization <progress max="100" value="${c.attack_org}"></progress> ${Math.round(c.attack_org)}%</label><label>Defender organization <progress max="100" value="${c.defense_org}"></progress> ${Math.round(c.defense_org)}%</label><p>${esc(c.tactic)} attack · ${esc(c.posture)} defense</p>${active?(mine?`<div class="v4-row">${['balanced','careful','breakthrough'].map(t=>`<button class="btn btn-ghost btn-sm" onclick="campaignOrder(${c.id},'tactic','${t}')">${t}</button>`).join('')}</div><button class="btn btn-danger" onclick="campaignOrder(${c.id},'retreat')">Retreat</button>`:`<div class="v4-row">${['hold','entrench','counterattack'].map(t=>`<button class="btn btn-ghost btn-sm" onclick="campaignOrder(${c.id},'posture','${t}')">${t}</button>`).join('')}</div>`):`<p>${esc(c.summary)}</p>`}<button class="btn btn-ghost btn-sm" onclick="flyTo('${c.target_key}')">Show tile</button>`)}).join(''):'<p>No offensives yet. Select an enemy tile beside your land to begin.</p>');
+}
+async function campaignOrder(id,action,value){if(action==='retreat'&&!confirm('Retreat and return surviving troops?'))return;await act('/api/campaigns/order',{campaign_id:id,action,...(action==='tactic'?{tactic:value}:action==='posture'?{posture:value}:{})});buildOperations()}
+function describeBasket(items){return Object.entries(items).map(([key,value])=>key==='territories'?`${value.length} territories (${value.join('; ')})`:`${value} ${key}`).join(', ')||'Nothing (gift)'}
+async function buildTrading(){
+  const el=document.getElementById('trading-content');if(!currentUser){el.textContent='Log in to trade.';return}const r=await api('GET','/api/exchanges');if(r.error){el.textContent=r.error;return}
+  el.innerHTML=card('Send a gift or exchange',`<p>Send resources, your troops, personally owned vehicles, weapons or territory with its building. Set all requested amounts to zero for an immediate gift. Exchanges transfer both sides together when accepted; offers do not reserve items.</p><label>Recipient<select id="exchange-to" class="form-input">${r.players.map(u=>`<option value="${u.id}">${esc(u.username)}</option>`).join('')}</select></label><div class="exchange-grid"><b>Item</b><b>You send</b><b>You request</b>${r.assets.map(asset=>`<label for="give-${asset}">${asset}</label><input aria-label="Send ${asset}" id="give-${asset}" type="number" min="0" step="1" value="0"><input aria-label="Request ${asset}" id="want-${asset}" type="number" min="0" step="1" value="0">`).join('')}</div><label>Send territories (one grid key per line)<textarea id="give-tiles" class="form-input" placeholder="12,34"></textarea></label><label>Request territories (one grid key per line)<textarea id="want-tiles" class="form-input" placeholder="12,35"></textarea></label><button class="btn btn-primary btn-full" onclick="sendExchange()">Review and send</button>`)+card('Offers and recent transfers',r.offers.map(o=>`<div class="exchange-offer"><b>${esc(o.sender_name)} → ${esc(o.recipient_name)}</b><p>Send: ${esc(describeBasket(o.give))}<br>Return: ${esc(describeBasket(o.want))}</p><span>${esc(o.status)}</span>${o.status==='pending'?`${o.recipient===currentUser.id?`<button class="btn btn-primary" onclick="answerExchange(${o.id},'accept')">Accept</button>`:''}<button class="btn btn-ghost" onclick="answerExchange(${o.id},'cancel')">Cancel / decline</button>`:''}</div>`).join('')||'<p>No transfers yet.</p>');
+}
+async function sendExchange(){const give={},want={};for(const asset of expansionAssets){const ga=+document.getElementById('give-'+asset).value,wa=+document.getElementById('want-'+asset).value;if(ga)give[asset]=ga;if(wa)want[asset]=wa}for(const [name,basket] of [['give',give],['want',want]]){const tiles=document.getElementById(name+'-tiles').value.split(/\n/).map(s=>s.trim()).filter(Boolean);if(tiles.length)basket.territories=tiles}if(!confirm(`Send: ${describeBasket(give)}\nRequest: ${describeBasket(want)}\n${Object.keys(want).length?'The recipient must accept.':'This gift transfers immediately.'}`))return;const r=await act('/api/exchanges/send',{to_id:+document.getElementById('exchange-to').value,give,want});if(!r.error){buildTrading();await refreshTerritories()}}
+async function answerExchange(id,action){if(action==='accept'&&!confirm('Accept this exchange and transfer the requested items?'))return;await act('/api/exchanges/respond',{offer_id:id,action});buildTrading();refreshTerritories()}
+
+async function buildModeration(){
+  const el=document.getElementById('moderation-content');if(!currentUser?.is_admin&&!currentUser?.is_moderator){el.textContent='Moderator access required.';return}
+  const r=await api('GET','/api/moderation/players');if(r.error){el.textContent=r.error;return}
+  el.innerHTML=card('Moderation',`<p>Mute chat or time out gameplay for up to seven days. Zero minutes removes the restriction. Land transfers are available on the selected tile with three confirmation steps. Every action is audited.</p><label>Player<select id="moderate-player" class="form-input">${r.map(u=>`<option value="${u.id}">${esc(u.username)}${u.is_admin?' · admin':u.is_moderator?' · moderator':''}</option>`).join('')}</select></label>${control('Duration (minutes, 0 to clear)','moderate-minutes','number',30)}<label>Reason / message<textarea id="moderate-message" class="form-input" maxlength="500"></textarea></label><div class="v4-row"><button class="btn btn-ghost" onclick="moderatePlayer('mute')">Mute / unmute</button><button class="btn btn-danger" onclick="moderatePlayer('timeout')">Timeout / clear</button></div>${currentUser.is_admin?'<hr><p>Administrator role management</p><button class="btn btn-primary" onclick="assignModerator(true)">Grant moderator</button><button class="btn btn-ghost" onclick="assignModerator(false)">Revoke moderator</button>':''}`);
+}
+async function moderatePlayer(action){const data={user_id:+document.getElementById('moderate-player').value,minutes:+document.getElementById('moderate-minutes').value,message:document.getElementById('moderate-message').value,action};if(!confirm(`${action} this player for ${data.minutes} minutes?`))return;await act('/api/moderation/action',data)}
+async function assignModerator(enabled){if(!confirm((enabled?'Grant':'Revoke')+' moderator permissions?'))return;await act('/api/admin/moderator',{user_id:+document.getElementById('moderate-player').value,enabled});buildModeration()}
+async function moderatorTakeover(key){const players=await api('GET','/api/moderation/players');if(players.error)return toast(players.error,'error');const dialog=expansionDialog('Moderated land transfer',`<p>Selected territory: ${esc(key)}</p><label>New owner<select id="takeover-owner" class="form-input">${players.map(u=>`<option value="${u.id}">${esc(u.username)}</option>`).join('')}</select></label><label>Reason<textarea id="takeover-reason" class="form-input" maxlength="500"></textarea></label><button id="takeover-review" class="btn btn-danger">Review transfer</button>`);dialog.querySelector('#takeover-review').onclick=async e=>{e.target.disabled=true;let r=await api('POST','/api/moderation/takeover',{stage:1,grid_key:key,to_id:+dialog.querySelector('select').value,reason:dialog.querySelector('textarea').value});if(r.error){e.target.disabled=false;return toast(r.error,'error')}if(!confirm(r.message)){e.target.disabled=false;return}r=await api('POST','/api/moderation/takeover',{stage:2,token:r.token,confirm:true});if(r.error){e.target.disabled=false;return toast(r.error,'error')}if(!confirm(r.message)){e.target.disabled=false;return}r=await act('/api/moderation/takeover',{stage:3,token:r.token,confirm:true});if(!r.error){dialog.remove();await refreshTerritories();fetchAndBuildPanel(key)}else e.target.disabled=false}}
+
+function pointForKey(key){const island=pacificIslands[key];if(island)return [island.properties.lat,island.properties.lng];const [a,b]=parseKey(key);return [(a+.5)*GRID,(b+.5)*GRID]}
+async function pollStrikes(){const r=await api('GET','/api/strikes?since='+strikeCursor);if(r.error)return;for(const event of r.events){strikeCursor=Math.max(strikeCursor,event.id);animateStrike(event)}}
+function animateStrike(event){
+  if(!map||document.hidden||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  const container=map.getContainer();if(container.querySelectorAll('.strike-scene').length>=3)return;
+  const start=map.latLngToContainerPoint(pointForKey(event.from_key)),end=map.latLngToContainerPoint(pointForKey(event.target_key));
+  if(end.x<0||end.y<0||end.x>container.clientWidth||end.y>container.clientHeight)return;
+  const scene=document.createElement('div');scene.className='strike-scene';scene.setAttribute('aria-hidden','true');
+  const projectile=document.createElement('div');projectile.className='strike-projectile';projectile.textContent='🚀';scene.appendChild(projectile);container.appendChild(scene);
+  const started=performance.now();function frame(timestamp){if(!scene.isConnected)return;const t=Math.min(1,(timestamp-started)/1300),x=start.x+(end.x-start.x)*t,y=start.y+(end.y-start.y)*t-Math.sin(t*Math.PI)*130;projectile.style.transform=`translate(${x}px,${y}px) rotate(${Math.atan2(end.y-start.y,end.x-start.x)*180/Math.PI+45}deg) scale(${1+Math.sin(t*Math.PI)*.7})`;if(t<1)requestAnimationFrame(frame);else{projectile.remove();const blast=document.createElement('div');blast.className='strike-blast '+(event.kind==='nuke'?'nuclear':'conventional');blast.style.left=end.x+'px';blast.style.top=end.y+'px';blast.innerHTML='<i></i><b></b><span></span>';scene.appendChild(blast);setTimeout(()=>scene.remove(),2600)}}requestAnimationFrame(frame);
+}
+function openExpansionPanel(id){if(isMobile())mobileNav('more',id);else showPanel(id)}
+async function endCampaignWar(id,action){if(!confirm(`End this war by ${action}? Any faction member can do this. Captured territory stays with its current owner; active offensives stop.`))return;await facDo('/api/faction/war/end',{rel_id:id,action})}
+const expansionEmpire=buildEmpire;buildEmpire=async function(){await expansionEmpire();const el=document.getElementById('empire-content');if(el&&currentUser){el.querySelector('.expansion-country')?.remove();const box=document.createElement('div');box.className='expansion-country';box.innerHTML=card('Inventory and exchange','<button class="btn btn-primary" onclick="openExpansionPanel(\'trading\')">Send anything / gifts</button> <button class="btn btn-ghost" onclick="showBuildingInventory()">Building counts</button>');el.prepend(box)}};
+for(const [id,label,render] of [['operations','⚔ Operations',buildOperations],['trading','🎁 Trading',buildTrading],['moderation','🛡 Moderation',buildModeration]]){addNavigation(id,label,render);menuItems[id]={icon:label.split(' ')[0],name:label.split(' ').slice(1).join(' '),desc:id==='operations'?'Command your land offensives':id==='trading'?'Gifts and item exchanges':'Help manage the game'}}
+const expansionMenuHome=menuHome;menuHome=function(){return expansionMenuHome()+`<h3>Campaigns & community</h3><div class="more-grid">${['operations','trading',...(currentUser?.is_admin||currentUser?.is_moderator?['moderation']:[])].map(id=>`<button onclick="openExpansionPanel('${id}')">${menuItems[id].icon} ${menuItems[id].name}</button>`).join('')}</div>`};
+const expansionRefreshUser=refreshUser;refreshUser=async function(){await expansionRefreshUser();document.querySelector('.stab[data-panel="moderation"]')?.classList.toggle('expansion-hidden',!(currentUser?.is_admin||currentUser?.is_moderator))};
+const expansionSession=startSession;
+startSession=async function(u){strikeCursor=0;const result=await expansionSession(u);if(result===false)return result;pollHandles.push(setInterval(async()=>{if(expansionPollBusy||document.hidden)return;expansionPollBusy=true;try{await pollStrikes();const panel=document.getElementById('operations-content');if(currentUser&&panel?.getClientRects().length)await buildOperations()}finally{expansionPollBusy=false}},2000));return result};
+startGame=startSession;startSpectatorMode=()=>startSession(null);
