@@ -1700,7 +1700,7 @@ async function previewBattle(kind,key){
   const col=pct==null?'var(--text2)':pct>=62?'var(--green2)':pct>=42?'var(--accent2)':'var(--red2)';
   el.innerHTML=`<div class="pv-odds" style="color:${col}">${pct!=null?pct+'%':`${p.odds_est[0]}–${p.odds_est[1]}%`}</div>
     <div class="v4-bar"><i style="width:${pct??((p.odds_est[0]+p.odds_est[1])/2)}%"></i></div>
-    <div class="pv-nums"><span>Your force <b>${p.attack}</b></span><span>${p.defense!=null?`Enemy <b>${p.defense}</b>`:`Enemy ≈ <b>${p.defense_est[0]}–${p.defense_est[1]}</b>`}</span></div>
+    <div class="pv-nums"><span>Your force <b>${fmtN(p.attack)}</b></span><span>${p.defense!=null?`Enemy <b>${fmtN(p.defense)}</b>`:`Enemy ≈ <b>${fmtN(p.defense_est[0])}–${fmtN(p.defense_est[1])}</b>`}</span></div>
     ${chipsOf(p.atk_mods)}${p.def_mods?`<div class="v4-sub" style="margin-top:6px">Defender</div>${chipsOf(p.def_mods.map(([n,m])=>[n,1/m]))}`:'<div class="v4-sub" style="margin-top:6px">🕵 Research Espionage for exact enemy numbers.</div>'}`;
 }
 function showBattleReport(r,title){
@@ -1708,7 +1708,7 @@ function showBattleReport(r,title){
   const list=(a,cls)=>(a||[]).map(([n,m])=>`<div class="mod ${m>1.001?'up':m<.999?'dn':''}"><span>${esc(n)}</span><b>×${(+m).toFixed(2)}</b></div>`).join('')||'<div class="v4-sub">—</div>';
   document.getElementById('br-box').innerHTML=`<h2 class="${win?'win':'lose'}">${win?'VICTORY':'DEFEAT'}</h2>
     <div style="text-align:center;margin:6px 0 2px;color:var(--text2)">${esc(r.message)}</div>
-    <div class="br-cols"><div><h5>Your force</h5><div class="br-big">${b.attack}</div>${list(b.atk_mods)}</div><div><h5>Defense</h5><div class="br-big">${b.defense}</div>${list((b.def_mods||[]).map(([n,m])=>[n,1/m]))}</div></div>
+    <div class="br-cols"><div><h5>Your force</h5><div class="br-big">${b.attack==null?'—':fmtN(b.attack)}</div>${list(b.atk_mods)}</div><div><h5>Defense</h5><div class="br-big">${b.defense==null?'—':fmtN(b.defense)}</div>${list((b.def_mods||[]).map(([n,m])=>[n,1/m]))}</div></div>
     <div class="v4-sub" style="text-align:center;margin-bottom:10px">${WX_ICON[b.weather]||''} ${b.weather} · both sides roll ±8% luck${r.boats_back!=null?` · ${r.boats_back} boats returned`:''}${r.planes_back!=null?` · ${r.planes_back} planes returned`:''}</div>
     <button class="btn btn-primary btn-full" onclick="document.getElementById('battle-report').classList.remove('open')">Continue</button>`;
   document.getElementById('battle-report').classList.add('open');
@@ -1857,7 +1857,7 @@ Object.assign(SELL_RATES,{steel:12,uranium:40,gems:60});
 Object.assign(RES_CFG,{steel:{icon:'🔩',label:'Steel'},uranium:{icon:'☢',label:'Uranium'},gems:{icon:'💎',label:'Gems'}});
 Object.assign(NOTIF_ICONS,{loan_request:'🚢',trade_request:'⚖',merge_request:'🧬',faction_ally:'🤝'});
 Object.assign(resIcon,{steel:'🔩',uranium:'☢',gems:'💎'});
-function fmtN(n,decimals=0){n=Number(n);if(!Number.isFinite(n))return'0';return n.toLocaleString('en-US',{maximumFractionDigits:decimals})}
+function fmtN(n,decimals=2){n=Number(n);if(!Number.isFinite(n))return'0';return n.toLocaleString('en-US',{maximumFractionDigits:decimals})}
 const groupTiles=()=>Object.keys(territories).filter(k=>{const t=territories[k];return t.owner_id===currentUser?.id||(currentUser?.faction&&t.tag&&t.tag===currentUser.faction.tag)});
 const groupAdj=(gl,gg)=>{const s=new Set(groupTiles());return adjKeys(gl,gg).filter(k=>s.has(k))};
 
@@ -2005,13 +2005,13 @@ function buildTerritoryPanel(key,t,container){
         if(planeSrc.length&&u.planes>0){a+=atkBlock('air',key,{from:planeSrc[0],srcs:planeSrc,max:u.planes,def:1,label:'✈ Air Strike',unit:'planes',color:'#aaaaff',btn:'✈ Strike',hk:firstAtk});firstAtk=false}
         else a+=`<div class="v4-card"><h4 style="color:#aaaaff">✈ Air Strike</h4><div class="v4-sub">${!planeSrc.length?`Needs an Airport within ${u.plane_range} cells.`:'You have no planes — build some.'}</div></div>`}
       const silos=gt.filter(k=>territories[k].building==='silo'&&dist(k,key)<=40);
-      if(u.nukes>0&&silos.length)a+=`<div class="v4-card" style="border-color:var(--red2)"><h4 style="color:var(--red2)">☢ Nuclear Strike</h4><div class="v4-sub" style="margin-bottom:8px">Random blast radius 5–15 cells. Erases ownership of EVERYONE inside it (even you), leaves fallout for 72 real hours, and cripples every country hit.</div><button class="btn btn-danger btn-full" onclick="launchNuke('${silos[0]}','${key}')">☢ LAUNCH (${u.nukes} warhead${u.nukes>1?'s':''})</button></div>`;
+      if(u.nukes>0&&silos.length)a+=`<div class="v4-card" style="border-color:var(--red2)"><h4 style="color:var(--red2)">☢ Nuclear Strike</h4><div class="v4-sub" style="margin-bottom:8px">Random blast radius 5–20 cells. Erases ownership of EVERYONE inside it (even you), leaves fallout for 72 real hours, and cripples every country hit.</div><button class="btn btn-danger btn-full" onclick="launchNuke('${silos[0]}','${key}')">☢ LAUNCH (${u.nukes} warhead${u.nukes>1?'s':''})</button></div>`;
       if(!adj.length&&!rs.has('shipyard')&&!rs.has('airforce'))a+=`<div class="empty-state" style="padding:14px 8px"><div class="es-icon">🌊</div>No land route. Research ⚓ Shipbuilding or ✈ Air Force.</div>`;
       if(isOwned&&u.faction?.is_leader)a+=`<div class="v4-card"><h4>🏛 Diplomacy</h4><div class="v4-sub">Factions replace alliances: declare war or propose a faction alliance from the Faction tab.</div></div>`;
     }
   }
   put(info,`<div class="tp-actions">${a}</div>`);
-  const bn=document.getElementById('build-n');if(bn)bn.oninput=()=>{document.getElementById('build-cost').textContent=(Math.max(1,+bn.value||1))*u.troop_cost};
+  const bn=document.getElementById('build-n');if(bn)bn.oninput=()=>{document.getElementById('build-cost').textContent=fmtN((Math.max(1,+bn.value||1))*u.troop_cost)};
   document.querySelectorAll('[data-pv]').forEach(el=>{const kind=el.dataset.pv,sl=document.getElementById('sl-'+kind),sel=document.getElementById('src-'+kind),go=()=>previewBattle(kind,key);
     if(sl)sl.oninput=()=>{document.getElementById('sv-'+kind).textContent=fmtN(sl.value);clearTimeout(sl._t);sl._t=setTimeout(go,200)};if(sel)sel.onchange=go;go()});
 }
@@ -2029,7 +2029,7 @@ async function previewBattle(kind,key){
   if(p.error){el.innerHTML=`<div class="v4-sub">${esc(p.error)}</div>`;return}
   const pct=p.odds,col=pct==null?'var(--text2)':pct>=62?'var(--green2)':pct>=42?'var(--accent2)':'var(--red2)';
   el.innerHTML=`<div class="pv-odds" style="color:${col}">${pct!=null?pct+'%':`${p.odds_est[0]}–${p.odds_est[1]}%`}</div><div class="v4-bar"><i style="width:${pct??((p.odds_est[0]+p.odds_est[1])/2)}%"></i></div>
-    <div class="pv-nums"><span>Your force <b>${p.attack}</b></span><span>${p.defense!=null?`Enemy <b>${p.defense}</b>`:`Enemy ≈ <b>${p.defense_est[0]}–${p.defense_est[1]}</b>`}</span></div>
+    <div class="pv-nums"><span>Your force <b>${fmtN(p.attack)}</b></span><span>${p.defense!=null?`Enemy <b>${fmtN(p.defense)}</b>`:`Enemy ≈ <b>${fmtN(p.defense_est[0])}–${fmtN(p.defense_est[1])}</b>`}</span></div>
     ${p.blocked?`<div class="v4-sub" style="color:var(--red2);margin-top:4px">${esc(p.blocked)}</div>`:''}${p.voyage?`<div class="v4-sub" style="margin-top:4px">⛵ Voyage of ${p.voyage.cells} cells costs <b>${p.voyage.money}💰 ${p.voyage.wood}🌲</b></div>`:''}
     ${chipsOf(p.atk_mods)}${p.def_mods?`<div class="v4-sub" style="margin-top:6px">Defender</div>${chipsOf(p.def_mods.map(([n,m])=>[n,1/m]))}`:'<div class="v4-sub" style="margin-top:6px">🕵 Espionage (or a faction with Intel Sharing) shows exact enemy numbers.</div>'}`;
 }
@@ -2053,7 +2053,7 @@ async function bldAct(key,type){afterAct(await api('POST','/api/building/build',
 async function setCapital(key){afterAct(await api('POST','/api/capital/set',{grid_key:key}),key)}
 async function sellTile(key,v){if(!confirm(`Sell this tile for ${v}💰? You lose it and any building on it.`))return;afterAct(await api('POST','/api/territory/sell',{grid_key:key}),key)}
 async function launchNuke(fk,tk){
-  if(!confirm('☢ Launch a nuclear missile? The blast radius is random (5–15 cells) and may hit your own land.'))return;
+  if(!confirm('☢ Launch a nuclear missile? The blast radius is random (5–20 cells) and may hit your own land.'))return;
   if(!confirm('Are you absolutely sure? This cannot be undone.'))return;
   const r=await api('POST','/api/nuke/launch',{from_key:fk,target_key:tk});if(r.error)return toast(r.error,'error');
   toast(r.message,'success');achToast(r);await refreshAll();drawFallout();window.__force=true;fetchAndBuildPanel(tk);
@@ -2200,8 +2200,8 @@ const IDEO={capitalism:{name:'Capitalism',icon:'🏦',desc:'+12% money, claims -
 function nukeChecklist(u,rs){
   const gt=groupTiles(),has=b=>gt.some(k=>territories[k].building===b),row=(ok,t)=>`<div class="v4-sub">${ok?'✅':'⬜'} ${t}</div>`;
   const ready=['nuclear_physics','rocketry','manhattan'].every(t=>rs.has(t))&&['uranium_mine','enrichment','nuclear_plant'].every(has);
-  return row(rs.has('nuclear_physics'),'Nuclear Physics')+row(rs.has('rocketry'),'Rocketry')+row(rs.has('manhattan'),'Manhattan Project')+row(has('uranium_mine'),'Uranium Mine')+row(has('enrichment'),'Enrichment Plant')+row(has('nuclear_plant'),'Nuclear Plant ⚛ (tiny meltdown risk — a meltdown permanently ruins its surroundings!)')+row(has('silo'),'Missile Silo (to launch)')+
-    `<div class="v4-sub" style="margin:6px 0">Warhead: <b>${fmtN(u.nuke_cost)}💰</b> + 300☢ + 3000🔩 · you hold <b>${u.nukes}</b></div><button class="btn btn-danger btn-full" ${ready?'':'disabled'} onclick="empAct('/api/nuke/build',{})">☢ Build warhead</button>${u.faction?.is_leader?`<button class="btn btn-ghost btn-full" style="margin-top:6px" ${ready?'':'disabled'} onclick="empAct('/api/nuke/build',{from_treasury:true})">…paid from faction treasury</button>`:''}`;
+  return row(rs.has('nuclear_physics'),'Nuclear Physics')+row(rs.has('rocketry'),'Rocketry')+row(rs.has('manhattan'),'Manhattan Project')+row(has('uranium_mine'),'Uranium Mine')+row(has('enrichment'),'Enrichment Plant')+row(has('nuclear_plant'),'Nuclear Plant ⚛ (tiny meltdown risk — fallout lasts 72 hours)')+row(has('silo'),'Missile Silo (to launch)')+
+    `<div class="v4-sub" style="margin:6px 0">Warhead: <b>${fmtN(u.nuke_cost)}💰</b> + 300☢ + 3,000🔩 · you hold <b>${fmtN(u.nukes)}</b></div><label>Warhead quantity<input id="nuke-amount" type="number" class="form-input" min="1" step="1" value="1"></label><button class="btn btn-danger btn-full" ${ready?'':'disabled'} onclick="empAct('/api/nuke/build',{amount:+document.getElementById('nuke-amount').value})">☢ Build warheads</button>${u.faction?.is_leader?`<button class="btn btn-ghost btn-full" style="margin-top:6px" ${ready?'':'disabled'} onclick="empAct('/api/nuke/build',{from_treasury:true,amount:+document.getElementById('nuke-amount').value})">…paid from faction treasury</button>`:''}`;
 }
 async function empAct(path,body){const r=await api('POST',path,body);if(r.error)return toast(r.error,'error');toast(r.message||'Done','success');achToast(r);await refreshUser();await refreshAll();buildEmpire()}
 async function saveColor(){const r=await api('POST','/api/profile/color',{color:document.getElementById('pc-col').value});if(r.error)return toast(r.error,'error');toast(r.message,'success');await refreshUser();await refreshAll();buildEmpire()}

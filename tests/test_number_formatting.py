@@ -24,6 +24,7 @@ for (const [input, expected] of [[1000000,'1,000,000'],[9999,'9,999'],[-1234567,
   assert.equal(context.fmtPop(input), expected);
 }
 assert.equal(context.fmtN(1234567.25, 2), '1,234,567.25');
+assert.equal(context.fmtN(999.75), '999.75');
 assert.equal(vm.runInContext('fmtCost({money: 1234567.25})', context), '1,234,567.25money');
 '''
         result = subprocess.run([shutil.which('node'), '-e', script], cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True)
