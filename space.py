@@ -54,6 +54,9 @@ def resource_at(planet, x, y):
     return ('steel','gems','uranium','iridium')[(x*7+y*11+offset)%4]
 
 
+def iridium_price(planet):return SPACE_IRIDIUM_PRICE*SPACE_PLANETS[planet]['iridium_value_multiplier'] if planet else SPACE_IRIDIUM_PRICE
+
+
 def income(conn, uid):
     totals={}
     for row in conn.execute('SELECT business,quantity FROM space_businesses WHERE user_id=?',(uid,)):
@@ -82,11 +85,11 @@ def collect_space(conn, uid, timestamp=None, force=False):
     elif program['state']=='returning' and timestamp>=program['arrival']:
         cargo=json.loads(program['cargo']);visited=json.loads(program['visited'])
         for key,amount in cargo.items():
-            if key=='iridium':conn.execute('UPDATE users SET money=money+? WHERE id=?',(amount*SPACE_IRIDIUM_PRICE,uid))
+            if key=='iridium':conn.execute('UPDATE users SET money=money+? WHERE id=?',(amount*iridium_price(program['planet']),uid))
             else:conn.execute(f'UPDATE users SET {key}={key}+? WHERE id=?',(amount,uid))
         if program['planet'] not in visited:visited.append(program['planet'])
         conn.execute("UPDATE space_program SET state='earth',planet=NULL,arrival=0,cargo='{}',visited=?,last_mined=? WHERE user_id=?",(json.dumps(visited),timestamp,uid))
-        core['create_notification'](conn,uid,'info',f'Returned to Earth. Cargo delivered; iridium sold for {cargo.get("iridium",0)*SPACE_IRIDIUM_PRICE:,.0f} money.')
+        core['create_notification'](conn,uid,'info',f'Returned to Earth. Cargo delivered; iridium sold for {cargo.get("iridium",0)*iridium_price(program["planet"]):,.0f} money.')
     elif program['state']=='surface' and timestamp>program['last_mined'] and timestamp-program['last_mined']>=interval:
         cargo=json.loads(program['cargo']);production={}
         for tile in conn.execute('SELECT x,y,level FROM planet_tiles WHERE user_id=? AND planet=?',(uid,program['planet'])):
@@ -120,7 +123,7 @@ def status():
         reason=''
         if definition['previous'] and definition['previous'] not in visited:reason='Return from '+SPACE_PLANETS[definition['previous']]['name']+' first'
         elif level<definition['agency_level']:reason=f'Need {definition["agency_level"]} Space Agency levels'
-        planets.append(dict(key=key,**definition,available=enabled and not reason,lock_reason=reason))
+        planets.append(dict(key=key,**definition,available=enabled and not reason,lock_reason=reason,iridium_price=iridium_price(key)))
     holdings={r['business']:r['quantity'] for r in conn.execute('SELECT * FROM space_businesses WHERE user_id=?',(uid,))}
     tiles=[]
     if program and program['planet']:
@@ -134,7 +137,7 @@ def status():
                     rate=SPACE_RESOURCE_RATES[resource]*max(1,level)*SPACE_PLANETS[program['planet']]['yield_multiplier']))
     return jsonify(unlocked=enabled,program=program,planets=planets,tiles=tiles,businesses=SPACE_BUSINESSES,holdings=holdings,
         income=income(conn,uid) if enabled else {},grid_size=SPACE_GRID_SIZE,cargo_capacity=SPACE_CARGO_CAPACITY,
-        iridium_price=SPACE_IRIDIUM_PRICE,mine_max_level=SPACE_MINE_MAX_LEVEL,
+        iridium_price=iridium_price(program['planet']) if program else SPACE_IRIDIUM_PRICE,mine_max_level=SPACE_MINE_MAX_LEVEL,
         tutorial_required=bool(enabled and program and not program['tutorial_seen']))
 
 

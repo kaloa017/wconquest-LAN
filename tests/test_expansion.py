@@ -322,6 +322,12 @@ class ExpansionTests(unittest.TestCase):
         self.assertEqual(rows[0]['id'],cid);self.assertEqual(rows[0]['status'],'active')
         self.assertEqual(len(rows),21)
 
+    def test_game_editor_rejects_regular_players_and_moderators(self):
+        definition={'category':'buildings','item_key':'blocked_test','definition':{'name':'Forbidden','cost':{'money':1},'production':{'money':1000}}}
+        self.assertEqual(self.post('/api/admin/catalog',definition).status_code,403)
+        self.assertEqual(self.post('/api/admin/catalog',definition,self.login(self.mod)).status_code,403)
+        self.assertIsNone(self.conn.execute("SELECT 1 FROM live_catalog WHERE item_key='blocked_test'").fetchone())
+
     def test_rocket_cost_damage_cooldown_and_ownership(self):
         self.declare_war()
         self.tile('200,200',self.a,'rocket_pad');self.tile('200,201',self.b,'fort',2)

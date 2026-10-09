@@ -170,3 +170,17 @@ class SpaceTests(unittest.TestCase):
         self.assertTrue(all(r.status_code==200 for r in responses))
         self.assertEqual(self.balance(self.a,'money'),before+7*SPACE_IRIDIUM_PRICE)
         self.assertEqual(self.program()['cargo'],'{}')
+
+    def test_advanced_ore_value_scales_with_expensive_travel(self):
+        for planet,definition in SPACE_PLANETS.items():
+            production={}
+            for y in range(space.SPACE_GRID_SIZE):
+                for x in range(space.SPACE_GRID_SIZE):
+                    resource=space.resource_at(planet,x,y)
+                    production[resource]=production.get(resource,0)+space.SPACE_RESOURCE_RATES[resource]*definition['yield_multiplier']
+            # Even a mixed full-map hold covers monetary travel fees before
+            # initial infrastructure/material costs, rather than requiring an exploit.
+            ore=SPACE_CARGO_CAPACITY*production['iridium']/sum(production.values())
+            fees=definition['outbound']['money']+definition['return']['money']
+            self.assertGreater(ore*space.iridium_price(planet),fees)
+        self.assertGreater(space.iridium_price('europa'),space.iridium_price('mars'))

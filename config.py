@@ -640,13 +640,13 @@ SPACE_BUSINESSES = {
     'laboratory':{'name':'Orbital laboratory','icon':'🔬','cost':{'money':12000000,'steel':800,'uranium':150},'production':{'money':45000,'uranium':3}}
 }
 SPACE_PLANETS = {
-    'moon':{'name':'Moon','icon':'🌕','previous':None,'agency_level':1,'outbound':{'money':20000000,'steel':500,'oil':1000},'return':{'money':10000000,'oil':500},'travel_seconds':180,'yield_multiplier':1.0},
-    'mars':{'name':'Mars','icon':'🔴','previous':'moon','agency_level':2,'outbound':{'money':50000000,'steel':1000,'oil':2000},'return':{'money':30000000,'oil':1000},'travel_seconds':300,'yield_multiplier':1.8},
-    'europa':{'name':'Europa','icon':'🧊','previous':'mars','agency_level':3,'outbound':{'money':125000000,'steel':2500,'oil':5000},'return':{'money':75000000,'oil':2500},'travel_seconds':420,'yield_multiplier':3.0}
+    'moon':{'name':'Moon','icon':'🌕','previous':None,'agency_level':1,'outbound':{'money':20000000,'steel':500,'oil':1000},'return':{'money':10000000,'oil':500},'travel_seconds':180,'yield_multiplier':1.0,'iridium_value_multiplier':1},
+    'mars':{'name':'Mars','icon':'🔴','previous':'moon','agency_level':2,'outbound':{'money':50000000,'steel':1000,'oil':2000},'return':{'money':30000000,'oil':1000},'travel_seconds':300,'yield_multiplier':1.8,'iridium_value_multiplier':4},
+    'europa':{'name':'Europa','icon':'🧊','previous':'mars','agency_level':3,'outbound':{'money':125000000,'steel':2500,'oil':5000},'return':{'money':75000000,'oil':2500},'travel_seconds':420,'yield_multiplier':3.0,'iridium_value_multiplier':12}
 }
 SPACE_GRID_SIZE = 6  # Identical private maps for everyone; no shared ownership.
 SPACE_CARGO_CAPACITY = 10000
-SPACE_IRIDIUM_PRICE = 50000  # Exotic ore is automatically sold on returning to Earth.
+SPACE_IRIDIUM_PRICE = 150000  # Base sale price; later planets multiply its value.
 SPACE_MINE_COST = {'money':2000000,'steel':200}
 SPACE_MINE_MAX_LEVEL = 3  # Building tiers, not a purchase-quantity cap.
 SPACE_RESOURCE_RATES = {'steel':100,'uranium':20,'gems':40,'iridium':4}
