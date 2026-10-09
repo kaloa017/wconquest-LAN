@@ -1,4 +1,4 @@
-# World Conquest LAN — v6.5.0
+# World Conquest LAN — v6.5.1
 
 Persistent multiplayer strategy on a real-world grid: claim tiles, recruit armies,
 build an economy, research technology, form factions and fight for territory.
@@ -267,7 +267,8 @@ is atomic and occurs once. Returning from each planet unlocks the next, with hig
 agency-level requirements and greater mineral yields.
 
 Orbital contracts continue earning during travel. Accumulation is bounded to the
-existing two-hour offline window; server downtime never triggers unlimited catch-up.
+two-hour collection ceiling; the inactivity rule further limits unattended income
+to 30 minutes after the last interaction. Server downtime never triggers unlimited catch-up.
 Space figures are starting balance choices, configurable under `SPACE_*` in
 `config.py`; they have not been validated in a long-running multiplayer economy.
 The existing Space Program and Dyson Sphere wonders remain separate country bonuses.
@@ -356,3 +357,35 @@ These costs come from the commanding player's own balance, including when using
 shared armies or planes. Prices are in `MILITARY_TRAVEL_COST` in `config.py`.
 The queued land surcharge is `QUEUED_ADVANCE_COST_MULTIPLIER`; it never affects planes.
 No save migration is needed.
+# Activity, war protection and easier essentials (6.5.1)
+
+After 30 minutes without clicks, typing, scrolling or touch interaction, a
+Keep playing dialog pauses passive production. Server polling cannot renew the
+timer. Earth resources and barracks, orbital income, planetary mining and faction
+treasury payouts stop; paused time is discarded when the player confirms. Hidden
+tabs stop sending presence heartbeats. Online means a visible game page reported
+presence within three minutes and the account has not timed out from inactivity.
+This is not protection against attacks in an existing war. Deliberately automated
+activity is prohibited by the Terms.
+
+War is faction-based: every target member who logged in within the last 24 hours
+must currently be online for a new declaration. A member whose last login is at
+least 24 hours old does not block declaration while offline. Existing treaties,
+wars and combat checks are preserved. Time windows are configurable in `config.py`.
+
+Land prices use current territory count and current production, never lifetime
+purchases. The selected territory quote refreshes when the country changes. Losing
+land reduces these inputs; retaining income-producing buildings can still make
+the country rich and its purchases more expensive.
+
+Farms now cost 70 money / 15 wood and add 12 food per minute per level. Lumberyards
+cost 80 money / 10 metal and add 10 wood per minute per level; they can be built on
+any owned land. Existing buildings receive the new default output. Deliberately
+customized live Game editor definitions retain the host's chosen settings.
+
+Public `/terms` and `/privacy` pages read `docs/TERMS.md` and `docs/PRIVACY.md`.
+They are linked before login and inside the top-right Settings menu. The documents
+describe this implementation, not a certification of legal compliance. The host
+must supply deployment-specific identity/contact, retention details and provider
+arrangements when legally required. No phone number or contact address is added.
+Privacy requests are directed to the server host/admin.

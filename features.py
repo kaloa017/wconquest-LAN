@@ -806,5 +806,9 @@ def install_features(namespace):
     from economy import install as install_economy
     install_economy(namespace)
     from space import install as install_space
+    from activity import install as install_activity
+    install_activity(namespace)
+    from policies import install as install_policies
+    install_policies(app)
     install_space(namespace)
     if os.getenv('DISABLE_SCHEDULER')!='1':threading.Thread(target=scheduler_loop,name='game-scheduler',daemon=True).start()

@@ -56,10 +56,11 @@ class SpaceTests(unittest.TestCase):
         with patch.object(space.time,'time',return_value=stamp):r=self.post('/api/space/business',{'business':'satellite','quantity':1})
         self.assertEqual(r.status_code,200,r.json)
         self.assertAlmostEqual(self.balance(self.a,'money'),before-5000000+20000*20/60,places=2)
+        self.conn.execute('UPDATE player_activity SET last_activity=? WHERE user_id=?',(stamp,self.a))
         before=self.balance(self.a,'money');space.collect_space(self.conn,self.a,stamp+86400);self.conn.commit()
-        self.assertAlmostEqual(self.balance(self.a,'money')-before,40000*MAX_ACCUM_MINS,places=2)
+        self.assertAlmostEqual(self.balance(self.a,'money')-before,40000*30,places=2)
         space.collect_space(self.conn,self.a,stamp+86400);self.conn.commit()
-        self.assertAlmostEqual(self.balance(self.a,'money')-before,40000*MAX_ACCUM_MINS,places=2)
+        self.assertAlmostEqual(self.balance(self.a,'money')-before,40000*30,places=2)
 
     def test_expensive_round_trip_is_paid_once_and_cargo_delivered_once(self):
         self.unlock();before=self.balance(self.a,'money')

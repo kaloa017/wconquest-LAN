@@ -533,9 +533,9 @@ def online_users():
     rows = conn.execute('''
         SELECT u.username,u.color,u.is_admin,COUNT(t.id) territories
         FROM users u LEFT JOIN territories t ON t.owner_id=u.id
-        WHERE u.last_seen>? AND u.is_banned=0
+        WHERE u.is_banned=0 AND EXISTS(SELECT 1 FROM player_activity p WHERE p.user_id=u.id AND p.heartbeat>? AND p.paused=0 AND p.last_activity>?)
         GROUP BY u.id ORDER BY u.last_seen DESC
-    ''',(cutoff,)).fetchall()
+    ''',(cutoff,int(time.time())-INACTIVITY_SECONDS)).fetchall()
     conn.close()
     players = [{'username':r['username'],'color':r['color'],
                 'is_admin':bool(r['is_admin']),'territories':r['territories'],
@@ -1485,7 +1485,7 @@ def claim_price(conn, uid, terrain):
     rates, _, c = income_rates(conn, uid)
     inc = sum(rates[k]*RATE_VAL[k] for k in rates)
     rt, rate = TERRAIN_RES[terrain]
-    price = (CLAIM_COST + CLAIM_TILE_FACTOR*rate*RATE_VAL[rt] + CLAIM_INCOME_FACTOR*inc) * c['ide'].get('claim', 1.0) * c['religion'].get('claim', 1) * (0.8 if 'banking' in c['rs'] else 1.0)
+    price = (CLAIM_COST + CLAIM_OWNED_TILE_FACTOR*mc + CLAIM_TILE_FACTOR*rate*RATE_VAL[rt] + CLAIM_INCOME_FACTOR*inc) * c['ide'].get('claim', 1.0) * c['religion'].get('claim', 1) * (0.8 if 'banking' in c['rs'] else 1.0)
     price = max(CLAIM_COST, int(price))
     cost = {'money': price, 'wood': max(1, int(price*CLAIM_WOOD_RATIO/4)), 'food': max(1, int(price*CLAIM_FOOD_RATIO/2))}
     if mc >= 15: cost['metal'] = max(1, int(price*CLAIM_METAL_RATIO/6))
@@ -1523,19 +1523,21 @@ def casualty_mult(conn, uid, rsch):
     return m
 
 def auto_collect(uid, conn):
-    now = int(time.time()); c = yield_ctx(conn, uid)
+    from activity import production_cutoff
+    wall_now=int(time.time());now=production_cutoff(conn,uid,wall_now);c=yield_ctx(conn,uid)
     rows = conn.execute('SELECT t.grid_key,t.terrain,t.last_collected,b.type bt,b.level bl FROM territories t LEFT JOIN buildings b ON b.grid_key=t.grid_key WHERE t.owner_id=?', (uid,)).fetchall()
     totals = {k: 0.0 for k in RATE_VAL}; troops = 0.0; upd = []; plants = []
     for r in rows:
         el = now - (r['last_collected'] or 0)
-        if el < AUTO_COLLECT_CD: continue
+        if el < AUTO_COLLECT_CD and now==wall_now: continue
+        if el<=0:continue
         mins = min(el/60., MAX_ACCUM_MINS)
         for k, v in tile_yield(c, r['terrain'], r['bt'], r['bl']).items(): totals[k] += v*mins
         if r['bt'] == 'barracks': troops += 3*r['bl']*mins
         if r['bt'] == 'nuclear_plant': plants.append((r['grid_key'], r['bl'], mins))
         upd.append(r['grid_key'])
     if upd:
-        for k in upd: conn.execute('UPDATE territories SET last_collected=? WHERE grid_key=?', (now, k))
+        for k in upd: conn.execute('UPDATE territories SET last_collected=? WHERE grid_key=?', (wall_now, k))
         sets = ','.join(f'{r}={r}+?' for r in totals)
         conn.execute(f'UPDATE users SET {sets} WHERE id=?', list(totals.values())+[uid])
         if troops >= 1: pool_add(conn, uid, 'army', int(troops))
@@ -1595,8 +1597,11 @@ def faction_tick(conn, fid):
     rate = 0.015 if conn.execute("SELECT 1 FROM faction_research WHERE faction_id=? AND tech='f_bank'", (fid,)).fetchone() else 0.01
     t = f['treasury']; paid = 0.0
     for _ in range(n): p = t*rate; t -= p; paid += p
-    mem = [x['id'] for x in conn.execute('SELECT id FROM users WHERE faction_id=?', (fid,))]
-    if mem and paid > 0: conn.execute(f'UPDATE users SET money=money+? WHERE id IN ({_in(mem)})', [paid/len(mem)] + mem)
+    from activity import state as activity_state
+    members=[x['id'] for x in conn.execute('SELECT id FROM users WHERE faction_id=?',(fid,))]
+    mem=[uid for uid in members if not activity_state(conn,uid,now)['inactive']]
+    if mem and paid>0:conn.execute(f'UPDATE users SET money=money+? WHERE id IN ({_in(mem)})',[paid/len(members)]+mem)
+    if members:t+=paid*(len(members)-len(mem))/len(members)
     conn.execute('UPDATE factions SET treasury=?,last_tick=? WHERE id=?', (t, f['last_tick'] + n*600, fid))
 
 def rel_between(conn, fa, fb, kind=None, status='active'):
@@ -2309,6 +2314,9 @@ def war_declare():
     t = conn.execute('SELECT * FROM factions WHERE id=?', (tid,)).fetchone()
     if not t or tid == f['id']: conn.close(); return jsonify({'error': 'Invalid target faction'}), 400
     if rel_between(conn, f['id'], tid, status='active'): conn.close(); return jsonify({'error': 'You already have a treaty or war with them — end it first'}), 400
+    from activity import war_protection
+    protection=war_protection(conn,tid)
+    if protection:conn.close();return jsonify(error=protection),400
     conn.execute("INSERT INTO faction_rel(a,b,kind,status,ts) VALUES(?,?,'war','active',?)", (f['id'], tid, int(time.time())))
     announce(conn, f'⚔ WAR! [{f["tag"]}] {f["name"]} has declared war on [{t["tag"]}] {t["name"]}!')
     _notify_faction(conn, tid, f'⚔ [{f["tag"]}] declared WAR on your faction! No time or capture limit. Either side can end the war or surrender.'); _notify_faction(conn, f['id'], f'⚔ We are at war with [{t["tag"]}]! No time or capture limit. Either side can end the war or surrender.')
@@ -2706,8 +2714,9 @@ from expansion import migrate as migrate_v12
 from economy import migrate as migrate_v13
 from expansion import migrate_orders as migrate_v14
 from space import migrate as migrate_v15
+from activity import migrate as migrate_v16
 backup_before_upgrade(DB_PATH)
-init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db); migrate_v12(get_db); migrate_v13(get_db); migrate_v14(get_db); migrate_v15(get_db)
+init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db); migrate_v12(get_db); migrate_v13(get_db); migrate_v14(get_db); migrate_v15(get_db);migrate_v16(get_db)
 install_features(globals())
 
 if __name__ == '__main__':

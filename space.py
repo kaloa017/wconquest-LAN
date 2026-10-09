@@ -70,8 +70,10 @@ def collect_space(conn, uid, timestamp=None, force=False):
     row=conn.execute('SELECT * FROM space_program WHERE user_id=?',(uid,)).fetchone()
     if not row:return
     program=dict(row)
-    elapsed=timestamp-program['collected']
-    interval=0 if force else SPACE_COLLECTION_INTERVAL
+    from activity import production_cutoff
+    cutoff=production_cutoff(conn,uid,timestamp)
+    elapsed=cutoff-program['collected']
+    interval=0 if force or cutoff<timestamp else SPACE_COLLECTION_INTERVAL
     if elapsed>0 and elapsed>=interval:
         minutes=min(MAX_ACCUM_MINS,elapsed/60)
         # Removing an agency pauses orbital income, without accumulating a backlog.
@@ -90,12 +92,12 @@ def collect_space(conn, uid, timestamp=None, force=False):
         if program['planet'] not in visited:visited.append(program['planet'])
         conn.execute("UPDATE space_program SET state='earth',planet=NULL,arrival=0,cargo='{}',visited=?,last_mined=? WHERE user_id=?",(json.dumps(visited),timestamp,uid))
         core['create_notification'](conn,uid,'info',f'Returned to Earth. Cargo delivered; iridium sold for {cargo.get("iridium",0)*iridium_price(program["planet"]):,.0f} money.')
-    elif program['state']=='surface' and timestamp>program['last_mined'] and timestamp-program['last_mined']>=interval:
+    elif program['state']=='surface' and cutoff>program['last_mined'] and cutoff-program['last_mined']>=interval:
         cargo=json.loads(program['cargo']);production={}
         for tile in conn.execute('SELECT x,y,level FROM planet_tiles WHERE user_id=? AND planet=?',(uid,program['planet'])):
             key=resource_at(program['planet'],tile['x'],tile['y'])
             production[key]=production.get(key,0)+SPACE_RESOURCE_RATES[key]*tile['level']*SPACE_PLANETS[program['planet']]['yield_multiplier']
-        minutes=min(MAX_ACCUM_MINS,(timestamp-program['last_mined'])/60)
+        minutes=min(MAX_ACCUM_MINS,(cutoff-program['last_mined'])/60)
         total=sum(production.values())*minutes
         available=max(0,SPACE_CARGO_CAPACITY-sum(cargo.values()))
         scale=min(1,available/total) if total else 0

@@ -524,7 +524,7 @@ CLAIM_METAL_RATIO = 0.02
 NUKE_MONEY = 100000000
 
 # Request counters/presence are batched; purchases/combat commit immediately.
-VERSION = '6.5.0'
+VERSION = '6.5.1'
 SAVE_INTERVAL = 30
 SCHEDULER_INTERVAL = 30
 REQUESTS_PER_MINUTE = 0  # 0 = unlimited, until changed in the admin panel.
@@ -577,8 +577,8 @@ IDEOLOGIES.update({
  'constitutionalism': {'name':'Constitutional monarchy','icon':'👑','def':1.06,'money':1.06,'troop':1.08,'desc':'Defense and money +6%, troops +8% cost.'},
 })
 BUILDINGS.update({
- 'farm': {'name':'Farm','icon':'🌾','desc':'+6 food/min per level','cost':{'money':90,'wood':25},'production':{'food':6}},
- 'lumberyard': {'name':'Lumberyard','icon':'🪵','desc':'+5 wood/min per level; forests only','cost':{'money':110,'metal':15},'terrain':['forest'],'production':{'wood':5}},
+ 'farm': {'name':'Farm','icon':'🌾','desc':'+12 food/min per level','cost':{'money':70,'wood':15},'production':{'food':12}},
+ 'lumberyard': {'name':'Lumberyard','icon':'🪵','desc':'+10 wood/min per level; plant and harvest trees on your land','cost':{'money':80,'metal':10},'production':{'wood':10}},
  'refinery': {'name':'Refinery','icon':'🛢','desc':'+3 oil/min per level','cost':{'money':220,'metal':50},'needs':'refining','production':{'oil':3}},
  'solar_farm': {'name':'Solar farm','icon':'☀','desc':'+8 money/min per level without meltdown risk','cost':{'money':350,'metal':70},'production':{'money':8}},
  'radar_station': {'name':'Radar station','icon':'📡','desc':'+1% national defense per level, maximum +9%','cost':{'money':450,'metal':80,'oil':15},'needs':'radar','def_per_level':.01},
@@ -656,3 +656,7 @@ SPACE_MINE_COST = {'money':2000000,'steel':200}
 SPACE_MINE_MAX_LEVEL = 3  # Building tiers, not a purchase-quantity cap.
 SPACE_RESOURCE_RATES = {'steel':100,'uranium':20,'gems':40,'iridium':4}
 SPACE_COLLECTION_INTERVAL = 30
+INACTIVITY_SECONDS = 30*60
+WAR_RECENT_LOGIN_SECONDS = 24*60*60
+ONLINE_SECONDS = 180
+CLAIM_OWNED_TILE_FACTOR = .5  # Current owned tiles only, never lifetime claims.

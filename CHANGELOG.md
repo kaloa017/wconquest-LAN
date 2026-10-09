@@ -156,3 +156,19 @@
 - Added Raspberry Pi, Apache, Nginx and no-port-forwarding deployment instructions.
 
 Hosts: edit this file and increment VERSION in config.py for the next popup.
+# 6.5.1 — activity protection and easier production
+
+- Production pauses after 30 minutes without human interaction. Keep playing resumes
+  Earth resources/troops, orbital income and planetary mining without an idle backlog.
+- Polling reports presence without renewing the production timer. Hidden tabs do
+  not keep online presence alive. Timed-out/paused actions require confirmation first.
+- New wars are blocked when any target faction member logged in within the last
+  24 hours and is offline. Members with older logins can be targeted while offline.
+  Existing wars continue; this is declaration protection, not combat immunity.
+- Land prices reflect current owned territory and current production. Open territory
+  quotes refresh when the country changes, including after lost land.
+- Farms now produce 12 food/minute/level and cost 70 money plus 15 wood.
+- Lumberyards now produce 10 wood/minute/level and cost 80 money plus 10 metal;
+  they can be built on any owned land.
+- Added public Terms and Privacy pages, linked from login and top-right Settings.
+- Save-compatible schema 16 adds activity/login/presence tracking with a pre-upgrade backup.

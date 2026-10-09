@@ -99,7 +99,7 @@ buildTerritoryPanel=function(key,t,container){
 };
 function airstrikeHotkey(event){
   if(event.key.toLowerCase()!=='f'||event.repeat||event.ctrlKey||event.altKey||event.metaKey||airstrikeBusy||battlePlan||!currentUser||!selectedKey)return;
-  if(event.target.closest('input,textarea,select,[contenteditable="true"]')||document.querySelector('.v6-overlay,.modal-overlay.open,#tut.open,#battle-report.open'))return;
+  if(event.target.closest('input,textarea,select,[contenteditable="true"]')||document.querySelector('.v6-overlay,.modal-overlay.open,#tut.open,#battle-report.open,.activity-overlay'))return;
   const button=document.querySelector('[data-airstrike="1"]');if(!button||button.disabled||!button.getClientRects().length)return;
   event.preventDefault();button.click();
 }

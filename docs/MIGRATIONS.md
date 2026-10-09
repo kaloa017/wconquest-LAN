@@ -166,3 +166,32 @@ optionally accepts the displayed version, with an empty body remaining compatibl
 Restart your server and reload browsers after installing the code. Existing older
 space-unaware code should use the pre-upgrade backup when rolling back; do not run
 an older version against newly earned space progress.
+## 6.5.1 — activity tracking (schema 16)
+
+The upgrade makes a consistent SQLite backup named
+`backups/game-before-v16-<timestamp>.db` before modifying an older save. Schema 16
+adds `player_activity` with last human activity, last successful login, presence
+heartbeat and a persisted paused flag. Existing country data, accounts, armies,
+space progress and treaties are preserved. There is no automatic reset.
+
+Existing accounts receive one 30-minute activity grace period on migration. Since
+older saves have no successful-login timestamp, `users.last_seen` is used once as
+a conservative approximation for the 24-hour declaration check. New successful
+logins store the actual timestamp. New accounts create their activity row lazily.
+Repeated migrations do not revive paused accounts or overwrite activity state.
+An ownership-change trigger discards unearned backlog when paused land changes
+hands, preventing trading or moderator transfers from reviving that production.
+
+Saved live farm/lumberyard definitions are updated only when they exactly match
+the prior shipped defaults. Other custom building definitions remain intact.
+
+Behavior changes: income no longer accumulates through indefinite offline time;
+confirmation discards paused production. Online presence uses visible-page
+heartbeats instead of general request statistics. New faction war declarations
+require every recently logged-in target member to be online. Existing wars remain
+active. Claim pricing adds a current-owned-tile component of 0.5 money before
+discounts. Default farm/lumberyard output doubles and their costs decrease.
+
+Restart one server process and reload browsers when ready. Hosts should edit
+the new Terms/Privacy documents for their deployment. Policy pages do not record
+an acceptance checkbox or introduce an account-blocking consent migration.

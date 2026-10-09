@@ -21,9 +21,9 @@ let browser;
   await page.goto('https://game.test');await page.evaluate(async user=>{await ready;await startSession(user)},fixtures['/api/me'].data);
   await page.locator('#v6-dialog').waitFor();
   assert.equal(await page.locator('#v6-dialog .v6-dialog').evaluate(el=>el.scrollTop),0);
-  const notes=await page.locator('#v6-dialog pre').textContent();assert(notes.includes('# 6.5.0'));assert(!notes.includes('# 6.3.6'));checks.push('Changelog includes unseen releases and opens at top');
+  const notes=await page.locator('#v6-dialog pre').textContent();assert(notes.includes('# '+fixtures['/api/changelog'].data.version));assert(!notes.includes('# 6.3.6'));checks.push('Changelog includes unseen releases and opens at top');
   await page.locator('#text-dialog-done').click();
-  assert(posts.some(p=>p.path==='/api/changelog/seen'&&p.data.version==='6.5.0'));
+  assert(posts.some(p=>p.path==='/api/changelog/seen'&&p.data.version===fixtures['/api/changelog'].data.version));
   fixtures['/api/notifications']={status:200,data:[{id:901,type:'info',message:'An unread notification',created_at:'2026-10-09',data:null}]};
   await page.evaluate(()=>pollNotifications());
   assert.equal(await page.locator('#notification-count').textContent(),' 1');
@@ -83,6 +83,17 @@ let browser;
   const program=fixtures['/api/space'].data.program;program.state='returning';program.arrival=Math.ceil(Date.now()/1000)+180;program.remaining_seconds=180;
   await page.evaluate(()=>buildSpace());await page.locator('#space-countdown').waitFor();const before=await page.locator('#space-countdown').textContent();await page.waitForFunction(before=>document.getElementById('space-countdown').textContent!==before,before);checks.push('Travel countdown updates while expedition controls are locked');
   await page.evaluate(()=>drawPrivateBattles([{id:99,attacker:998,defender:997,status:'active'}]));assert.equal(await page.locator('.private-battle-icon').count(),0);checks.push('Client also rejects markers for unrelated participants');
+  for(const width of [320,390,768,1440]){
+    await page.setViewportSize({width,height:800});await page.evaluate(()=>showActivityPause());
+    await page.locator('#activity-resume').waitFor();
+    const bounds=await page.locator('#activity-resume').boundingBox();assert(bounds.x>=0&&bounds.x+bounds.width<=width&&bounds.y+bounds.height<=800);
+    assert.equal(await page.locator('#game-screen').evaluate(el=>el.inert),true);
+    await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>document.activeElement.id),'activity-resume');
+    await page.screenshot({path:path.join(output,`inactivity-${width}.png`)});
+    await page.locator('#activity-resume').click();await page.waitForFunction(()=>!document.getElementById('activity-paused'));
+    assert.equal(await page.locator('#game-screen').evaluate(el=>el.inert),false);
+  }
+  assert(posts.some(p=>p.path==='/api/activity/resume'));checks.push('Inactivity dialog fits every screen size and resumes only on button confirmation');
   await page.evaluate(()=>openAdmin());await page.waitForTimeout(100);await page.evaluate(()=>closeAdmin());
 
   await page.evaluate(()=>stopPolling());assert.equal(await page.locator('.private-battle-icon').count(),0);checks.push('Session cleanup removes private battle markers');
