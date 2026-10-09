@@ -87,7 +87,7 @@ function adjKeys(gl,gg){const r=[];for(let dl=-1;dl<=1;dl++)for(let dg=-1;dg<=1;
 function myAdjKeys(gl,gg){return adjKeys(gl,gg).filter(k=>territories[k]?.owner_id===currentUser?.id)}
 function cellDist(k1,k2){const[a,b]=parseKey(k1),[c,d]=parseKey(k2);return Math.max(Math.abs(a-c),Math.abs(b-d))}
 function hexRgba(hex,a){const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},${a})`}
-function fmtPop(n){if(!n)return'0';if(n>=1000000)return(n/1e6).toFixed(1)+'M';if(n>=1000)return(n/1000).toFixed(0)+'K';return String(n)}
+function fmtPop(n){return fmtN(n)}
 function getRank(tc){let r=RANKS[0];for(const x of RANKS)if(tc>=x.min)r=x;return r}
 function isMobile(){return window.innerWidth<=768}
 
@@ -1503,7 +1503,7 @@ async function reportWater(key){const w=waterMap(key);if(w&&currentUser)await ap
 const dist=(a,b)=>cellDist(a,b);
 const myTiles=()=>Object.keys(territories).filter(k=>territories[k].owner_id===currentUser?.id);
 const resIcon={money:'💰',wood:'🌲',metal:'⚙',oil:'🛢',food:'🌾'};
-const fmtCost=c=>Object.entries(c).map(([k,v])=>v+resIcon[k]).join(' ');
+const fmtCost=c=>Object.entries(c).map(([k,v])=>fmtN(v,2)+resIcon[k]).join(' ');
 function bldCost(type,lvl){let c={...(BLD[type]?.costs?.[lvl-1]||{})};if((currentUser?.research||[]).includes('engineering'))for(const k in c)c[k]=Math.floor(c[k]*.8);return c}
 function chipsOf(list){return`<div class="chips">${(list||[]).map(([n,m])=>`<span class="chip ${m>1.001?'good':m<.999?'bad':''}">${esc(n)} ×${(+m).toFixed(2)}</span>`).join('')}</div>`}
 function moraleLabel(m){return m>=75?'🔥 Fired up':m>=45?'🙂 Steady':m>=25?'😟 Shaky':'😱 Broken'}
@@ -1680,7 +1680,7 @@ function buildTerritoryPanel(key,t,container){
   document.querySelectorAll('[data-pv]').forEach(el=>{
     const kind=el.dataset.pv,sl=document.getElementById('sl-'+kind),sel=document.getElementById('src-'+kind);
     const go=()=>previewBattle(kind,key);
-    if(sl)sl.oninput=()=>{document.getElementById('sv-'+kind).textContent=sl.value;clearTimeout(sl._t);sl._t=setTimeout(go,200)};
+    if(sl)sl.oninput=()=>{document.getElementById('sv-'+kind).textContent=fmtN(sl.value);clearTimeout(sl._t);sl._t=setTimeout(go,200)};
     if(sel)sel.onchange=go;go();
   });
 }
@@ -1857,7 +1857,7 @@ Object.assign(SELL_RATES,{steel:12,uranium:40,gems:60});
 Object.assign(RES_CFG,{steel:{icon:'🔩',label:'Steel'},uranium:{icon:'☢',label:'Uranium'},gems:{icon:'💎',label:'Gems'}});
 Object.assign(NOTIF_ICONS,{loan_request:'🚢',trade_request:'⚖',merge_request:'🧬',faction_ally:'🤝'});
 Object.assign(resIcon,{steel:'🔩',uranium:'☢',gems:'💎'});
-function fmtN(n){n=+n||0;const a=Math.abs(n);if(a>=1e9)return(n/1e9).toFixed(2)+'B';if(a>=1e6)return(n/1e6).toFixed(2)+'M';if(a>=1e4)return(n/1e3).toFixed(1)+'k';return String(Math.round(n))}
+function fmtN(n,decimals=0){n=Number(n);if(!Number.isFinite(n))return'0';return n.toLocaleString('en-US',{maximumFractionDigits:decimals})}
 const groupTiles=()=>Object.keys(territories).filter(k=>{const t=territories[k];return t.owner_id===currentUser?.id||(currentUser?.faction&&t.tag&&t.tag===currentUser.faction.tag)});
 const groupAdj=(gl,gg)=>{const s=new Set(groupTiles());return adjKeys(gl,gg).filter(k=>s.has(k))};
 
@@ -2013,14 +2013,14 @@ function buildTerritoryPanel(key,t,container){
   put(info,`<div class="tp-actions">${a}</div>`);
   const bn=document.getElementById('build-n');if(bn)bn.oninput=()=>{document.getElementById('build-cost').textContent=(Math.max(1,+bn.value||1))*u.troop_cost};
   document.querySelectorAll('[data-pv]').forEach(el=>{const kind=el.dataset.pv,sl=document.getElementById('sl-'+kind),sel=document.getElementById('src-'+kind),go=()=>previewBattle(kind,key);
-    if(sl)sl.oninput=()=>{document.getElementById('sv-'+kind).textContent=sl.value;clearTimeout(sl._t);sl._t=setTimeout(go,200)};if(sel)sel.onchange=go;go()});
+    if(sl)sl.oninput=()=>{document.getElementById('sv-'+kind).textContent=fmtN(sl.value);clearTimeout(sl._t);sl._t=setTimeout(go,200)};if(sel)sel.onchange=go;go()});
 }
 const setBuildN=n=>{const e=document.getElementById('build-n');if(e){e.value=Math.max(1,n);e.oninput&&e.oninput()}};
 function atkBlock(kind,key,o){
   const opts=o.srcs&&o.srcs.length>1?`<select class="input-sm" id="src-${kind}" style="width:100%;margin-bottom:6px">${o.srcs.map(k=>{const[a,b]=parseKey(k);return`<option value="${k}">${(a*GRID).toFixed(1)}°, ${(b*GRID).toFixed(1)}° · ${dist(k,key)} cells${territories[k]?.owner_id!==currentUser.id?' · '+esc(territories[k].owner):''}</option>`}).join('')}</select>`:`<input type="hidden" id="src-${kind}" value="${o.from}"/>`;
   const d0=Math.max(1,Math.min(o.max,o.def));
   return`<div class="v4-card" data-pv="${kind}"><h4 style="color:${o.color}">${o.label}</h4>${opts}<input type="range" id="sl-${kind}" min="1" max="${Math.max(1,o.max)}" value="${d0}"/>
-    <div class="v4-row"><span class="grow"><b id="sv-${kind}">${d0}</b> ${o.unit} <span class="v4-sub">of ${fmtN(o.max)}</span></span></div><div id="pv-${kind}" style="margin:8px 0"><div class="v4-sub">Scouting…</div></div>
+    <div class="v4-row"><span class="grow"><b id="sv-${kind}">${fmtN(d0)}</b> ${o.unit} <span class="v4-sub">of ${fmtN(o.max)}</span></span></div><div id="pv-${kind}" style="margin:8px 0"><div class="v4-sub">Scouting…</div></div>
     <button class="btn btn-danger btn-full atk-btn" ${o.hk?'data-hk="1"':''} onclick="doAttack('${kind}','${key}')">${o.btn}${o.hk?' <span class="keybind-hint">A</span>':''}</button></div>`;
 }
 async function previewBattle(kind,key){

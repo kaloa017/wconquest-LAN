@@ -1,4 +1,4 @@
-# World Conquest LAN — v6.3.6
+# World Conquest LAN — v6.4.1
 
 Persistent multiplayer strategy on a real-world grid: claim tiles, recruit armies,
 build an economy, research technology, form factions and fight for territory.

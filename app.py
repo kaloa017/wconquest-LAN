@@ -1362,7 +1362,7 @@ import re
 def build_cost(btype, level):
     mult = BUILD_LEVEL_MULTIPLIERS[level]
     return {k: int(v*mult) for k, v in BUILDINGS[btype]['cost'].items()}
-def fmt_cost(cost): return ' '.join(f'{v}{RES_EMOJI[k]}' for k, v in cost.items())
+def fmt_cost(cost): return ' '.join(f'{v:,}{RES_EMOJI[k]}' for k, v in cost.items())
 
 def migrate_v5():
     conn = get_db(); c = conn.cursor()
