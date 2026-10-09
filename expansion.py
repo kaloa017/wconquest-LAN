@@ -97,7 +97,7 @@ def moderation_status(): return jsonify(timeout=timeout_info(user(db(),session['
 def protect_target(conn, uid):
     actor = user(conn, session['user_id']); target = user(conn, uid)
     if not target: abort(404)
-    if uid == actor['id'] or target['is_admin'] or (target['is_moderator'] and not actor['is_admin']):
+    if uid == actor['id'] or target['is_admin'] or (target['is_moderator'] and not actor['is_admin'] and (actor['is_moderator'] != 1 or target['is_moderator'] == 1)):
         abort(403, description='You cannot moderate yourself or a player of equal or higher rank.')
     return target
 
@@ -124,11 +124,16 @@ def set_role():
     if not target or target['is_admin']: raise ValueError('Choose a non-admin player')
     enabled=d.get('enabled')
     if not isinstance(enabled,bool): raise ValueError('Choose enabled or disabled')
-    conn.execute('UPDATE users SET is_moderator=? WHERE id=?',(enabled,uid))
-    features.audit(conn,'moderator_role',uid,dict(enabled=enabled))
+    role=d.get('role','senior')
+    if role not in ('moderator','senior'): raise ValueError('Choose moderator or senior')
+    level=(2 if role=='moderator' else 1) if enabled else 0
+    conn.execute('UPDATE users SET is_moderator=? WHERE id=?',(level,uid))
+    features.audit(conn,'moderator_role',uid,dict(enabled=enabled,role=role))
     return jsonify(success=True,message='Moderator role updated')
 
 def takeover():
+    actor_user=user(db(),session['user_id'])
+    if not actor_user['is_admin'] and actor_user['is_moderator'] != 1: abort(403)
     conn=db(); d=features.body(); stage=number(d.get('stage'),1,3); actor=session['user_id']
     conn.execute('DELETE FROM moderation_confirmations WHERE expires<?',(now(),))
     if stage==1:

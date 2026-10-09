@@ -78,6 +78,18 @@ class ExpansionTests(unittest.TestCase):
         self.assertGreater(self.balance(self.a,'muted_until'),time.time())
         self.assertEqual(self.post('/api/chat/send',{'channel':'global','message':'hello'}).status_code,403)
 
+    def test_weaker_moderator_has_only_moderation_powers(self):
+        admin=self.login(self.admin)
+        self.assertEqual(self.post('/api/admin/moderator',{'user_id':self.b,'enabled':True,'role':'moderator'},admin).status_code,200)
+        weak=self.login(self.b)
+        self.assertEqual(self.balance(self.b,'is_moderator'),2)
+        self.assertEqual(self.post('/api/moderation/action',{'user_id':self.a,'action':'mute','minutes':5,'message':'Chat rules'},weak).status_code,200)
+        self.assertEqual(self.post('/api/moderation/action',{'user_id':self.mod,'action':'timeout','minutes':5,'message':'Chat rules'},weak).status_code,403)
+        self.assertEqual(self.post('/api/moderation/action',{'user_id':self.admin,'action':'timeout','minutes':5,'message':'Chat rules'},weak).status_code,403)
+        self.assertEqual(self.post('/api/moderation/takeover',{'stage':1},weak).status_code,403)
+        self.assertEqual(self.post('/api/admin/moderator',{'user_id':self.a,'enabled':True},weak).status_code,403)
+        self.assertEqual(self.post('/api/admin/catalog',{'category':'buildings','key':'blocked','definition':{}},weak).status_code,403)
+
     def test_takeover_requires_ordered_single_use_actor_bound_confirmations(self):
         self.tile('200,200',self.a,'farm',2);moderator=self.login(self.mod)
         r=self.post('/api/moderation/takeover',{'stage':1,'grid_key':'200,200','to_id':self.b,'reason':'Resolve disputed land'},moderator);self.assertEqual(r.status_code,200,r.json);token=r.json['token']
