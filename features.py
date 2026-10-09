@@ -288,7 +288,7 @@ def profile_recovery():
 def bootstrap():
     session.setdefault('csrf',secrets.token_urlsafe(32))
     return jsonify(csrf=session['csrf'],version=VERSION,community=COMMUNITY,ideologies=IDEOLOGIES,religions=RELIGIONS,
-        faction_colors=FACTION_COLORS,prices={'boat':{'money':BOAT_COST_M,'wood':BOAT_COST_W},'plane':{'money':PLANE_COST_M,'metal':PLANE_COST_X,'oil':PLANE_COST_O},'voyage_money':VOYAGE_MONEY,'voyage_wood':VOYAGE_WOOD},stock_fee=STOCK_FEE,stock_interval=STOCK_INTERVAL)
+        military_travel_cost=MILITARY_TRAVEL_COST,faction_colors=FACTION_COLORS,prices={'boat':{'money':BOAT_COST_M,'wood':BOAT_COST_W},'plane':{'money':PLANE_COST_M,'metal':PLANE_COST_X,'oil':PLANE_COST_O},'voyage_money':VOYAGE_MONEY,'voyage_wood':VOYAGE_WOOD},stock_fee=STOCK_FEE,stock_interval=STOCK_INTERVAL)
 
 def map_snapshot(conn):
     am=army_map(conn)

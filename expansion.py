@@ -208,6 +208,9 @@ def start_campaign():
     troops=number(d.get('troops')); tactic=d.get('tactic','balanced')
     if tactic not in TACTICS: raise ValueError('Unknown tactic')
     if core['pool_get'](conn,uid,'army')<troops: raise ValueError('Not enough available troops')
+    travel_cost=core['military_travel_cost']('land',troops)
+    if not core['can_afford'](user(conn,uid),travel_cost):raise ValueError('Not enough money and oil to move this force: '+', '.join(f'{v:,} {k}' for k,v in travel_cost.items()))
+    core['pay'](conn,uid,travel_cost)
     core['pool_add'](conn,uid,'army',-troops)
     target=conn.execute('SELECT owner_id FROM territories WHERE grid_key=?',(tk,)).fetchone(); defender=target['owner_id'] if target else None
     cur=conn.execute('INSERT INTO campaigns(attacker,defender,from_key,target_key,troops,initial_troops,tactic,started,last_tick,route_json,origin_faction) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
@@ -270,7 +273,10 @@ def tick_campaigns(conn, timestamp=None):
                     next_key=route[0]
                     blocked=core['_target_checks'](conn,c['attacker'],next_key)
                     busy=conn.execute("SELECT 1 FROM campaigns WHERE target_key=? AND status='active' AND id!=?",(next_key,c['id'])).fetchone()
+                    travel_cost=core['military_travel_cost']('land',c['troops'])
+                    if not blocked and not core['can_afford'](user(conn,c['attacker']),travel_cost):blocked='not enough money and oil for troop travel'
                     if not blocked and not busy:
+                        core['pay'](conn,c['attacker'],travel_cost)
                         next_tile=conn.execute('SELECT owner_id FROM territories WHERE grid_key=?',(next_key,)).fetchone()
                         defender=next_tile['owner_id'] if next_tile else None
                         conn.execute('UPDATE campaigns SET from_key=?,target_key=?,defender=?,attack_org=?,defense_org=100,posture="hold",progress=0,route_json=? WHERE id=?',

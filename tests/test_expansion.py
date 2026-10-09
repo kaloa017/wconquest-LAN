@@ -4,7 +4,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 from test_upgrade import app, features
 import expansion
 
@@ -257,12 +257,56 @@ class ExpansionTests(unittest.TestCase):
         r=self.post('/api/attack',{'from_key':'200,200','target_key':'200,201','target_keys':['200,201','200,202'],'troops':1000})
         self.assertEqual(r.status_code,200,r.json)
         stamp=int(time.time())
-        for tick in range(1,35):expansion.tick_campaigns(self.conn,stamp+tick*3)
+        payment=Mock(wraps=app.pay)
+        with patch.dict(expansion.core,pay=payment):
+            for tick in range(1,35):expansion.tick_campaigns(self.conn,stamp+tick*3)
+        self.assertEqual(payment.call_count,1)
+        charged=payment.call_args.args[2]
+        self.assertGreater(charged['money'],0);self.assertGreater(charged['oil'],0)
         self.conn.commit()
         self.assertEqual(self.conn.execute('SELECT COUNT(*) FROM territories WHERE owner_id=?',(self.a,)).fetchone()[0],3)
         self.assertEqual(self.conn.execute('SELECT COUNT(*) FROM campaigns').fetchone()[0],1)
         c=self.conn.execute('SELECT * FROM campaigns').fetchone()
         self.assertEqual(c['status'],'victory');self.assertEqual(app.pool_get(self.conn,self.a,'army'),c['troops'])
+        self.assertLess(self.balance(self.a,'oil'),9990)
+
+    def test_land_travel_requires_both_resources_before_reserving_troops(self):
+        self.tile('200,200',self.a)
+        for resource in ('money','oil'):
+            self.conn.execute('UPDATE users SET money=100000,oil=10000 WHERE id=?',(self.a,))
+            self.conn.execute(f'UPDATE users SET {resource}=0 WHERE id=?',(self.a,));self.conn.commit()
+            before={key:self.balance(self.a,key) for key in ('money','oil','army')}
+            r=self.post('/api/attack',{'from_key':'200,200','target_key':'200,201','troops':1000})
+            self.assertEqual(r.status_code,400,r.json)
+            self.assertEqual(before,{key:self.balance(self.a,key) for key in before})
+            self.assertEqual(self.conn.execute('SELECT COUNT(*) FROM campaigns').fetchone()[0],0)
+
+    def test_queued_advance_stops_without_funds_and_refunds_survivors(self):
+        self.tile('200,200',self.a)
+        self.conn.execute('UPDATE users SET money=100,oil=10 WHERE id=?',(self.a,));self.conn.commit()
+        r=self.post('/api/attack',{'from_key':'200,200','target_key':'200,201','target_keys':['200,201','200,202'],'troops':1000})
+        self.assertEqual(r.status_code,200,r.json)
+        self.assertEqual(self.balance(self.a,'money'),0);self.assertEqual(self.balance(self.a,'oil'),0)
+        for tick in range(1,35):expansion.tick_campaigns(self.conn,int(time.time())+tick*3)
+        self.conn.commit();c=self.conn.execute('SELECT * FROM campaigns').fetchone()
+        self.assertEqual(c['status'],'victory');self.assertIn('not enough money and oil',c['summary'])
+        self.assertEqual(c['target_key'],'200,201');self.assertEqual(self.balance(self.a,'army'),c['troops'])
+        self.assertIsNone(self.conn.execute('SELECT owner_id FROM territories WHERE grid_key="200,202"').fetchone())
+
+    def test_air_travel_charges_distance_and_rejects_insufficient_funds(self):
+        self.tile('200,200',self.a,'airport');self.conn.execute('UPDATE users SET planes=10 WHERE id=?',(self.a,));self.conn.commit()
+        for resource in ('money','oil'):
+            self.conn.execute('UPDATE users SET money=100000,oil=10000 WHERE id=?',(self.a,))
+            self.conn.execute(f'UPDATE users SET {resource}=0 WHERE id=?',(self.a,));self.conn.commit()
+            before={key:self.balance(self.a,key) for key in ('money','oil','planes','army')}
+            r=self.post('/api/planes/attack',{'from_key':'200,200','target_key':'200,210','planes':2})
+            self.assertEqual(r.status_code,400,r.json);self.assertEqual(before,{key:self.balance(self.a,key) for key in before})
+        self.conn.execute('UPDATE users SET money=100000,oil=10000 WHERE id=?',(self.a,));self.conn.commit()
+        result=dict(win=False,A=1,D=2,weather='clear',amods=[],dmods=[],msg='Test retreat')
+        with patch.dict(app.planes_attack.__wrapped__.__globals__,do_assault=lambda *args:result,award_achievements=lambda *args:[]):
+            r=self.post('/api/planes/attack',{'from_key':'200,200','target_key':'200,210','planes':2})
+        self.assertEqual(r.status_code,200,r.json);self.assertEqual(r.json['travel_cost'],{'money':400,'oil':20})
+        self.assertEqual(self.balance(self.a,'money'),99600);self.assertEqual(self.balance(self.a,'oil'),9980)
 
     def test_invalid_plans_do_not_reserve_troops(self):
         self.declare_war();self.tile('200,200',self.a);self.tile('200,201',self.b)

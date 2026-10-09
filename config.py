@@ -608,6 +608,10 @@ WONDERS = {
 # Campaign / ordnance / casino balance (in-game currency only).
 COMBAT_TICK = 2
 CAMPAIGN_MAX_TARGETS = 64  # Bounds a single planning request, not troop purchases.
+MILITARY_TRAVEL_COST = {
+    'land': {'money': .10, 'oil': .01},  # Per troop per tile; previously free.
+    'air': {'money': 20, 'oil': 1},  # Per plane per tile flown; previously free.
+}
 ROCKET_COST = {'money': 1500, 'metal': 120, 'oil': 40}
 ROCKET_RANGE = 25
 ROCKET_COOLDOWN = 60

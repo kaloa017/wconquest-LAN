@@ -781,6 +781,9 @@ def plane_range(rsch):
 def pay(conn, uid, cost):
     for k, v in cost.items(): conn.execute(f'UPDATE users SET {k}={k}-? WHERE id=?', (v, uid))
 
+def military_travel_cost(kind, units, distance=1):
+    return {resource: math.ceil(rate*units*distance) for resource,rate in MILITARY_TRAVEL_COST[kind].items()}
+
 def prod(mods):
     p = 1.0
     for _, m in mods: p *= m
@@ -1963,13 +1966,17 @@ def planes_attack():
         if pool_get(conn, uid, 'planes') < n: return bail(f'You only have {pool_get(conn, uid, "planes")} plane(s)')
         paras = min(pool_get(conn, uid, 'army'), n*PLANE_TROOP_CAPACITY)
         if paras < 1: return bail('No paratroopers available')
+        travel_cost=military_travel_cost('air',n,dist)
+        if not can_afford(conn.execute('SELECT * FROM users WHERE id=?',(uid,)).fetchone(),travel_cost):
+            return bail('Not enough money and oil for this flight: '+', '.join(f'{v:,} {k}' for k,v in travel_cost.items()))
+        pay(conn,uid,travel_cost)
         pool_add(conn, uid, 'army', -paras); pool_add(conn, uid, 'planes', -n)
         force = n*PLANE_POWER*(min(1.0, paras/(n*PLANE_TROOP_CAPACITY))*0.5 + 0.5)
         r = do_assault(conn, uid, session['username'], fk, tk, force, 'air', f'{n} planes/{paras} paras', paras)
         back = int(round(n*PLANE_VICTORY_SURVIVAL)) if r['win'] else int(n*PLANE_DEFEAT_SURVIVAL)
         if back: pool_add(conn, uid, 'planes', back)
         ach = award_achievements(conn, uid); conn.commit(); conn.close()
-        return battle_response(r, {'planes_back': back, 'achievements': ach})
+        return battle_response(r, {'planes_back': back, 'achievements': ach, 'travel_cost':travel_cost})
     except Exception as e:
         conn.rollback(); conn.close(); return jsonify({'error': f'Air strike failed: {e}'}), 500
 
