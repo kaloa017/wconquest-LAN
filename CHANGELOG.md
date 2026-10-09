@@ -1,5 +1,8 @@
 # 6.5.0 — planned offensives and space tycoon
 
+- Moved persistent notifications into a bell inbox instead of automatic popups.
+- Added a moderation-only role; existing moderators retain senior permissions.
+
 - Added private battle lines and progress markers visible only to the attacker and
   current defender. Faction mates, other players and spectators receive no battle data.
 - Added map-based offensive planning: queue adjacent targets and carry surviving

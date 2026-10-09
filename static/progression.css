@@ -13,3 +13,6 @@ kbd{display:inline-block;font-size:10px;font-family:inherit;padding:2px 5px;bord
 .space-shortcuts{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.space-shortcuts .btn{flex:1;min-height:40px}.br-big{font-variant-numeric:tabular-nums;overflow-wrap:anywhere}@media(max-width:768px){.space-shortcuts .btn{min-height:44px}.br-big{font-size:25px}}
 
 .planner-body{min-height:0;overflow-y:auto;overscroll-behavior:contain}.planner-heading,.planner-actions{flex-shrink:0}.planner-actions{padding-top:10px;border-top:1px solid #40536e}.planner-heading{margin-bottom:6px}
+#notification-bell{position:relative;white-space:nowrap}#notification-count{font-size:10px;color:var(--accent)}#notif-container{display:none}#notification-inbox .v4-card{overflow-wrap:anywhere}#notification-inbox .v4-row{flex-wrap:wrap}
+#notification-count:not(:empty){position:absolute;right:0;top:0;background:var(--panel);border-radius:8px;padding:0 3px}
+@media(max-width:380px){.community-actions .btn span{display:none}#navbar{gap:5px}.community-actions{gap:3px}.nav-right{gap:3px}.nav-right>.btn{min-width:32px;padding:6px}}

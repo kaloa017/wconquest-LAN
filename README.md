@@ -328,3 +328,15 @@ It checks desktop, 768px tablet and 390px/320px phone layouts, the planner, hotk
 private markers, space tutorial/countdown, existing menus and changelog scrolling.
 The preview intercepts network requests; external background map tiles are omitted.
 Real-device touch testing and a longer live economy playtest remain useful follow-ups.
+# Notification inbox and moderation roles
+
+Notifications stay in the top-right bell inbox until dismissed; new messages update
+the unread count without covering the map or menus. Alliance responses and other
+notification actions remain available inside the inbox.
+
+Admins can grant Moderator (chat mute/unmute and gameplay timeout/clear only) or
+Senior moderator (the same controls plus audited territory transfers). Neither role
+can change ranks, economy settings, resources or game definitions. Existing moderators
+retain Senior moderator permissions. Moderators cannot moderate peers, senior
+moderators or admins; senior moderators may moderate the weaker role. All actions
+still require a reason and are recorded in the audit log.

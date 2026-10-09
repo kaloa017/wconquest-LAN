@@ -165,7 +165,7 @@ const progressionShowPanel=showPanel;
 showPanel=function(id){const result=progressionShowPanel(id);for(const button of document.querySelectorAll('.sidebar-tabs .stab'))button.setAttribute('aria-selected',String(button.dataset.panel===id));return result};
 
 const progressionStop=stopPolling;
-stopPolling=function(){cancelBattlePlan();clearPrivateBattles();spaceSnapshot=null;spaceTutorialOpen=false;progressionStop()};
+stopPolling=function(){cancelBattlePlan();clearPrivateBattles();spaceSnapshot=null;spaceTutorialOpen=false;inboxNotifications=[];inboxUser=null;updateNotificationCount();progressionStop()};
 const progressionSession=startSession;
 startSession=async function(user){
   cancelBattlePlan();clearPrivateBattles();spaceSnapshot=null;spaceTutorialOpen=false;
@@ -184,3 +184,19 @@ startSession=async function(user){
   return result;
 };
 startGame=startSession;startSpectatorMode=()=>startSession(null);
+// Notifications remain unread until explicitly dismissed in the bell inbox.
+let inboxNotifications=[],inboxUser=null;
+pollNotifications=async function(){
+  const uid=currentUser?.id;if(!uid){inboxNotifications=[];updateNotificationCount();return}
+  const generation=sessionGeneration,list=await api('GET','/api/notifications');
+  if(generation!==sessionGeneration||currentUser?.id!==uid||!Array.isArray(list))return;
+  inboxUser=uid;inboxNotifications=list;updateNotificationCount();
+};
+function updateNotificationCount(){const count=document.getElementById('notification-count');if(count)count.textContent=currentUser?.id===inboxUser&&inboxNotifications.length?` ${inboxNotifications.length}`:''}
+async function openNotificationInbox(){
+  if(!currentUser)return;await pollNotifications();if(!currentUser||inboxUser!==currentUser.id)return;
+  openCommunityDialog('🔔 Notifications',`<p>Unread messages stay here until dismissed.</p>${inboxNotifications.length?'<button class="btn btn-ghost" onclick="dismissInboxNotifications()">Dismiss all</button>':'<p>No unread notifications.</p>'}<div id="notification-inbox">${inboxNotifications.map(n=>`<article class="v4-card"><p>${esc(n.message)}</p><small>${esc(n.created_at||'')}</small><div class="v4-row">${n.type==='alliance_invite'&&n.data?.alliance_id?`<button class="btn btn-primary" onclick="inboxAlliance(${n.id},true)">Accept</button><button class="btn btn-ghost" onclick="inboxAlliance(${n.id},false)">Decline</button>`:(n.data?.actions||[]).map((a,i)=>`<button class="btn btn-primary" onclick="inboxAction(${n.id},${i})">${esc(a.label)}</button>`).join('')}<button class="btn btn-ghost" onclick="dismissInboxNotifications(${n.id})">Dismiss</button></div></article>`).join('')}</div>`);
+}
+async function dismissInboxNotifications(id){const r=await api('POST',id===undefined?'/api/notifications/dismiss_all':'/api/notifications/dismiss',id===undefined?{}:{id});if(r.error)return toast(r.error,'error');await openNotificationInbox()}
+async function inboxAlliance(id,accept){const n=inboxNotifications.find(n=>n.id===id);if(!n)return;const r=await api('POST','/api/alliance/respond',{alliance_id:n.data.alliance_id,accept});if(r.error)return toast(r.error,'error');await dismissInboxNotifications(id);await refreshUser()}
+async function inboxAction(id,index){const action=inboxNotifications.find(n=>n.id===id)?.data?.actions?.[index];if(!action)return;const r=await api('POST',action.path,action.body);if(r.error)return toast(r.error,'error');await dismissInboxNotifications(id);await refreshAll()}
