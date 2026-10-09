@@ -2715,8 +2715,9 @@ from economy import migrate as migrate_v13
 from expansion import migrate_orders as migrate_v14
 from space import migrate as migrate_v15
 from activity import migrate as migrate_v16
+from playtime import migrate as migrate_v17
 backup_before_upgrade(DB_PATH)
-init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db); migrate_v12(get_db); migrate_v13(get_db); migrate_v14(get_db); migrate_v15(get_db);migrate_v16(get_db)
+init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db); migrate_v12(get_db); migrate_v13(get_db); migrate_v14(get_db); migrate_v15(get_db);migrate_v16(get_db);migrate_v17(get_db)
 install_features(globals())
 
 if __name__ == '__main__':

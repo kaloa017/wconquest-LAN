@@ -659,4 +659,5 @@ SPACE_COLLECTION_INTERVAL = 30
 INACTIVITY_SECONDS = 30*60
 WAR_RECENT_LOGIN_SECONDS = 24*60*60
 ONLINE_SECONDS = 180
+PLAYTIME_HEARTBEAT_GRACE = 90  # Longer gaps are not credited as online playtime.
 CLAIM_OWNED_TILE_FACTOR = .5  # Current owned tiles only, never lifetime claims.

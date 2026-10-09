@@ -54,17 +54,22 @@ def production_cutoff(conn,uid,timestamp):
 
 def heartbeat():
     conn=core['get_db']();uid=session['user_id'];stamp=int(time.time());row=state(conn,uid,stamp)
-    if request.method=='POST' and not row['inactive']:
-        data=request.get_json(silent=True) or {}
+    from playtime import record,total
+    if request.method=='POST':
+        data=request.get_json(silent=True)
+        if data is None:data={}
         if not isinstance(data,dict):return jsonify(error='Send an activity object'),400
         if not isinstance(data.get('active',False),bool):return jsonify(error='active must be true or false'),400
-        if data.get('active'):
+        visible=data.get('visible',True)
+        if not isinstance(visible,bool):return jsonify(error='visible must be true or false'),400
+        record(conn,uid,visible,stamp)
+        if data.get('active') and visible and not row['inactive']:
             # Settle production before moving the boundary; never revive expired income.
             core['auto_collect'](uid,conn)
             conn.execute('UPDATE player_activity SET last_activity=? WHERE user_id=?',(stamp,uid))
-        conn.execute('UPDATE player_activity SET heartbeat=? WHERE user_id=?',(stamp,uid))
+        conn.execute('UPDATE player_activity SET heartbeat=? WHERE user_id=?',(stamp if visible and not row['inactive'] else 0,uid))
         row=state(conn,uid,stamp)
-    return jsonify(inactive=row['inactive'],deadline=row['deadline'],server_time=stamp)
+    return jsonify(inactive=row['inactive'],deadline=row['deadline'],server_time=stamp,play_seconds=total(row,stamp))
 
 def resume():
     conn=core['get_db']();uid=session['user_id'];stamp=int(time.time())
@@ -118,7 +123,10 @@ def install(namespace):
                     core['auto_collect'](uid,conn)
                     conn.execute('UPDATE player_activity SET last_activity=? WHERE user_id=?',(stamp,uid))
         if request.path=='/api/logout' and response.status_code==200 and getattr(request,'activity_logout_uid',None):
-            core['get_db']().execute('UPDATE player_activity SET heartbeat=0 WHERE user_id=?',(request.activity_logout_uid,))
+            from playtime import record
+            conn=core['get_db']();uid=request.activity_logout_uid
+            record(conn,uid,False)
+            conn.execute('UPDATE player_activity SET heartbeat=0 WHERE user_id=?',(uid,))
         return response
     @app.before_request
     def remember_logout():

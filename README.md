@@ -389,3 +389,32 @@ describe this implementation, not a certification of legal compliance. The host
 must supply deployment-specific identity/contact, retention details and provider
 arrangements when legally required. No phone number or contact address is added.
 Privacy requests are directed to the server host/admin.
+# Host advertisements
+
+Open Admin → Advertisements to configure the banner beside the WC logo. Customize
+its badge, title, message, optional image and link, button label, four colors,
+font size, width, corner radius, alignment and phone visibility. The editor shows
+a live preview. Save applies it to everyone; Remove banner hides it.
+Both moderator roles are blocked server-side. Changes are recorded in the audit
+log and persisted in existing game settings; no additional migration is needed.
+Players refresh the banner within 30 seconds while the game is visible.
+
+Use HTTPS for external images or a `/static/` path for your own assets. Links may
+use HTTP or HTTPS. Arbitrary HTML/scripts are not supported. External image hosts
+receive browser requests; use locally hosted images when you want to avoid that.
+On phones the brand/banner row sits above the Donate/Ideas/settings controls so
+it fits without covering the map or squeezing buttons off screen.
+# Playtime
+
+More → Playtime shows your counter and a paginated list of other players' totals.
+The desktop account strip also shows your running clock. Time counts only while
+the game page is visible in an open browser tab. Hidden tabs, closed browsers and
+long heartbeat gaps do not accumulate time. Multiple tabs count once per account.
+The 30-minute resource pause is separate: an open, visible paused page can still
+count as browser time, but does not produce resources.
+
+Tracking starts with this update; historical browser-open time cannot be recovered
+from old saves. The server confirms time through 30-second heartbeats. Closing or
+hiding the page sends a final best-effort update; an abrupt disconnect can lose
+the last unconfirmed interval. Playtime is public to signed-in players and is
+described in the Privacy policy. Schema 17 preserves existing accounts/progress.

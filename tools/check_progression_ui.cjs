@@ -14,7 +14,7 @@ let browser;
     if(name.startsWith('/static/')){const file=path.join(project,name.slice(1));if(!fs.existsSync(file))return route.fulfill({status:404,body:''});return route.fulfill({contentType:name.endsWith('.css')?'text/css':name.endsWith('.js')?'text/javascript':'image/png',body:fs.readFileSync(file)})}
     if(name==='/api/terrain/cells')return route.fulfill({contentType:'application/octet-stream',body:fs.readFileSync(path.join(project,'data/land-cells.bin'))});
     if(name==='/api/islands')return route.fulfill({contentType:'application/json',body:fs.readFileSync(path.join(project,'data/pacific-islands.geojson'))});
-    if(route.request().method()==='POST'){const data=route.request().postDataJSON();posts.push({path:name,data});if(name==='/api/combat/preview')return route.fulfill({contentType:'application/json',body:JSON.stringify({odds:65,attack:1000,defense:500,atk_mods:[],def_mods:[]})});if(name==='/api/planes/attack')return route.fulfill({contentType:'application/json',body:JSON.stringify({success:true,attacker_wins:false,message:'Your force retreated.',breakdown:{attack:25000,defense:50000,weather:'clear',atk_mods:[],def_mods:[]}})});if(name==='/api/changelog/seen')fixtures['/api/changelog'].data.show=false;return route.fulfill({contentType:'application/json',body:JSON.stringify({success:true,message:'Saved',campaign_id:1})})}
+    if(route.request().method()==='POST'){const data=route.request().postDataJSON();posts.push({path:name,data});if(name==='/api/combat/preview')return route.fulfill({contentType:'application/json',body:JSON.stringify({odds:65,attack:1000,defense:500,atk_mods:[],def_mods:[]})});if(name==='/api/planes/attack')return route.fulfill({contentType:'application/json',body:JSON.stringify({success:true,attacker_wins:false,message:'Your force retreated.',breakdown:{attack:25000,defense:50000,weather:'clear',atk_mods:[],def_mods:[]}})});if(name==='/api/admin/advertisement'){fixtures['/api/advertisement']={status:200,data:{banner:data}};fixtures['/api/admin/advertisement']={status:200,data:{banner:data}};return route.fulfill({contentType:'application/json',body:JSON.stringify({success:true,message:'Banner saved',banner:data})})}if(name==='/api/changelog/seen')fixtures['/api/changelog'].data.show=false;return route.fulfill({contentType:'application/json',body:JSON.stringify({success:true,message:'Saved',campaign_id:1})})}
     const fixture=fixtures[name];return route.fulfill({status:fixture?.status||200,contentType:'application/json',body:JSON.stringify(fixture?.data||{})});
   });
   await page.addInitScript(()=>localStorage.setItem('wc_tut','1'));
@@ -82,6 +82,33 @@ let browser;
   await page.locator('#text-dialog-done').click();fixtures['/api/space'].data.tutorial_required=false;await page.evaluate(()=>buildSpace());assert.equal(await page.locator('#v6-dialog').count(),0);checks.push('Space tutorial appears on unlock and acknowledgement prevents repeat display');
   const program=fixtures['/api/space'].data.program;program.state='returning';program.arrival=Math.ceil(Date.now()/1000)+180;program.remaining_seconds=180;
   await page.evaluate(()=>buildSpace());await page.locator('#space-countdown').waitFor();const before=await page.locator('#space-countdown').textContent();await page.waitForFunction(before=>document.getElementById('space-countdown').textContent!==before,before);checks.push('Travel countdown updates while expedition controls are locked');
+  await page.evaluate(()=>openAdmin());await page.getByRole('button',{name:'Advertisements',exact:true}).click();await page.locator('#ad-title').waitFor();
+  await page.locator('#ad-enabled').check();await page.locator('#ad-title').fill('Community weekend');await page.locator('#ad-message').fill('Meet other countries and share your best ideas!');await page.locator('#ad-link').fill('https://example.org/community');
+  await page.getByRole('button',{name:'Save banner',exact:true}).click();await page.waitForFunction(()=>!document.getElementById('advertisement-banner').hidden);await page.evaluate(()=>closeAdmin());
+  for(const width of [320,390,768,1440]){
+    await page.setViewportSize({width,height:800});
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+    const bounds=await page.locator('#advertisement-banner').boundingBox();assert(bounds.x>=0&&bounds.x+bounds.width<=width);
+    await page.screenshot({path:path.join(output,`advertisement-${width}.png`)});
+  }
+  assert.equal(await page.locator('#advertisement-banner a').getAttribute('rel'),'noopener noreferrer');
+  await page.evaluate(()=>renderAdvertisement({...advertisementSettings,title:'<img src=x onerror=alert(1)>',message:'<script>bad()</script>',link:'javascript:alert(1)',image:''}));
+  assert.equal(await page.locator('#advertisement-banner img,#advertisement-banner script,#advertisement-banner a').count(),0);
+  assert((await page.locator('#advertisement-banner').textContent()).includes('<script>bad()</script>'));
+  await page.evaluate(()=>openAdmin());await page.getByRole('button',{name:'Advertisements',exact:true}).click();await page.locator('#ad-title').waitFor();
+  await page.locator('#ad-link').fill('javascript:alert(1)');await page.getByRole('button',{name:'Remove banner',exact:true}).click();
+  await page.waitForFunction(()=>document.getElementById('advertisement-banner').hidden);await page.evaluate(()=>closeAdmin());
+  const removed=posts.filter(p=>p.path==='/api/admin/advertisement').at(-1);assert.equal(removed.data.enabled,false);assert.notEqual(removed.data.link,'javascript:alert(1)');
+  checks.push('Admin banner editor saves/removes changes; banner fits all widths and escapes hostile text and links');
+  fixtures['/api/playtime'].data.mine=3661;fixtures['/api/playtime'].data.players[0].seconds=12345678;
+  await page.setViewportSize({width:390,height:844});await page.evaluate(()=>mobileNav('more','playtime'));
+  await page.locator('#my-playtime-panel').waitFor();
+  assert((await page.locator('#my-playtime-panel').textContent()).includes('1h 01m'));
+  assert((await page.locator('.playtime-list').textContent()).includes('3,429h'));
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+  await page.screenshot({path:path.join(output,'playtime-390.png')});
+  await page.evaluate(()=>mobileNav('more'));assert((await page.locator('#mobile-sheet-content').textContent()).includes('Playtime'));
+  checks.push('Personal and other player playtime is readable on mobile and reachable from More');
   await page.evaluate(()=>drawPrivateBattles([{id:99,attacker:998,defender:997,status:'active'}]));assert.equal(await page.locator('.private-battle-icon').count(),0);checks.push('Client also rejects markers for unrelated participants');
   for(const width of [320,390,768,1440]){
     await page.setViewportSize({width,height:800});await page.evaluate(()=>showActivityPause());

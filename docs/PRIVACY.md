@@ -20,6 +20,9 @@ regular players and moderators do not receive them. Login timestamps, recent
 interaction times and presence heartbeats enforce inactivity and war protections.
 The activity check records timestamps, not the contents of keystrokes or pointer
 movements. It does not automatically renew production just because the page polls.
+Visible-browser playtime is stored per account and shown to other signed-in players
+alongside your username. Hidden/closed tabs do not count. Multiple tabs do not
+multiply your time. Totals start with the playtime update, not your original signup.
 
 Account/game processing is intended to provide the requested game service.
 Security and moderation records are intended to protect players and the server.
@@ -45,6 +48,10 @@ over HTTP, to display approximate locations. Hosting operators should leave this
 off unless they have assessed and disclosed that processing appropriately.
 Optional donations are handled separately by the payment provider; the game does
 not collect card information or directly process payments.
+The host may display a customizable advertisement banner. If it contains an
+external image, that image host receives image requests, including your IP address.
+Clicking its optional link opens the chosen site under that site's privacy policy.
+The game does not add advertisement click tracking or third-party advertising scripts.
 
 ## Storage and retention
 Data is stored on the host's server in the game database, ideas file and backups.

@@ -154,7 +154,7 @@ function inspectPlanetTile(x,y){
 }
 addNavigation('space','🚀 Space',buildSpace);menuItems.space={icon:'🚀',name:'Space',desc:'Orbital businesses and personal planetary expeditions'};
 menuHome=function(){
-  const groups=[['BUILD YOUR COUNTRY',['territory','empire','research','quests']],['ECONOMY & SPACE',['market','stocks','banks','space']],['PLAY TOGETHER',['chat','faction','social','trading']],['COMMAND & HISTORY',['operations','battles','leaderboard']]];
+  const groups=[['BUILD YOUR COUNTRY',['territory','empire','research','quests']],['ECONOMY & SPACE',['market','stocks','banks','space']],['PLAY TOGETHER',['chat','faction','social','trading','playtime']],['COMMAND & HISTORY',['operations','battles','leaderboard']]];
   if(currentUser?.is_admin||currentUser?.is_moderator)groups.push(['HOST TOOLS',['moderation',...(currentUser.is_admin?['catalog']:[])]]);
   return groups.map(([label,ids])=>`<h3 class="menu-group-title">${label}</h3><div class="more-grid">${ids.map(id=>{const item=menuItems[id];return `<button onclick="openExpansionPanel('${id}')"><span>${item.icon}</span>${esc(item.name)}<small>${esc(item.desc)}</small></button>`}).join('')}</div>`).join('');
 };

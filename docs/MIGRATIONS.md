@@ -195,3 +195,12 @@ discounts. Default farm/lumberyard output doubles and their costs decrease.
 Restart one server process and reload browsers when ready. Hosts should edit
 the new Terms/Privacy documents for their deployment. Policy pages do not record
 an acceptance checkbox or introduce an account-blocking consent migration.
+## 6.5.1 — visible-browser playtime (schema 17)
+
+The current update backs up older databases as
+`backups/game-before-v17-<timestamp>.db`. Schema 17 adds `play_seconds` and
+`play_clock` to `player_activity`; both begin at zero. Historical playtime was not
+recorded and is not inferred from signup/login dates. Migrations 16 and 17 run
+in order and preserve world, resource, account and earlier activity data.
+Playtime is credited once per account by visible-page heartbeats. Visibility/close
+signals settle the current interval; long heartbeat gaps produce no offline time.

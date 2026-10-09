@@ -12,7 +12,7 @@ function showActivityPause(){
   button.onclick=async()=>{button.disabled=true;const r=await api('POST','/api/activity/resume',{});if(r.error){overlay.querySelector('#activity-error').textContent=r.error;button.disabled=false;return}setActivityState(r);clearActivityPause();activityDirty=false;await refreshUser();await api('GET','/api/income')};
 }
 function clearActivityPause(){document.getElementById('activity-paused')?.remove();for(const [node,value] of activityInert)if(node.isConnected)node.inert=value;activityInert.clear();activityReturnFocus?.focus?.({preventScroll:true});activityReturnFocus=null}
-function setActivityState(r){if(!r||r.error)return;if(r.server_time){activityOffset=r.server_time*1000-Date.now();activityDeadline=r.deadline*1000}if(r.inactive)showActivityPause()}
+function setActivityState(r){if(!r||r.error)return;if(r.server_time){activityOffset=r.server_time*1000-Date.now();activityDeadline=r.deadline*1000}if(typeof setPlaytime==='function'&&r.play_seconds!==undefined)setPlaytime(r.play_seconds);if(r.inactive)showActivityPause()}
 async function checkActivity(){
   if(!currentUser||document.hidden||activityBusy)return;activityBusy=true;const generation=sessionGeneration,dirty=activityDirty;activityDirty=false;
   try{const r=await api('POST','/api/activity',{active:dirty});if(generation===sessionGeneration){setActivityState(r);if(r.error)activityDirty=activityDirty||dirty}}finally{activityBusy=false}
@@ -21,7 +21,7 @@ for(const event of ['pointerdown','keydown','wheel','touchstart'])document.addEv
 const activityApi=api;
 api=async function(method,url,data){const r=await activityApi(method,url,data);if(r.inactive)showActivityPause();return r};
 const activityStart=startSession;
-startSession=async function(user){await activityStart(user);if(!currentUser)return;setActivityState(await api('GET','/api/activity'));activityTimer=setInterval(checkActivity,30000)};
+startSession=async function(user){await activityStart(user);if(!currentUser)return;setActivityState(await api('GET','/api/activity'));await checkActivity();activityTimer=setInterval(checkActivity,30000)};
 startGame=startSession;startSpectatorMode=()=>startSession(null);
 const activityStop=stopPolling;
 stopPolling=function(){clearInterval(activityTimer);activityTimer=null;activityDeadline=0;activityDirty=false;clearActivityPause();activityStop()};

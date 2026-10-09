@@ -9,8 +9,8 @@ def backup_before_upgrade(path):
     if not p.exists(): return
     with closing(sqlite3.connect(path)) as conn:
         if conn.execute("SELECT 1 FROM sqlite_master WHERE name='schema_migrations'").fetchone():
-            if conn.execute('SELECT 1 FROM schema_migrations WHERE version=16').fetchone(): return
-        backup=p.parent/'backups'/f'{p.stem}-before-v16-{time.time_ns()}.db'
+            if conn.execute('SELECT 1 FROM schema_migrations WHERE version=17').fetchone(): return
+        backup=p.parent/'backups'/f'{p.stem}-before-v17-{time.time_ns()}.db'
         backup.parent.mkdir(exist_ok=True)
         with closing(sqlite3.connect(backup)) as dest: conn.backup(dest)
 

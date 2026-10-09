@@ -67,12 +67,12 @@ class TerrainSupporterTests(unittest.TestCase):
     def test_tropical_production_and_migration_once(self):
         tropical=next((a,b) for a in range(-110,110) for b in range(-1000,1000) if app.get_terrain(a,b)=='tropical' and geography.cell_land(f'{a},{b}'))
         a,b=tropical;self.assertGreater(app.get_population('tropical',a,b),0);self.assertEqual(app.TERRAIN_RES['tropical'],('food',11))
-        conn=app.get_db();conn.execute('DELETE FROM schema_migrations WHERE version IN (7,8,9,10,11,12,13,14,15,16)');conn.execute('INSERT OR REPLACE INTO water_cells VALUES("1,1",1)');money=conn.execute('SELECT money FROM users WHERE id=?',(self.uid,)).fetchone()[0];conn.commit();conn.close()
+        conn=app.get_db();conn.execute('DELETE FROM schema_migrations WHERE version IN (7,8,9,10,11,12,13,14,15,16,17)');conn.execute('INSERT OR REPLACE INTO water_cells VALUES("1,1",1)');money=conn.execute('SELECT money FROM users WHERE id=?',(self.uid,)).fetchone()[0];conn.commit();conn.close()
         backup_before_upgrade(app.DB_PATH);migrate_v7(app.get_db)
         conn=app.get_db();self.assertEqual(conn.execute('SELECT COUNT(*) FROM water_cells').fetchone()[0],0);self.assertEqual(conn.execute('SELECT money FROM users WHERE id=?',(self.uid,)).fetchone()[0],money)
         app.set_setting(conn,'rate_limits',json.dumps({'requests':17,'auth':0,'chat':0,'trades':0}));conn.commit();conn.close();migrate_v7(app.get_db)
         conn=app.get_db();self.assertEqual(json.loads(app.get_setting(conn,'rate_limits'))['requests'],17);conn.close()
-        self.assertTrue(list((Path(app.DB_PATH).parent/'backups').glob('*before-v16*.db')))
+        self.assertTrue(list((Path(app.DB_PATH).parent/'backups').glob('*before-v17*.db')))
 
     def test_ideas_saved_as_private_text(self):
         guest=app.app.test_client();token=guest.get('/api/bootstrap').json['csrf']
