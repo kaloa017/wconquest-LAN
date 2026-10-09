@@ -781,8 +781,9 @@ def plane_range(rsch):
 def pay(conn, uid, cost):
     for k, v in cost.items(): conn.execute(f'UPDATE users SET {k}={k}-? WHERE id=?', (v, uid))
 
-def military_travel_cost(kind, units, distance=1):
-    return {resource: math.ceil(rate*units*distance) for resource,rate in MILITARY_TRAVEL_COST[kind].items()}
+def military_travel_cost(kind, units, distance=1, queued=False):
+    multiplier=QUEUED_ADVANCE_COST_MULTIPLIER if queued and kind=='land' else 1
+    return {resource: math.ceil(rate*units*distance*multiplier) for resource,rate in MILITARY_TRAVEL_COST[kind].items()}
 
 def prod(mods):
     p = 1.0

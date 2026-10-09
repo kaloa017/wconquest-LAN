@@ -2,6 +2,7 @@
 
 - Added configurable money and oil travel costs for land departures, queued advances
   and distance-based plane attacks. Routes stop safely when the next step is unaffordable.
+- Queued land advances cost 25% more than initial attacks; plane travel is unchanged.
 
 - Moved persistent notifications into a bell inbox instead of automatic popups.
 - Added a moderation-only role; existing moderators retain senior permissions.

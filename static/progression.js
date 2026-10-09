@@ -75,7 +75,7 @@ function updateBattlePlan(){
   document.getElementById('plan-route').textContent=[battlePlan.source,...battlePlan.targets].join(' → ');
   document.getElementById('plan-start').disabled=!battlePlan.targets.length;
   const troops=Number(document.getElementById('plan-troops').value),rate=gameConfig.military_travel_cost?.land;
-  if(rate&&Number.isSafeInteger(troops)&&troops>0){const perTile=Object.fromEntries(Object.entries(rate).map(([r,v])=>[r,Math.ceil(v*troops)]));document.getElementById('plan-travel-cost').textContent=`Travel per tile: ${fmtCost(perTile)}. Charged on departure and each advance, using surviving troops. The route stops if you cannot afford the next step.`}
+  if(rate&&Number.isSafeInteger(troops)&&troops>0){const perTile=Object.fromEntries(Object.entries(rate).map(([r,v])=>[r,Math.ceil(v*troops)]));document.getElementById('plan-travel-cost').textContent=`Departure: ${fmtCost(perTile)}. Queued advance: ${fmtCost(Object.fromEntries(Object.entries(rate).map(([r,v])=>[r,Math.ceil(v*troops*gameConfig.queued_advance_cost_multiplier)])))} per tile at this troop count (+25%); later steps use survivors. The route stops if you cannot afford the next step.`}
   if(map&&battlePlan.targets.length)planLayer=L.polyline([battlePlan.source,...battlePlan.targets].map(pointForKey),{color:'#ffe08a',weight:4,dashArray:'4 8',interactive:false}).addTo(map);
 }
 async function submitBattlePlan(){

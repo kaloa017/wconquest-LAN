@@ -612,6 +612,7 @@ MILITARY_TRAVEL_COST = {
     'land': {'money': .10, 'oil': .01},  # Per troop per tile; previously free.
     'air': {'money': 20, 'oil': 1},  # Per plane per tile flown; previously free.
 }
+QUEUED_ADVANCE_COST_MULTIPLIER = 1.25  # Land follow-up steps only; initial attacks and planes unchanged.
 ROCKET_COST = {'money': 1500, 'metal': 120, 'oil': 40}
 ROCKET_RANGE = 25
 ROCKET_COOLDOWN = 60

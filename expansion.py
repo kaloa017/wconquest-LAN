@@ -273,7 +273,7 @@ def tick_campaigns(conn, timestamp=None):
                     next_key=route[0]
                     blocked=core['_target_checks'](conn,c['attacker'],next_key)
                     busy=conn.execute("SELECT 1 FROM campaigns WHERE target_key=? AND status='active' AND id!=?",(next_key,c['id'])).fetchone()
-                    travel_cost=core['military_travel_cost']('land',c['troops'])
+                    travel_cost=core['military_travel_cost']('land',c['troops'],queued=True)
                     if not blocked and not core['can_afford'](user(conn,c['attacker']),travel_cost):blocked='not enough money and oil for troop travel'
                     if not blocked and not busy:
                         core['pay'](conn,c['attacker'],travel_cost)

@@ -281,6 +281,12 @@ class ExpansionTests(unittest.TestCase):
             self.assertEqual(before,{key:self.balance(self.a,key) for key in before})
             self.assertEqual(self.conn.execute('SELECT COUNT(*) FROM campaigns').fetchone()[0],0)
 
+    def test_queued_land_surcharge_does_not_change_initial_or_air_costs(self):
+        self.assertEqual(app.military_travel_cost('land',1000),{'money':100,'oil':10})
+        self.assertEqual(app.military_travel_cost('land',1000,queued=True),{'money':125,'oil':13})
+        self.assertEqual(app.military_travel_cost('air',2,10),{'money':400,'oil':20})
+        self.assertEqual(app.military_travel_cost('air',2,10,queued=True),{'money':400,'oil':20})
+
     def test_queued_advance_stops_without_funds_and_refunds_survivors(self):
         self.tile('200,200',self.a)
         self.conn.execute('UPDATE users SET money=100,oil=10 WHERE id=?',(self.a,));self.conn.commit()
