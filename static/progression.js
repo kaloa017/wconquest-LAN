@@ -53,6 +53,8 @@ function beginBattlePlan(source=selectedKey){
   const body=document.createElement('div');body.className='planner-body';
   const actions=bar.lastElementChild;for(const child of [...bar.children].slice(1,-1))body.appendChild(child);bar.insertBefore(body,actions);
   document.body.appendChild(bar);bar.querySelector('#plan-source').onchange=e=>{battlePlan.source=e.target.value;battlePlan.targets=[];updateBattlePlan()};bar.querySelector('#plan-undo').onclick=()=>{battlePlan.targets.pop();updateBattlePlan()};bar.querySelector('#plan-start').onclick=submitBattlePlan;
+  bar.querySelector('#plan-troops').addEventListener('input',updateBattlePlan);
+  const costs=document.createElement('p');costs.id='plan-travel-cost';costs.className='v4-sub';body.appendChild(costs);updateBattlePlan();
   flyTo(source);
   if(map)map.setZoom(Math.max(9,map.getZoom()));
   if(isMobile()&&map)map.panBy([0,map.getSize().y*.25],{animate:false});
@@ -72,6 +74,8 @@ function updateBattlePlan(){
   planLayer?.remove();planLayer=null;if(!battlePlan)return;
   document.getElementById('plan-route').textContent=[battlePlan.source,...battlePlan.targets].join(' → ');
   document.getElementById('plan-start').disabled=!battlePlan.targets.length;
+  const troops=Number(document.getElementById('plan-troops').value),rate=gameConfig.military_travel_cost?.land;
+  if(rate&&Number.isSafeInteger(troops)&&troops>0){const perTile=Object.fromEntries(Object.entries(rate).map(([r,v])=>[r,Math.ceil(v*troops)]));document.getElementById('plan-travel-cost').textContent=`Travel per tile: ${fmtCost(perTile)}. Charged on departure and each advance, using surviving troops. The route stops if you cannot afford the next step.`}
   if(map&&battlePlan.targets.length)planLayer=L.polyline([battlePlan.source,...battlePlan.targets].map(pointForKey),{color:'#ffe08a',weight:4,dashArray:'4 8',interactive:false}).addTo(map);
 }
 async function submitBattlePlan(){
@@ -90,7 +94,8 @@ const progressionTerritory=buildTerritoryPanel;
 buildTerritoryPanel=function(key,t,container){
   progressionTerritory(key,t,container);const el=container||document.getElementById('territory-actions');if(!el||!currentUser)return;
   if(groupTiles().includes(key))el.insertAdjacentHTML('beforeend','<button class="btn btn-primary btn-full" onclick="beginBattlePlan(\''+key+'\')">🗺 Plan offensive from here</button>');
-  const air=el.querySelector('[data-pv="air"] .atk-btn');if(air){air.dataset.airstrike='1';air.insertAdjacentHTML('beforeend',' <kbd>F</kbd>');air.title='Air assault · F hotkey'}
+  const land=el.querySelector('[data-pv="land"]');if(land){const note=document.createElement('p');note.className='v4-sub';land.appendChild(note);const update=()=>{const rate=gameConfig.military_travel_cost?.land,troops=Number(land.querySelector('#sl-land')?.value||1);if(rate)note.textContent='Travel per tile: '+fmtCost(Object.fromEntries(Object.entries(rate).map(([r,v])=>[r,Math.ceil(v*troops)])))+' · requires your own money and oil.'};land.querySelector('#sl-land')?.addEventListener('input',update);update()}
+  const air=el.querySelector('[data-pv="air"] .atk-btn');if(air){air.dataset.airstrike='1';air.insertAdjacentHTML('beforeend',' <kbd>F</kbd>');air.title='Air assault · F hotkey';const note=document.createElement('p');note.className='v4-sub';air.parentElement.appendChild(note);const update=()=>{const rate=gameConfig.military_travel_cost?.air,source=el.querySelector('#src-air')?.value,planes=Number(el.querySelector('#sl-air')?.value||1);if(rate&&source){const distance=dist(source,key);note.textContent='Flight travel: '+fmtCost(Object.fromEntries(Object.entries(rate).map(([r,v])=>[r,Math.ceil(v*planes*distance)])))+' · paid by you before takeoff, including when the attack fails.'}};el.querySelector('#sl-air')?.addEventListener('input',update);el.querySelector('#src-air')?.addEventListener('change',update);update()}
 };
 function airstrikeHotkey(event){
   if(event.key.toLowerCase()!=='f'||event.repeat||event.ctrlKey||event.altKey||event.metaKey||airstrikeBusy||battlePlan||!currentUser||!selectedKey)return;

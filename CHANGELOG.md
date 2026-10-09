@@ -1,5 +1,8 @@
 # 6.5.0 — planned offensives and space tycoon
 
+- Added configurable money and oil travel costs for land departures, queued advances
+  and distance-based plane attacks. Routes stop safely when the next step is unaffordable.
+
 - Moved persistent notifications into a bell inbox instead of automatic popups.
 - Added a moderation-only role; existing moderators retain senior permissions.
 

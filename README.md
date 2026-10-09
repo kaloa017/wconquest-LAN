@@ -340,3 +340,17 @@ can change ranks, economy settings, resources or game definitions. Existing mode
 retain Senior moderator permissions. Moderators cannot moderate peers, senior
 moderators or admins; senior moderators may moderate the weaker role. All actions
 still require a reason and are recorded in the audit log.
+# Military travel costs
+
+Each land offensive departure and queued advance costs 0.10 money and 0.01 oil
+per troop (rounded up per resource). For example, 1,000 troops cost 100 money and
+10 oil per tile. Later advances use the surviving troop count. If funds run out,
+the queued advance stops, captured land stays yours, and survivors return to their
+original army pool. Travel already completed is not refunded.
+
+Air assaults cost 20 money and 1 oil per plane per tile of flight distance;
+two planes flying ten tiles cost 400 money and 20 oil. You must have both before
+takeoff. A valid attack spends travel resources even if the battle is lost.
+These costs come from the commanding player's own balance, including when using
+shared armies or planes. Prices are in `MILITARY_TRAVEL_COST` in `config.py`.
+No save migration is needed.
