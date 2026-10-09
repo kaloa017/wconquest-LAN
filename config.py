@@ -524,7 +524,7 @@ CLAIM_METAL_RATIO = 0.02
 NUKE_MONEY = 100000000
 
 # Request counters/presence are batched; purchases/combat commit immediately.
-VERSION = '6.4.1'
+VERSION = '6.5.0'
 SAVE_INTERVAL = 30
 SCHEDULER_INTERVAL = 30
 REQUESTS_PER_MINUTE = 0  # 0 = unlimited, until changed in the admin panel.
@@ -607,6 +607,7 @@ WONDERS = {
 
 # Campaign / ordnance / casino balance (in-game currency only).
 COMBAT_TICK = 2
+CAMPAIGN_MAX_TARGETS = 64  # Bounds a single planning request, not troop purchases.
 ROCKET_COST = {'money': 1500, 'metal': 120, 'oil': 40}
 ROCKET_RANGE = 25
 ROCKET_COOLDOWN = 60
@@ -625,4 +626,28 @@ BUILDINGS['bank'] = {'name': 'Bank', 'icon': '🏦', 'desc': '+120 money/min per
 BUILDINGS['shopping_center'] = {'name': 'Shopping Center', 'icon': '🛍', 'desc': '+300 money/min per level.', 'cost': {'money': 4500, 'wood': 350, 'metal': 200}, 'production': {'money': 300}}
 FALLOUT_DURATION = 3 * 24 * 60 * 60
 NUKE_RADIUS_MIN = 5
-NUKE_RADIUS_MAX = 15
+NUKE_RADIUS_MAX = 20
+
+# Late-game space progression. New content: no legacy costs or saves change.
+RESEARCH_TREE['spaceflight'] = {'name':'Spaceflight','icon':'🛰','cost':250000000,'branch':'military',
+    'requires':['manhattan'],'desc':'After nuclear technology: unlock space agencies, orbital businesses and personal planetary expeditions.'}
+BUILDINGS['space_agency'] = {'name':'Space Agency','icon':'🚀','needs':'spaceflight',
+    'cost':{'money':50000000,'steel':5000,'uranium':500,'gems':1000},
+    'production':{'money':10000},'desc':'+10,000 money/min per level. Unlock orbital contracts and explore planets.'}
+SPACE_BUSINESSES = {
+    'satellite':{'name':'Communications satellite','icon':'🛰','cost':{'money':5000000,'steel':500,'oil':200},'production':{'money':20000}},
+    'tourism':{'name':'Orbital tourism','icon':'🧑‍🚀','cost':{'money':20000000,'steel':1500,'gems':200},'production':{'money':90000}},
+    'laboratory':{'name':'Orbital laboratory','icon':'🔬','cost':{'money':12000000,'steel':800,'uranium':150},'production':{'money':45000,'uranium':3}}
+}
+SPACE_PLANETS = {
+    'moon':{'name':'Moon','icon':'🌕','previous':None,'agency_level':1,'outbound':{'money':20000000,'steel':500,'oil':1000},'return':{'money':10000000,'oil':500},'travel_seconds':180,'yield_multiplier':1.0},
+    'mars':{'name':'Mars','icon':'🔴','previous':'moon','agency_level':2,'outbound':{'money':50000000,'steel':1000,'oil':2000},'return':{'money':30000000,'oil':1000},'travel_seconds':300,'yield_multiplier':1.8},
+    'europa':{'name':'Europa','icon':'🧊','previous':'mars','agency_level':3,'outbound':{'money':125000000,'steel':2500,'oil':5000},'return':{'money':75000000,'oil':2500},'travel_seconds':420,'yield_multiplier':3.0}
+}
+SPACE_GRID_SIZE = 6  # Identical private maps for everyone; no shared ownership.
+SPACE_CARGO_CAPACITY = 10000
+SPACE_IRIDIUM_PRICE = 50000  # Exotic ore is automatically sold on returning to Earth.
+SPACE_MINE_COST = {'money':2000000,'steel':200}
+SPACE_MINE_MAX_LEVEL = 3  # Building tiers, not a purchase-quantity cap.
+SPACE_RESOURCE_RATES = {'steel':100,'uranium':20,'gems':40,'iridium':4}
+SPACE_COLLECTION_INTERVAL = 30

@@ -69,7 +69,7 @@ def connect_db(path):
     if has_request_context():
         g.db = conn; conn.managed = True
         # All mutations share one transaction, including auth and legacy routes.
-        if request.method != 'GET' or request.path in ('/api/me','/api/game/status','/api/faction/info'):
+        if request.method != 'GET' or request.path in ('/api/me','/api/game/status','/api/faction/info','/api/space'):
             conn.execute('BEGIN IMMEDIATE')
     return conn
 

@@ -15,7 +15,7 @@ class ExpansionTests(unittest.TestCase):
         cls.saved=app.DB_PATH; cls.scratch=tempfile.TemporaryDirectory(dir=Path(__file__).parent)
         app.DB_PATH=str(Path(cls.scratch.name)/'game.db')
         app.init_db(); app.migrate_v4(); app.migrate_v5()
-        for migrate in (app.migrate_v6,app.migrate_v7,app.migrate_v8,app.migrate_v9,app.migrate_v10,app.migrate_v11,app.migrate_v12,app.migrate_v13): migrate(app.get_db)
+        for migrate in (app.migrate_v6,app.migrate_v7,app.migrate_v8,app.migrate_v9,app.migrate_v10,app.migrate_v11,app.migrate_v12,app.migrate_v13,app.migrate_v14,app.migrate_v15): migrate(app.get_db)
         features._map_cache.clear()
 
     @classmethod
@@ -226,6 +226,101 @@ class ExpansionTests(unittest.TestCase):
         expansion.war_score(self.conn,self.a,self.b);self.conn.commit()
         self.assertEqual(self.conn.execute('SELECT status FROM faction_rel WHERE id=?',(rid,)).fetchone()[0],'active')
         r=self.post('/api/faction/war/end',{'rel_id':rid,'action':'surrender'},self.login(member));self.assertEqual(r.status_code,200,r.json)
+
+    def test_battle_data_and_defense_orders_are_private_to_participants(self):
+        self.declare_war();member=self.player('Faction mate')
+        features.join_faction(self.conn,member,app.fac_id(self.conn,self.b));self.conn.commit()
+        self.tile('200,200',self.a);self.tile('200,201',self.b);self.tile('200,202',self.b)
+        r=self.post('/api/attack',{'from_key':'200,200','target_key':'200,201','target_keys':['200,201','200,202'],'troops':100})
+        self.assertEqual(r.status_code,200,r.json);cid=r.json['campaign_id']
+        self.assertEqual(self.client.get('/api/campaigns').json['campaigns'][0]['targets_remaining'],['200,202'])
+        self.assertEqual(self.login(self.b).get('/api/campaigns').json['campaigns'][0]['targets_remaining'],[])
+        for uid in (member,self.admin,self.mod):self.assertEqual(self.login(uid).get('/api/campaigns').json['campaigns'],[])
+        self.assertEqual(app.app.test_client().get('/api/campaigns').status_code,401)
+        self.assertEqual(self.post('/api/campaigns/order',{'campaign_id':cid,'action':'posture','posture':'entrench'},self.login(member)).status_code,403)
+
+    def test_planned_route_carries_survivors_to_next_target(self):
+        self.declare_war();self.tile('200,200',self.a);self.tile('200,201',self.b);self.tile('200,202',self.b)
+        self.conn.execute('UPDATE factions SET army=0 WHERE id=?',(app.fac_id(self.conn,self.b),));self.conn.commit()
+        r=self.post('/api/attack',{'from_key':'200,200','target_key':'200,201','target_keys':['200,201','200,202'],'troops':1000})
+        self.assertEqual(r.status_code,200,r.json)
+        stamp=int(time.time())
+        for tick in range(1,35):expansion.tick_campaigns(self.conn,stamp+tick*3)
+        self.conn.commit()
+        self.assertEqual(self.conn.execute('SELECT COUNT(*) FROM territories WHERE owner_id=?',(self.a,)).fetchone()[0],3)
+        self.assertEqual(self.conn.execute('SELECT COUNT(*) FROM campaigns').fetchone()[0],1)
+        c=self.conn.execute('SELECT * FROM campaigns').fetchone()
+        self.assertEqual(c['status'],'victory');self.assertEqual(app.pool_get(self.conn,self.a,'army'),c['troops'])
+
+    def test_invalid_plans_do_not_reserve_troops(self):
+        self.declare_war();self.tile('200,200',self.a);self.tile('200,201',self.b)
+        for route in ([],['200,201','200,201'],['200,201','200,205'],['200,202'],['200,201',False],['200,201']*65):
+            r=self.post('/api/attack',{'from_key':'200,200','target_key':'200,201','target_keys':route,'troops':100})
+            self.assertEqual(r.status_code,400,r.json)
+        self.assertEqual(app.pool_get(self.conn,self.a,'army'),1000)
+        self.assertEqual(self.conn.execute('SELECT COUNT(*) FROM campaigns').fetchone()[0],0)
+
+    def test_bulk_unit_and_weapon_purchases_follow_affordability(self):
+        self.tile('200,200',self.a,'port');self.tile('200,201',self.a,'airport')
+        self.tile('200,202',self.a,'uranium_mine');self.tile('200,203',self.a,'enrichment');self.tile('200,204',self.a,'nuclear_plant');self.tile('200,205',self.a,'rocket_pad')
+        self.conn.execute('UPDATE users SET research=?,money=1000000000000,wood=100000000,metal=100000000,oil=100000000,steel=100000000,uranium=100000000 WHERE id=?',
+            (json.dumps(['shipyard','airforce','nuclear_physics','rocketry','manhattan']),self.a));self.conn.commit()
+        for path,key in (('/api/troops/build','army'),('/api/boats/build','boats'),('/api/planes/build','planes'),('/api/rockets/build','rockets'),('/api/nuke/build','nukes')):
+            before=self.balance(self.a,key)
+            r=self.post(path,{'grid_key':'200,200','amount':5000})
+            self.assertEqual(r.status_code,200,r.json);self.assertEqual(self.balance(self.a,key),before+5000)
+            self.assertEqual(self.post(path,{'grid_key':'200,200','amount':0}).status_code,400)
+
+    def test_changelog_acknowledges_shown_version_without_regressing_seen(self):
+        self.conn.execute('UPDATE users SET last_seen_version=? WHERE id=?',('6.3.6',self.a));self.conn.commit()
+        self.assertEqual(self.post('/api/changelog/seen',{'version':'6.4.1'}).status_code,200)
+        self.assertEqual(self.client.get('/api/changelog').json['show'],True)
+        self.assertEqual(self.post('/api/changelog/seen',{'version':'6.3.6'}).status_code,200)
+        self.assertEqual(self.balance(self.a,'last_seen_version'),'6.4.1')
+        self.assertEqual(self.post('/api/changelog/seen',{'version':'99.0.0'}).status_code,400)
+        self.assertEqual(self.post('/api/changelog/seen',{}).status_code,200)
+        self.assertEqual(self.client.get('/api/changelog').json['show'],False)
+
+    def test_route_stops_if_next_target_leaves_war(self):
+        self.declare_war();self.tile('200,200',self.a);self.tile('200,201',self.b);self.tile('200,202',self.b)
+        self.conn.execute('UPDATE factions SET army=0 WHERE id=?',(app.fac_id(self.conn,self.b),));self.conn.commit()
+        r=self.post('/api/attack',{'from_key':'200,200','target_key':'200,201','target_keys':['200,201','200,202'],'troops':1000})
+        self.assertEqual(r.status_code,200,r.json)
+        self.conn.execute('UPDATE territories SET owner_id=? WHERE grid_key=?',(self.mod,'200,202'));self.conn.commit()
+        for tick in range(1,20):expansion.tick_campaigns(self.conn,int(time.time())+tick*3)
+        self.conn.commit()
+        self.assertEqual(self.conn.execute('SELECT owner_id FROM territories WHERE grid_key=?',('200,202',)).fetchone()[0],self.mod)
+        self.assertEqual(self.conn.execute('SELECT status FROM campaigns').fetchone()[0],'victory')
+
+    def test_survivors_return_to_original_faction_after_commander_leaves(self):
+        self.declare_war();original=app.fac_id(self.conn,self.a)
+        member=self.player('Remain');features.join_faction(self.conn,member,original);self.conn.commit()
+        self.tile('200,200',self.a);self.tile('200,201',self.b)
+        r=self.post('/api/attack',{'from_key':'200,200','target_key':'200,201','troops':100})
+        self.assertEqual(r.status_code,200,r.json)
+        self.conn.execute('UPDATE users SET faction_id=NULL WHERE id=?',(self.a,));self.conn.commit()
+        before=self.conn.execute('SELECT army FROM factions WHERE id=?',(original,)).fetchone()[0]
+        expansion.tick_campaigns(self.conn,int(time.time())+20);self.conn.commit()
+        self.assertEqual(self.conn.execute('SELECT army FROM factions WHERE id=?',(original,)).fetchone()[0],before+100)
+        self.assertEqual(self.balance(self.a,'army'),0)
+
+    def test_player_reset_cannot_restore_old_committed_troops_on_next_tick(self):
+        self.declare_war();self.tile('200,200',self.a);self.tile('200,201',self.b)
+        self.assertEqual(self.post('/api/attack',{'from_key':'200,200','target_key':'200,201','troops':100}).status_code,200)
+        r=self.post('/api/admin/player',{'user_id':self.a,'action':'reset','confirm':True},self.login(self.admin))
+        self.assertEqual(r.status_code,200,r.json)
+        expansion.tick_campaigns(self.conn,int(time.time())+20);self.conn.commit()
+        self.assertEqual(self.balance(self.a,'army'),10)
+        self.assertEqual(self.conn.execute('SELECT status FROM campaigns').fetchone()[0],'ended')
+
+    def test_recent_history_does_not_hide_older_active_battles(self):
+        self.declare_war();self.tile('200,200',self.a);self.tile('200,201',self.b)
+        r=self.post('/api/attack',{'from_key':'200,200','target_key':'200,201','troops':100});cid=r.json['campaign_id']
+        for _ in range(80):
+            self.conn.execute("INSERT INTO campaigns(attacker,defender,from_key,target_key,troops,initial_troops,status) VALUES(?,?,'200,200','200,201',0,10,'retreated')",(self.a,self.b))
+        self.conn.commit();rows=self.client.get('/api/campaigns').json['campaigns']
+        self.assertEqual(rows[0]['id'],cid);self.assertEqual(rows[0]['status'],'active')
+        self.assertEqual(len(rows),21)
 
     def test_rocket_cost_damage_cooldown_and_ownership(self):
         self.declare_war()

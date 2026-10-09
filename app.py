@@ -1752,7 +1752,7 @@ def do_assault(conn, uid, uname_, fk, tk, force, kind, units_label, committed_tr
 
 def do_game_reset(conn):
     conn.execute('UPDATE territories SET owner_id=NULL,garrison=0,boats=0,planes=0')
-    for t in ('bank_loans', 'bank_offers', 'campaigns', 'exchanges', 'moderation_confirmations', 'strike_events', 'casino_rounds', 'buildings', 'fallout', 'embassies', 'trades', 'loans', 'wonders', 'faction_rel', 'faction_research', 'faction_requests', 'merges','stock_prices','stock_history','stock_holdings','stock_transactions','eva_deployments','faction_contributions'):
+    for t in ('space_businesses','planet_tiles','space_program','bank_loans', 'bank_offers', 'campaigns', 'exchanges', 'moderation_confirmations', 'strike_events', 'casino_rounds', 'buildings', 'fallout', 'embassies', 'trades', 'loans', 'wonders', 'faction_rel', 'faction_research', 'faction_requests', 'merges','stock_prices','stock_history','stock_holdings','stock_transactions','eva_deployments','faction_contributions'):
         conn.execute(f'DELETE FROM {t}')
     conn.execute('UPDATE users SET army=CASE WHEN faction_id IS NULL THEN 10 ELSE 0 END,boats=0,planes=0,morale=50,steel=0,uranium=0,gems=0,nukes=0,rockets=0,capital_key=NULL')
     conn.execute('UPDATE factions SET army=10,boats=0,planes=0,treasury=0')
@@ -2498,12 +2498,14 @@ def nuke_cost(conn): return int(float(get_setting(conn, 'nuke_cost', NUKE_MONEY)
 @require_login
 def nuke_build():
     d = request.json or {}; uid = session['user_id']; conn = get_db(); rs = user_research(conn, uid)
+    amount = int(d.get('amount', 1))
+    if amount<1: return jsonify({'error':'Choose a positive whole quantity'}),400
     for t in ('nuclear_physics', 'rocketry', 'manhattan'):
         if t not in rs: conn.close(); return jsonify({'error': f'Requires research: {RESEARCH_TREE[t]["name"]}'}), 400
     for b in ('uranium_mine', 'enrichment', 'nuclear_plant'):
         if group_levels(conn, uid, b) == 0: conn.close(); return jsonify({'error': f'You need a {BUILDINGS[b]["name"]}'}), 400
-    cost = nuke_cost(conn); u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
-    extra = {'uranium': NUKE_URANIUM, 'steel': NUKE_STEEL}
+    cost = nuke_cost(conn)*amount; u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
+    extra = {'uranium': NUKE_URANIUM*amount, 'steel': NUKE_STEEL*amount}
     if not can_afford(u, extra): conn.close(); return jsonify({'error': f'Need {fmt_cost(extra)} as well'}), 400
     if d.get('from_treasury'):
         f, err = _my_fac(conn, uid, True)
@@ -2512,8 +2514,8 @@ def nuke_build():
     else:
         if u['money'] < cost: conn.close(); return jsonify({'error': f'A nuclear warhead costs {cost:,}💰'}), 400
         conn.execute('UPDATE users SET money=money-? WHERE id=?', (cost, uid))
-    pay(conn, uid, extra); conn.execute('UPDATE users SET nukes=nukes+1 WHERE id=?', (uid,)); conn.commit(); conn.close()
-    return jsonify({'success': True, 'message': '☢ A nuclear warhead has been assembled.'})
+    pay(conn, uid, extra); conn.execute('UPDATE users SET nukes=nukes+? WHERE id=?', (amount, uid)); conn.commit(); conn.close()
+    return jsonify({'success': True, 'message': f'☢ {amount:,} nuclear warhead(s) assembled.'})
 
 @app.route('/api/nuke/launch', methods=['POST'])
 @require_login
@@ -2694,8 +2696,10 @@ from features import install_features, religion_for
 from migrations import migrate_v6, migrate_v7, migrate_v8, migrate_v9, migrate_v10, migrate_v11, backup_before_upgrade
 from expansion import migrate as migrate_v12
 from economy import migrate as migrate_v13
+from expansion import migrate_orders as migrate_v14
+from space import migrate as migrate_v15
 backup_before_upgrade(DB_PATH)
-init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db); migrate_v12(get_db); migrate_v13(get_db)
+init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db); migrate_v12(get_db); migrate_v13(get_db); migrate_v14(get_db); migrate_v15(get_db)
 install_features(globals())
 
 if __name__ == '__main__':

@@ -185,6 +185,8 @@ def before_request():
         if not hmac.compare_digest(request.headers.get('X-WC-CSRF',''),session.get('csrf','!')):return jsonify(error='Refresh the page to renew your request token'),403
         if request.mimetype!='multipart/form-data':
             d=body()
+            if request.path in ('/api/troops/build','/api/boats/build','/api/planes/build','/api/rockets/build','/api/nuke/build'):
+                integer(d.get('amount',1),1,2**53-1)
             for key,value in d.items():
                 if key in ('message','text','name','tag','descr','color','resource','unit','kind','channel','action','rank','type','key','give_res','get_res','symbol','side','idea','image','image_url','recovery_code','reset_pin','pin') and not isinstance(value,str):raise ValueError('Expected text for '+key)
                 if key in ('ban','promote','accept','enabled','water','from_treasury','display_faction_colors','share_boats','share_planes','music_muted') and not isinstance(value,bool) and key!='water':raise ValueError('Expected true or false for '+key)
@@ -621,11 +623,14 @@ def admin_player():
         return jsonify(success=True,message=('All resources' if selected=='all' else selected.title())+' reset to zero')
     elif action=='reset':
         if d.get('confirm') is not True:raise ValueError('Confirm resetting this player')
+        from expansion import finish_campaign
+        for campaign in conn.execute("SELECT * FROM campaigns WHERE status='active' AND (attacker=? OR defender=?)",(uid,uid)).fetchall():
+            finish_campaign(conn,campaign,'ended','Offensive ended by an administrator player reset')
         leave_faction(conn,uid);conn.execute('DELETE FROM buildings WHERE grid_key IN (SELECT grid_key FROM territories WHERE owner_id=?)',(uid,))
         conn.execute('UPDATE territories SET owner_id=NULL WHERE owner_id=?',(uid,))
         conn.execute('UPDATE users SET money=200,wood=100,food=100,metal=100,oil=25,steel=0,uranium=0,gems=0,army=10,boats=0,planes=0,nukes=0,capital_key=NULL,capital_ts=0 WHERE id=?',(uid,))
         conn.execute('UPDATE users SET research="[]",religion=NULL,religion_ts=0,ideology=NULL WHERE id=?',(uid,))
-        for table in ('wonders','stock_holdings','achievements'):conn.execute(f'DELETE FROM {table} WHERE '+('owner_id' if table=='wonders' else 'user_id')+'=?',(uid,))
+        for table in ('wonders','stock_holdings','achievements','space_businesses','planet_tiles','space_program'):conn.execute(f'DELETE FROM {table} WHERE '+('owner_id' if table=='wonders' else 'user_id')+'=?',(uid,))
     elif action=='faction':
         fid=integer(d.get('faction_id',0),0);f=conn.execute('SELECT 1 FROM factions WHERE id=?',(fid,)).fetchone() if fid else None
         if fid and not f:raise ValueError('Faction not found')
@@ -716,11 +721,18 @@ def admin_network():
                    note='Share an address for your Wi-Fi or Ethernet network. The host firewall must allow the game port. These addresses work on the same network, not across the internet.')
 
 def changelog():
+    from release_notes import unseen_notes
     path=Path(core['app'].root_path)/'CHANGELOG.md';text=path.read_text(encoding='utf-8') if path.exists() else 'Welcome to version '+VERSION
     u=db().execute('SELECT last_seen_version FROM users WHERE id=?',(session['user_id'],)).fetchone()
-    return jsonify(version=VERSION,show=u[0]!=VERSION,text=text)
+    versions,text=unseen_notes(text,u[0],VERSION)
+    return jsonify(version=VERSION,versions=versions,show=bool(versions),text=text)
 def changelog_seen():
-    db().execute('UPDATE users SET last_seen_version=? WHERE id=?',(VERSION,session['user_id']))
+    from release_notes import version_key
+    version=body().get('version',VERSION)
+    if not isinstance(version,str) or not version_key(version) or version_key(version)>version_key(VERSION):raise ValueError('Unknown release version')
+    conn=db();seen=conn.execute('SELECT last_seen_version FROM users WHERE id=?',(session['user_id'],)).fetchone()[0]
+    if not version_key(seen) or version_key(version)>version_key(seen):
+        conn.execute('UPDATE users SET last_seen_version=? WHERE id=?',(version,session['user_id']))
     return jsonify(success=True)
 
 def ignore_water_reports():return jsonify(success=True,message='Terrain is validated by the server')
@@ -793,4 +805,6 @@ def install_features(namespace):
     install(namespace)
     from economy import install as install_economy
     install_economy(namespace)
+    from space import install as install_space
+    install_space(namespace)
     if os.getenv('DISABLE_SCHEDULER')!='1':threading.Thread(target=scheduler_loop,name='game-scheduler',daemon=True).start()

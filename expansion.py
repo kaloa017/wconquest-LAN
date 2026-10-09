@@ -6,7 +6,7 @@ import time
 from functools import wraps
 from flask import jsonify, request, session, abort
 import features
-from config import BUILDINGS, ROCKET_COST, ROCKET_RANGE, ROCKET_COOLDOWN, COMBAT_TICK, CASINO_MAX_BET
+from config import BUILDINGS, ROCKET_COST, ROCKET_RANGE, ROCKET_COOLDOWN, COMBAT_TICK, CASINO_MAX_BET, CAMPAIGN_MAX_TARGETS
 
 core = {}
 ASSETS = ('money', 'food', 'wood', 'metal', 'oil', 'steel', 'uranium', 'gems', 'army', 'boats', 'planes', 'nukes', 'rockets')
@@ -14,7 +14,7 @@ TACTICS = {'balanced': (1, 1, 1), 'breakthrough': (1.3, 1.35, 1.5), 'careful': (
 
 def db(): return core['get_db']()
 def now(): return int(time.time())
-def number(value, low=1, high=10**9): return features.integer(value, low, high)
+def number(value, low=1, high=2**53-1): return features.integer(value, low, high)
 def user(conn, uid): return conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
 def note(conn, uid, message): core['create_notification'](conn, uid, 'info', message)
 
@@ -53,6 +53,25 @@ def migrate(get_db):
     except Exception:
         conn.rollback(); raise
     finally: conn.close()
+
+def migrate_orders(get_db):
+    """Keep existing battles while adding optional sequential offensive orders."""
+    conn=get_db()
+    try:
+        conn.execute('BEGIN IMMEDIATE')
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=14').fetchone():
+            columns={r['name'] for r in conn.execute('PRAGMA table_info(campaigns)')}
+            if 'route_json' not in columns:
+                conn.execute("ALTER TABLE campaigns ADD COLUMN route_json TEXT NOT NULL DEFAULT '[]'")
+            if 'origin_faction' not in columns:
+                conn.execute('ALTER TABLE campaigns ADD COLUMN origin_faction INTEGER')
+                conn.execute('UPDATE campaigns SET origin_faction=(SELECT faction_id FROM users WHERE id=campaigns.attacker)')
+            conn.execute('CREATE INDEX IF NOT EXISTS campaign_attacker_status ON campaigns(attacker,status,id)')
+            conn.execute('CREATE INDEX IF NOT EXISTS campaign_defender_status ON campaigns(defender,status,id)')
+            conn.execute('INSERT INTO schema_migrations VALUES(14,?)',(now(),))
+        conn.commit()
+    except Exception:conn.rollback();raise
+    finally:conn.close()
 
 def moderation_guard(fn):
     @wraps(fn)
@@ -170,24 +189,35 @@ def start_campaign():
     if not source or source['owner_id'] not in core['group_ids'](conn,uid): abort(403)
     error=core['_target_checks'](conn,uid,tk)
     if error: raise ValueError(error)
+    route=d.get('target_keys',[tk])
+    if not isinstance(route,list) or not 1<=len(route)<=CAMPAIGN_MAX_TARGETS or any(not isinstance(key,str) for key in route):raise ValueError('Plan between 1 and 64 adjacent targets')
+    if route[0]!=tk or len(set(route))!=len(route) or fk in route:raise ValueError('Choose different targets starting with the selected tile')
+    previous=fk
+    for key in route:
+        core['parse_key'](key)
+        if core['cell_distance'](previous,key)>1:raise ValueError('Each planned target must touch the previous tile')
+        error=core['_target_checks'](conn,uid,key)
+        if error:raise ValueError(error)
+        previous=key
     if conn.execute("SELECT 1 FROM campaigns WHERE target_key=? AND status='active'",(tk,)).fetchone(): raise ValueError('An offensive is already fighting for this tile')
     troops=number(d.get('troops')); tactic=d.get('tactic','balanced')
     if tactic not in TACTICS: raise ValueError('Unknown tactic')
     if core['pool_get'](conn,uid,'army')<troops: raise ValueError('Not enough available troops')
     core['pool_add'](conn,uid,'army',-troops)
     target=conn.execute('SELECT owner_id FROM territories WHERE grid_key=?',(tk,)).fetchone(); defender=target['owner_id'] if target else None
-    cur=conn.execute('INSERT INTO campaigns(attacker,defender,from_key,target_key,troops,initial_troops,tactic,started,last_tick) VALUES(?,?,?,?,?,?,?,?,?)',
-                     (uid,defender,fk,tk,troops,troops,tactic,now(),now()))
+    cur=conn.execute('INSERT INTO campaigns(attacker,defender,from_key,target_key,troops,initial_troops,tactic,started,last_tick,route_json,origin_faction) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+                     (uid,defender,fk,tk,troops,troops,tactic,now(),now(),json.dumps(route[1:]),core['fac_id'](conn,uid)))
     if defender: note(conn,defender,f'{session["username"]} started an offensive at {tk}. Open Operations to choose a defensive stance.')
     return jsonify(success=True,campaign_id=cur.lastrowid,message='Offensive started. Manage tactics, organization and retreat in Operations.')
 
 def finish_campaign(conn,campaign,status,message):
-    if user(conn,campaign['attacker']) and campaign['troops']:
+    if campaign['troops']:
         # Refund a committed force without counting it as new faction contributions.
-        fid=core['fac_id'](conn,campaign['attacker'])
+        fid=campaign['origin_faction']
+        if fid and not conn.execute('SELECT 1 FROM factions WHERE id=?',(fid,)).fetchone():fid=None
         if fid: conn.execute('UPDATE factions SET army=army+? WHERE id=?',(campaign['troops'],fid))
-        else: conn.execute('UPDATE users SET army=army+? WHERE id=?',(campaign['troops'],campaign['attacker']))
-    conn.execute('UPDATE campaigns SET status=?,summary=? WHERE id=?',(status,message,campaign['id']))
+        elif user(conn,campaign['attacker']): conn.execute('UPDATE users SET army=army+? WHERE id=?',(campaign['troops'],campaign['attacker']))
+    conn.execute("UPDATE campaigns SET status=?,summary=?,route_json='[]' WHERE id=?",(status,message,campaign['id']))
     if user(conn,campaign['attacker']): note(conn,campaign['attacker'],message)
     if campaign['defender'] and user(conn,campaign['defender']): note(conn,campaign['defender'],message)
 
@@ -226,10 +256,27 @@ def tick_campaigns(conn, timestamp=None):
                      (c['troops'],c['lost'],c['attack_org'],c['defense_org'],c['progress'],supply,timestamp,c['id']))
         if c['troops']<=0 or c['attack_org']<=0 or c['defense_org']<=0:
             victory=c['troops']>0 and c['attack_org']>0 and c['defense_org']<=0
+            halted=''
             if victory:
                 core['apply_victory'](conn,c['attacker'],c['target_key'],r['terrain'],target,gl,gg)
                 if c['defender']: war_score(conn,c['attacker'],c['defender'])
+                route=json.loads(c['route_json'])
+                if route:
+                    next_key=route[0]
+                    blocked=core['_target_checks'](conn,c['attacker'],next_key)
+                    busy=conn.execute("SELECT 1 FROM campaigns WHERE target_key=? AND status='active' AND id!=?",(next_key,c['id'])).fetchone()
+                    if not blocked and not busy:
+                        next_tile=conn.execute('SELECT owner_id FROM territories WHERE grid_key=?',(next_key,)).fetchone()
+                        defender=next_tile['owner_id'] if next_tile else None
+                        conn.execute('UPDATE campaigns SET from_key=?,target_key=?,defender=?,attack_org=?,defense_org=100,posture="hold",progress=0,route_json=? WHERE id=?',
+                            (c['target_key'],next_key,defender,min(100,c['attack_org']+15),json.dumps(route[1:]),c['id']))
+                        note(conn,c['attacker'],f'Captured {c["target_key"]}; {c["troops"]:,} survivors advancing to {next_key}.')
+                        if defender:note(conn,defender,f'{attacker["username"]} is advancing on {next_key}. Choose a stance in Operations.')
+                        core['award_achievements'](conn,c['attacker'])
+                        continue
+                    halted=' Queued advance stopped: '+(blocked or 'another offensive occupies the next tile')+'.'
             status='victory' if victory else 'retreated'; message=f'{status.title()} at {c["target_key"]}: {c["lost"]} lost, {c["troops"]} returned.'
+            message+=halted
             core['morale_update'](conn,c['attacker'],victory)
             conn.execute('INSERT INTO battle_log(attacker,defender,grid_key,result,mode,details) VALUES(?,?,?,?,?,?)',
                          (attacker['username'],core['uname'](conn,c['defender']) if c['defender'] else 'wilderness',c['target_key'],'victory' if victory else 'defeat','land',message))
@@ -237,9 +284,16 @@ def tick_campaigns(conn, timestamp=None):
     conn.execute("DELETE FROM campaigns WHERE status!='active' AND id NOT IN (SELECT id FROM campaigns ORDER BY id DESC LIMIT 500)")
 
 def campaigns():
-    conn=db(); ids=core['group_ids'](conn,session['user_id']); marks=','.join('?' for _ in ids)
-    rows=conn.execute(f"SELECT * FROM campaigns WHERE attacker IN ({marks}) OR defender IN ({marks}) ORDER BY id DESC LIMIT 60",ids+ids).fetchall()
-    return jsonify(campaigns=[dict(r) for r in rows],tick_seconds=COMBAT_TICK)
+    conn=db();uid=session['user_id']
+    if not conn.in_transaction:conn.execute('BEGIN')
+    rows=conn.execute("SELECT * FROM campaigns WHERE status='active' AND (attacker=? OR defender=?) ORDER BY id DESC",(uid,uid)).fetchall()
+    rows+=conn.execute("SELECT * FROM campaigns WHERE status!='active' AND (attacker=? OR defender=?) ORDER BY id DESC LIMIT 20",(uid,uid)).fetchall()
+    result=[]
+    for row in rows:
+        item=dict(row);route=json.loads(item.pop('route_json'))
+        item['targets_remaining']=route if item['attacker']==uid else []
+        result.append(item)
+    return jsonify(campaigns=result,tick_seconds=COMBAT_TICK)
 
 def campaign_order():
     conn=db(); d=features.body(); uid=session['user_id']; c=conn.execute("SELECT * FROM campaigns WHERE id=? AND status='active'",(number(d.get('campaign_id')),)).fetchone()
@@ -252,7 +306,7 @@ def campaign_order():
             if d.get('tactic') not in TACTICS: raise ValueError('Choose a tactic')
             conn.execute('UPDATE campaigns SET tactic=? WHERE id=?',(d['tactic'],c['id']))
     elif action=='posture':
-        if c['defender'] not in ids: abort(403)
+        if c['defender']!=uid: abort(403)
         if d.get('posture') not in ('hold','entrench','counterattack'): raise ValueError('Choose a defensive stance')
         conn.execute('UPDATE campaigns SET posture=? WHERE id=?',(d['posture'],c['id']))
     else: raise ValueError('Unknown command')
