@@ -1,4 +1,4 @@
-# World Conquest LAN — v6.4.1
+# World Conquest LAN — v6.5.0
 
 Persistent multiplayer strategy on a real-world grid: claim tiles, recruit armies,
 build an economy, research technology, form factions and fight for territory.
@@ -231,3 +231,100 @@ attacks follow this rule; rockets and nukes also check every country in their bl
 area. A strike is rejected before spending weapons if it would damage an ally or
 a country outside the war. Neutral land does not need a declaration. Ongoing
 offensives stop and return surviving troops when peace is agreed.
+
+
+## Planned battles and air assaults (6.5)
+
+Open **Operations → Plan an offensive**, select a friendly starting tile and choose
+adjacent targets on the map. Enter a troop count and tactic, then start the route.
+Survivors advance automatically after each victory. The server checks war status,
+ownership, fallout and competing battles again before each advance. Organization,
+food and a friendly supply source determine whether an offensive can keep going.
+You can change tactics or retreat; defenders can hold, entrench or counterattack.
+The attacker sees the remaining route; the current defender sees only the current
+battle. Only those two players see private map markers or battle data.
+
+For an air assault, select a reachable tile and use its button or press **F**.
+The shortcut does nothing while typing, viewing a dialog or planning a route.
+War is required against player-owned territory; neutral land stays accessible.
+
+## Space tycoon (6.5)
+
+After the Manhattan Project, research **Spaceflight** (250,000,000 base money), then
+build your own **Space Agency** (50,000,000 money plus steel, uranium and gems).
+The **Space** menu introduces a persistent first-unlock tutorial. Buy communications
+satellites, orbital tourism and laboratory contracts for passive money/resources.
+Contract quantities have no arbitrary purchase cap; costs and production are shown
+before purchase and configured in `config.py`.
+
+Explore the Moon, Mars and Europa. Both travel legs are charged at departure;
+returning is always prepaid. Every player gets an identical **personal 6 × 6 map**,
+so nobody can monopolize a planet. Build on the landing tile, expand to adjacent
+tiles and upgrade mines through three tiers. Mines persist, but produce cargo only
+while your expedition is on the surface. Cargo has a 10,000-unit capacity. On return,
+steel, uranium and gems arrive on Earth and iridium is automatically sold. Delivery
+is atomic and occurs once. Returning from each planet unlocks the next, with higher
+agency-level requirements and greater mineral yields.
+
+Orbital contracts continue earning during travel. Accumulation is bounded to the
+existing two-hour offline window; server downtime never triggers unlimited catch-up.
+Space figures are starting balance choices, configurable under `SPACE_*` in
+`config.py`; they have not been validated in a long-running multiplayer economy.
+The existing Space Program and Dyson Sphere wonders remain separate country bonuses.
+
+## Update announcements and purchase quantities (6.5)
+
+The changelog popup shows releases newer than the player's stored last-seen version,
+excluding future releases. New players see the current release only. The popup
+opens at the top and remembers the version actually acknowledged. Edit `CHANGELOG.md`
+and increment `VERSION` in `config.py` when releasing another update.
+
+Troops, boats, planes, rockets, warheads, shares and orbital contracts accept bulk
+quantities limited by affordability (or owned stock when selling), rather than an
+arbitrary per-purchase maximum. Safe integer precision limits remain. Building tiers,
+unique wonders, travel gates, cargo capacity and casino bet limits are gameplay
+rules and remain in place. See `docs/MIGRATIONS.md` for the save upgrade notes.
+
+
+## Economy and community additions (6.4)
+
+Money buildings now produce 30/min (Market), 45/min (Solar Farm), 180/min (Nuclear
+Plant), 120/min (Bank) and 300/min (Shopping Center), per level before modifiers.
+Banks can advertise fixed total interest and repayment terms. Borrowers review the
+full amount due; lenders approve before funds transfer. Repayments transfer existing
+money, and overdue loans collect available money without compounding interest.
+
+Players can send gifts or propose two-sided exchanges of resources, personally
+owned vehicles, weapons and territory with its building. Exchanges recheck both
+parties' stock when accepted. Casino play uses in-game money only and retains its
+published odds and per-level bet limits. Rockets clear a two-cell radius without
+adding new fallout; nuclear fallout lasts 72 hours. Strikes must respect active
+wars and cannot damage other peaceful countries or allies.
+
+Admins can appoint moderators. Moderators can mute/timeout users and use an audited,
+three-confirmation territory-transfer flow. The live **Game editor** lets admins
+add or edit buildings, wonders, ideologies and religions without opening files.
+Supporter, Patron, Champion and Legend tiers offer cosmetic username colours,
+fonts and optional RGB animation; they grant no gameplay or moderation powers.
+
+## Verification
+
+Run `python -m unittest discover -s tests -v`, then `node tests/client_audit.cjs`.
+The tests use disposable saves and disable the scheduler. This update adds route,
+privacy, bulk-purchase, migration, cargo-capacity and concurrent-delivery tests.
+There is no configured bundler, linter or type checker; browser scripts can be
+checked with `node --check`.
+
+An optional offline browser check is provided in `tools/make_ui_fixtures.py` and
+`tools/check_progression_ui.cjs`. It needs Node with Playwright and Chrome (override
+`CHROME_PATH` if necessary). It never launches or contacts the real game server:
+
+```sh
+python tools/make_ui_fixtures.py /path/to/preview/fixtures.json
+node tools/check_progression_ui.cjs /path/to/preview/fixtures.json /path/to/preview/screenshots
+```
+
+It checks desktop, 768px tablet and 390px/320px phone layouts, the planner, hotkey,
+private markers, space tutorial/countdown, existing menus and changelog scrolling.
+The preview intercepts network requests; external background map tiles are omitted.
+Real-device touch testing and a longer live economy playtest remain useful follow-ups.

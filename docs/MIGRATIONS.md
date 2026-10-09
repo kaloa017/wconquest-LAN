@@ -123,3 +123,46 @@ The explicit administrator reset is retained. /api/game/status still supplies
 leader/event information and always returns status playing; victory-only fields
 threshold, reset_in and automatic_reset are no longer returned. Reload browsers
 for the removal of the victory overlay/countdown and obsolete polling.
+
+
+## 6.4.0 — campaigns and player banking (schema 12–13)
+
+Adds persistent campaigns, exchanges, moderation confirmations, strike events,
+casino records, live catalog definitions and player bank offers/loans. Adds moderator,
+timeout, rocket and cosmetic username fields. Existing accounts, territory,
+resources and paid-for wonders are retained.
+
+## 6.5.0 — queued orders and space (schema 14–15)
+
+Before the first upgrade, the server uses SQLite's backup API to write a consistent
+copy to `backups/game-before-v15-<timestamp>.db` (or the configured database filename).
+This includes committed WAL data. Start one server process for the upgrade. No world
+reset or external save replacement is performed. Accounts, Earth territory,
+resources, buildings and existing campaign progress remain compatible.
+
+Schema 14 adds `campaigns.route_json` (empty for existing battles),
+`campaigns.origin_faction` (backfilled from the commander's current faction), and
+indexes for private participant/status queries. Survivors return to the original
+army pool even if the commander changes factions. The original pool of an already
+moved commander in a pre-upgrade battle cannot be reconstructed from old saves;
+its current faction is the migration's best available information.
+
+Schema 15 creates `space_program`, `space_businesses` and `planet_tiles`.
+These start empty and are populated only when players unlock/use space. Planetary
+maps are personal; migration does not claim or alter any Earth tiles. All payments,
+mission transitions and cargo delivery share the existing request transaction.
+Migrations are idempotent. The explicit admin player/world reset includes the new
+space tables; player reset also settles active battles before resetting the army.
+There are still no automatic wins or round resets.
+
+The UI now restricts defensive orders and battle visibility to the actual defender,
+rather than faction mates. `/api/campaigns` returns every active participating battle
+plus the 20 latest completed battles. Only the attacker receives queued target keys.
+`/api/attack` retains its old fields and accepts an optional `target_keys` list.
+`/api/nuke/build` retains single purchases by default and accepts optional `amount`.
+The changelog API retains `version`, `show`, `text` and adds `versions`; acknowledgement
+optionally accepts the displayed version, with an empty body remaining compatible.
+
+Restart your server and reload browsers after installing the code. Existing older
+space-unaware code should use the pre-upgrade backup when rolling back; do not run
+an older version against newly earned space progress.

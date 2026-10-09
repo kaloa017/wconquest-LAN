@@ -1,3 +1,25 @@
+# 6.5.0 — planned offensives and space tycoon
+
+- Added private battle lines and progress markers visible only to the attacker and
+  current defender. Faction mates, other players and spectators receive no battle data.
+- Added map-based offensive planning: queue adjacent targets and carry surviving
+  troops forward automatically. Recheck ownership, war and availability at each step.
+- Fixed survivor refunds after faction changes and player resets; active battles
+  remain visible regardless of recent history.
+- Added F as the air-assault shortcut; typing, dialogs and held keys do not fire it.
+- Added late-game Spaceflight, Space Agencies and three orbital income businesses.
+- Explore personal 6 × 6 maps on the Moon, Mars and Europa, with persistent mines,
+  valuable iridium, cargo holds, timed travel and prepaid return journeys.
+- Added a persistent first-unlock space tutorial and an accessible Space menu.
+- Changelog announcements now contain only unseen published versions, open at the
+  top and acknowledge the version actually shown. First-time players see the current release.
+- Audited purchase quantities, added bulk rockets/warheads, and rejected invalid
+  unit amounts. Purchases are limited by affordability and safe numeric precision.
+- Improved command cards, forms, readable numbers and touch controls. Nuclear blasts
+  now use the requested 5–20-cell range; war and collateral protections remain.
+- Save migrations 14–15 add queued orders and space tables without resetting Earth,
+  accounts or assets. A consistent pre-upgrade backup is created before migration.
+
 # 6.4.1 — war required before combat
 
 - Require an active faction war before land, naval or air attacks on another player.
@@ -7,6 +29,16 @@
 - Update the faction help text. Neutral territory remains available without war.
 - Display balances, prices, population and troop counts with comma separators.
 - No save migration or reset.
+
+# 6.4.0 — economy and persistent battles
+
+- Added stronger market, solar, nuclear, bank and shopping-center income.
+- Added player bank offers, approved loans, fixed interest and repayment handling.
+- Added live admin editing for buildings, wonders, ideologies and religions.
+- Added persistent battles with organization, tactics, defensive stances and supply.
+- Added rockets, 72-hour fallout, gifts/exchanges, casino play, moderator roles,
+  account timeouts and confirmed territory transfers.
+- Added cosmetic supporter tiers and username customization.
 
 # 6.3.6 — persistent worlds
 
