@@ -283,3 +283,9 @@ For non-Cloudflare tunnels, do not use PROXY_MODE=cloudflare. Apply the trusted
 proxy guidance above for the actual connector and verify HTTPS/client addresses
 in Host tools. Proxy header behavior varies; do not trust forwarded IP headers
 from arbitrary internet clients. Choose a provider before enabling a public URL.
+
+## Windows computer with a custom domain
+
+See [DOMAIN_HOSTING.md](DOMAIN_HOSTING.md) for a named outbound-only tunnel,
+secure cookies, hostname validation and authenticator setup without port forwarding.
+For Apache/Nginx, also set `ALLOWED_HOSTS=game.example.com` in the service environment.

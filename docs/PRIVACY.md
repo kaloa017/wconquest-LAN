@@ -20,7 +20,7 @@ regular players and moderators do not receive them. Login timestamps, recent
 interaction times and presence heartbeats enforce inactivity and war protections.
 The activity check records timestamps, not the contents of keystrokes or pointer
 movements. It does not automatically renew production just because the page polls.
-Visible-browser playtime is stored per account and shown to other signed-in players
+Visible-browser playtime is stored per account and shown publicly on the Ranks leaderboard and to signed-in players
 alongside your username. Hidden/closed tabs do not count. Multiple tabs do not
 multiply your time. Totals start with the playtime update, not your original signup.
 
@@ -72,3 +72,13 @@ for every server using this open-source project.
 Host guidance: Norwegian Data Protection Authority, Digital services and personal
 data (information and retention requirements):
 https://www.datatilsynet.no/contentassets/3583c372d8b44bac839d505e298cae27/digitale-tjenester-engelsk.pdf
+
+## 6.6.0 additions (10 October 2026)
+Verified donation totals (NOK) and cosmetic tiers are public on Ranks. Admins
+manually record totals; no payment credentials are collected. Private trade
+discussions are restricted by the API to the two participants; the latest 100
+messages per pair are retained. Host/database/backup access can still read them.
+Authenticator setup keys are stored in the private database so the server can
+verify time-based codes. They are never public or sent to an external QR provider.
+Keep the database and backups private. Return summaries store aggregate positive
+resource gains/deliveries while away and are cleared when acknowledged.

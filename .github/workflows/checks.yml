@@ -49,6 +49,7 @@ jobs:
           node --check static/activity.js
           node --check static/advertisements.js
           node --check static/playtime.js
+          node --check static/experience.js
           node tests/client_audit.cjs
       - name: Test isolated game databases
         run: python -m unittest discover -s tests -v

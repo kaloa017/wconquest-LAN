@@ -1,3 +1,17 @@
+# 6.6.0 — host security and player experience
+
+- Advertisement publishing explicitly enables the banner. Added RGB inputs, alternating colors and reduced-motion support.
+- Reworked admin dashboard with grouped tabs, a country control center and integrated live game editor. Added confirmed controls for religion, ideology, research, expeditions and offensives.
+- Added optional authenticator two-factor authentication with replay protection, account-attempt throttling, origin checks, request-size limits, session expiry and browser security headers. Removed external font requests.
+- Ranks includes all players, visible-tab playtime and host-verified donation totals in NOK. Five cosmetic tiers unlock colors, fonts, RGB animation, badges and glow.
+- Queued land advance premium reduced from 25% to 10%; flight costs unchanged. Fixed rounding of travel costs.
+- Combat frontage limits both armies. Private battle forecasts explain strength, supply and food costs. War declarations show defenders a rules explanation and rough troop-strength assessment.
+- Offline production continues for two hours while the 30-minute activity prompt pauses actions. Return summaries show recorded resource gains and deliveries.
+- Trading opens a private negotiation popup with discussion and two-sided offers.
+- Research is a timed focus tree across economy, industry, army, navy/air and space. Added labs, six technologies and three timed stellar megaprojects beyond Europa. Existing research stays unlocked.
+- Country religion and ideology menus synchronize the live catalog when opened.
+- Migration 18 preserves the world and completed research. Added Windows domain/tunnel hosting instructions.
+
 # 6.5.1 — activity protection and easier production
 
 - Added a personal playtime clock and player playtime list. Visible-tab heartbeats

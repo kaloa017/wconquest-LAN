@@ -204,3 +204,25 @@ recorded and is not inferred from signup/login dates. Migrations 16 and 17 run
 in order and preserve world, resource, account and earlier activity data.
 Playtime is credited once per account by visible-page heartbeats. Visibility/close
 signals settle the current interval; long heartbeat gaps produce no offline time.
+
+## 6.6.0 — host security and timed progression (schema 18)
+
+Current upgrade backup: `backups/game-before-v18-<timestamp>.db`. Schema 18 adds
+verified donation totals and cosmetic fields to users, private authenticator
+secret/pending/replay fields, research projects, megaproject construction,
+private trade discussions, return earnings summaries and per-user war acknowledgments.
+It is idempotent. Accounts, owned land, balances, buildings, prior playtime and
+completed research are retained. No automatic round reset or research reset occurs.
+
+Behavior changes: future research uses server-timed projects and one current
+project per account; optional MFA adds a code to login. Authentication requests
+are throttled independently of unlimited game settings, sessions expire after
+12 hours, and configured hostname/origin validation rejects mismatched requests.
+Higher supporter styles are tier-gated. Queued land premium is 10%; both sides
+now follow frontage limits. Offline Earth/orbital/mining production continues
+for two hours instead of stopping at 30 minutes; the action-confirmation timer
+still uses 30 minutes. The prior schema-16 notes describe historical behavior.
+
+No historical donation amounts, time spent researching or offline earnings are
+invented. Existing custom religion/building definitions remain stored. Deploy
+code and static files together, restart one server instance and reload browsers.

@@ -1,4 +1,4 @@
-# World Conquest LAN — v6.5.1
+# World Conquest LAN — v6.6.0
 
 Persistent multiplayer strategy on a real-world grid: claim tiles, recruit armies,
 build an economy, research technology, form factions and fight for territory.
@@ -268,7 +268,7 @@ agency-level requirements and greater mineral yields.
 
 Orbital contracts continue earning during travel. Accumulation is bounded to the
 two-hour collection ceiling; the inactivity rule further limits unattended income
-to 30 minutes after the last interaction. Server downtime never triggers unlimited catch-up.
+to two hours after the last interaction. Server downtime never triggers unlimited catch-up.
 Space figures are starting balance choices, configurable under `SPACE_*` in
 `config.py`; they have not been validated in a long-running multiplayer economy.
 The existing Space Program and Dyson Sphere wonders remain separate country bonuses.
@@ -360,9 +360,10 @@ No save migration is needed.
 # Activity, war protection and easier essentials (6.5.1)
 
 After 30 minutes without clicks, typing, scrolling or touch interaction, a
-Keep playing dialog pauses passive production. Server polling cannot renew the
-timer. Earth resources and barracks, orbital income, planetary mining and faction
-treasury payouts stop; paused time is discarded when the player confirms. Hidden
+Keep playing dialog pauses game actions. Server polling cannot renew the timer.
+Earth resources and barracks, orbital income and planetary mining continue for
+up to two hours after the last interaction, then stop until confirmation. Faction
+treasury payouts still require an active member. Time beyond the allowance is discarded. Hidden
 tabs stop sending presence heartbeats. Online means a visible game page reported
 presence within three minutes and the account has not timed out from inactivity.
 This is not protection against attacks in an existing war. Deliberately automated
@@ -394,7 +395,7 @@ Privacy requests are directed to the server host/admin.
 Open Admin → Advertisements to configure the banner beside the WC logo. Customize
 its badge, title, message, optional image and link, button label, four colors,
 font size, width, corner radius, alignment and phone visibility. The editor shows
-a live preview. Save applies it to everyone; Remove banner hides it.
+a live preview. Publish enables it for everyone; Remove banner hides it.
 Both moderator roles are blocked server-side. Changes are recorded in the audit
 log and persisted in existing game settings; no additional migration is needed.
 Players refresh the banner within 30 seconds while the game is visible.
@@ -410,11 +411,82 @@ More → Playtime shows your counter and a paginated list of other players' tota
 The desktop account strip also shows your running clock. Time counts only while
 the game page is visible in an open browser tab. Hidden tabs, closed browsers and
 long heartbeat gaps do not accumulate time. Multiple tabs count once per account.
-The 30-minute resource pause is separate: an open, visible paused page can still
-count as browser time, but does not produce resources.
+The 30-minute action pause is separate: an open, visible paused page still counts
+as browser time and retains the two-hour offline resource allowance.
 
 Tracking starts with this update; historical browser-open time cannot be recovered
 from old saves. The server confirms time through 30-second heartbeats. Closing or
 hiding the page sends a final best-effort update; an abrupt disconnect can lose
-the last unconfirmed interval. Playtime is public to signed-in players and is
+the last unconfirmed interval. Playtime is public on Ranks as well as the signed-in Playtime view and is
 described in the Privacy policy. Schema 17 preserves existing accounts/progress.
+
+# Host security and player experience (6.6.0)
+
+Admin now opens a grouped control center. Existing player moderation, role,
+resource, tile, unit, balance, music, announcement and audit tools remain. New
+confirmed/audited controls set religion/ideology, clear religion cooldowns,
+complete or refund a research project, end offensives and return an expedition
+without losing its cargo. The game editor is available inside the dashboard and
+refreshes the player Country catalog on opening.
+
+Advertisements use **Publish banner** to enable a saved banner. Set RGB with the
+color picker or `rgb(0, 128, 255)` / `#RRGGBB` text inputs; choose solid, alternating
+or rainbow backgrounds. Animations stop with the browser's reduced-motion
+preference. Remove always uses saved settings, even if an unsaved draft is invalid.
+
+Ranks shows every non-banned player, public playtime and verified cumulative NOK
+donations. Admin → Control center records donation totals; it is not an automatic
+Vipps/payment integration. Default cosmetic tiers: Supporter 25 NOK (color),
+Patron 100 (+fonts), Champion 250 (+RGB), Legend 500 (+badge), Founder 1,000
+(+glow). Thresholds live in `config.py`. Admin can also assign a tier manually.
+Existing manually assigned supporters keep their rank; higher-tier styles are
+now checked server-side. None of these gives economic or combat advantages.
+
+The 30-minute inactivity prompt still blocks actions, but Earth, orbital and
+planetary production retain a **two-hour offline allowance**. On return, a
+**While you were away** popup shows recorded positive resource gains and deliveries
+while absent, acknowledged once. This starts recording with this release; it does
+not invent a summary for historical earnings. Faction treasury payouts continue
+to require activity.
+
+Trading opens a private popup with partner selection, discussion and resource/
+unit/territory offers. Discussion is plain text, bounded to the latest 100 messages
+per pair and respects mutes. Offers do not reserve goods: ownership and balances
+are rechecked atomically on acceptance. Gifts transfer immediately after confirmation.
+
+Queued land travel now costs 10% extra instead of 25%; initial and air travel
+costs remain the same. Frontage now affects both sides in combat. Private battle
+cards show live strength, supply and food estimates. A war declaration popup
+explains capture, peace and defensive commands. Its troop-strength comparison
+is not a statistically calibrated probability of winning.
+
+Research is a categorized timed focus tree with prerequisites and one active
+project per account. Economy, industry, military, navy/air and space routes can
+be followed in any order allowed by the connections. **Existing completed research
+is retained.** Projects cost money at the start and progress by server timestamps
+even while offline; no browser timer can complete them early. New labs add 15%
+research speed per owned building level, capped at +200%. Early projects take
+minutes; the most expensive focus takes up to eight hours before lab acceleration.
+Six new technologies add production, defense, precision weapons and space unlocks.
+
+After returning from Europa and researching Stellar Engineering, build and
+upgrade a private Orbital Ring, Dyson Swarm and Interstellar Trade Gate. Five
+levels each, doubling upgrade costs and increasing construction times. Output
+starts after completion and uses the same bounded offline earnings.
+
+Enable authenticator MFA in top-right Settings → Two-factor authentication.
+Passwords are still required; fresh TOTP codes cannot be replayed. Lost MFA keys
+require local host recovery through `manage.py reset-two-factor`. Security
+adds an independent authentication throttle (default 30 attempts/minute per IP
+and account), 12-hour session expiry, origin checks, 256 KB JSON limits and
+browser security headers. Optional game limits remain host-controlled.
+
+For domain hosting from Windows without port forwarding, follow
+[docs/DOMAIN_HOSTING.md](docs/DOMAIN_HOSTING.md). Configure HTTPS/secure cookies,
+allowed hostnames and trusted loopback proxy addresses before publishing. The
+remaining inline handlers require CSP `unsafe-inline`; this is hardening, not a
+guarantee against compromise or a completed external penetration test.
+
+Migration 18 backs up older saves and preserves world/accounts/research; see
+[docs/MIGRATIONS.md](docs/MIGRATIONS.md). Restart the server and reload browsers
+when ready. No live world was used to develop or test this update.

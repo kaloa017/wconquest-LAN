@@ -19,8 +19,9 @@ War, combat and loss of territory are part of play. A recently logged-in member
 of a target faction must be online when a new war is declared; after 24 hours
 without logging in, that member's offline status no longer prevents declaration.
 Protection does not cancel existing wars or prevent attacks during those wars.
-After 30 minutes without interaction, passive production pauses. Press Keep
-playing to resume; the paused time produces no backlog of resources.
+After 30 minutes without interaction, game actions pause until you press Keep
+playing. Earth and space resource production continues for at most two hours
+after your last activity. Time beyond that allowance does not earn resources.
 
 ## Moderation and changes
 Moderators can mute chat or temporarily time out players. Senior moderators can

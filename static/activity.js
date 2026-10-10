@@ -5,7 +5,7 @@ function showActivityPause(){
   if(!currentUser||document.getElementById('activity-paused'))return;
   activityReturnFocus=document.activeElement;
   const overlay=document.createElement('div');overlay.id='activity-paused';overlay.className='activity-overlay';
-  overlay.innerHTML='<section class="v6-dialog" role="dialog" aria-modal="true" aria-labelledby="activity-title"><h2 id="activity-title">Still playing?</h2><p>You have been inactive for 30 minutes. Food, wood, money, troops and space production are paused.</p><p>The paused time earns no resources. Your country is still here.</p><button class="btn btn-primary btn-full" id="activity-resume">Keep playing</button><p id="activity-error" role="alert"></p></section>';
+  overlay.innerHTML='<section class="v6-dialog" role="dialog" aria-modal="true" aria-labelledby="activity-title"><h2 id="activity-title">Still playing?</h2><p>You have been inactive for 30 minutes. Game actions are paused until you confirm. Your country still earns up to two hours of offline production.</p><p>After the two-hour allowance runs out, resource production stops until you return.</p><button class="btn btn-primary btn-full" id="activity-resume">Keep playing</button><p id="activity-error" role="alert"></p></section>';
   for(const child of document.body.children){activityInert.set(child,child.inert);child.inert=true}
   document.body.appendChild(overlay);const button=overlay.querySelector('button');button.focus();
   overlay.onkeydown=e=>{if(e.key==='Tab'){e.preventDefault();button.focus()}};
@@ -26,7 +26,7 @@ startGame=startSession;startSpectatorMode=()=>startSession(null);
 const activityStop=stopPolling;
 stopPolling=function(){clearInterval(activityTimer);activityTimer=null;activityDeadline=0;activityDirty=false;clearActivityPause();activityStop()};
 const activitySettings=buildSettings;
-buildSettings=function(){activitySettings();document.getElementById('settings-content')?.insertAdjacentHTML('beforeend',card('Rules and privacy','<p>Production pauses after 30 minutes without interaction. Recently logged-in players must be online for a new war declaration.</p><p><a href="/terms" target="_blank" rel="noopener">Terms and conditions</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy policy</a></p>'))};
+buildSettings=function(){activitySettings();document.getElementById('settings-content')?.insertAdjacentHTML('beforeend',card('Rules and privacy','<p>Actions pause after 30 minutes without interaction. Offline production continues for up to two hours. Recently logged-in players must be online for a new war declaration.</p><p><a href="/terms" target="_blank" rel="noopener">Terms and conditions</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy policy</a></p>'))};
 // Live claim quotes must follow changes in current ownership and production.
 const activityRefreshUser=refreshUser;
 refreshUser=async function(){const previous=currentUser?`${currentUser.territory_count}:${currentUser.claim_cost}`:'';await activityRefreshUser();if(currentUser&&previous!==`${currentUser.territory_count}:${currentUser.claim_cost}`&&selectedKey&&(isMobile()?sheetPanel==='territory'&&document.getElementById('mobile-sheet').classList.contains('open'):document.getElementById('panel-territory')?.classList.contains('active')))await fetchAndBuildPanel(selectedKey)};
