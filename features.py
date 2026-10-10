@@ -343,13 +343,15 @@ def religion_set():
 
 def me_details(conn,u,uid):
     out=core['_v5_me_extra'](conn,u,uid)
-    out.update({k:u[k] for k in ('religion','display_faction_colors','share_boats','share_planes','music_volume','music_muted','last_seen_version','is_donator','donator_title','rank_override','ideas_banned')})
+    out.update({k:u[k] for k in ('religion','display_faction_colors','share_boats','share_planes','music_volume','music_muted','last_seen_version','is_donator','donator_title','rank_override','ideas_banned','name_badge','name_glow','donated_ore')})
     if u['rank_override']:
         rank=next((r for r in RANKS if r[2]==u['rank_override']),None)
         if rank:out['rank']={'icon':rank[1],'name':rank[2]}
     out['religion_cooldown']=max(0,int(u['religion_ts']+RELIGION_COOLDOWN-time.time())) if u['religion'] else 0
     out['daily_ready']=u['last_daily']!=int(time.time()//86400)
     out['own_boats']=u['boats'];out['own_planes']=u['planes'];out['has_recovery']=bool(u['recovery_hash'])
+    from economy import name_style
+    out.update(name_style(u))
     return out
 
 def choose_slot(conn,value,current=None):
@@ -815,4 +817,12 @@ def install_features(namespace):
     from playtime import install as install_playtime
     install_playtime(namespace)
     install_space(namespace)
+    from experience import install as install_experience
+    install_experience(namespace)
+    from research import install as install_research
+    install_research(namespace)
+    from security import install as install_security
+    install_security(app)
+    from two_factor import install as install_two_factor
+    install_two_factor(namespace)
     if os.getenv('DISABLE_SCHEDULER')!='1':threading.Thread(target=scheduler_loop,name='game-scheduler',daemon=True).start()

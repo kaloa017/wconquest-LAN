@@ -1,7 +1,7 @@
 """Human activity controls passive production; polling never renews the deadline."""
 import time,json
 from flask import request, session, jsonify
-from config import INACTIVITY_SECONDS, WAR_RECENT_LOGIN_SECONDS, ONLINE_SECONDS, BUILDINGS
+from config import INACTIVITY_SECONDS, WAR_RECENT_LOGIN_SECONDS, ONLINE_SECONDS, BUILDINGS, OFFLINE_EARNING_SECONDS
 
 core=None
 
@@ -50,7 +50,7 @@ def state(conn,uid,timestamp=None):
 
 def production_cutoff(conn,uid,timestamp):
     row=state(conn,uid)
-    return min(timestamp,row['deadline'])
+    return min(timestamp,row['last_activity']+OFFLINE_EARNING_SECONDS)
 
 def heartbeat():
     conn=core['get_db']();uid=session['user_id'];stamp=int(time.time());row=state(conn,uid,stamp)
@@ -76,7 +76,7 @@ def resume():
     row=state(conn,uid,stamp)
     if not row['inactive']:return jsonify(success=True,inactive=False,deadline=row['deadline'],server_time=stamp)
     core['auto_collect'](uid,conn)
-    # Discard all paused production, including partial collection intervals.
+    # Settle the bounded offline allowance, then discard time beyond that allowance.
     conn.execute('UPDATE territories SET last_collected=? WHERE owner_id=?',(stamp,uid))
     conn.execute('UPDATE space_program SET collected=?,last_mined=? WHERE user_id=?',(stamp,stamp,uid))
     conn.execute('UPDATE player_activity SET last_activity=?,heartbeat=?,paused=0 WHERE user_id=?',(stamp,stamp,uid))
@@ -110,7 +110,8 @@ def install(namespace):
         if response.status_code==200 and request.path=='/api/income' and session.get('user_id'):
             row=state(core['get_db'](),session['user_id']);payload=response.get_json()
             payload['paused']=row['inactive']
-            if row['inactive']:
+            payload['offline_seconds_remaining']=max(0,row['last_activity']+OFFLINE_EARNING_SECONDS-int(time.time())) if row['inactive'] else OFFLINE_EARNING_SECONDS
+            if row['inactive'] and not payload['offline_seconds_remaining']:
                 for field in ('rates','totals','orbital_rates'):payload[field]={key:0 for key in payload.get(field,{})}
                 payload['troops_per_min']=0;payload['value_per_min']=0
             response.set_data(core['app'].json.dumps(payload))

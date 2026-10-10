@@ -2,6 +2,7 @@ import os,sys,tempfile,unittest,sqlite3,time,hashlib,io
 from pathlib import Path
 from contextlib import closing
 os.environ['DISABLE_SCHEDULER']='1'
+os.environ.setdefault('AUTH_ATTEMPTS_PER_MINUTE','10000')  # Isolated suite creates many accounts; security tests use a realistic limit.
 PROJECT=Path(__file__).resolve().parents[1]
 scratch=tempfile.TemporaryDirectory(dir=PROJECT/'tests');os.environ['DB_PATH']=str(Path(scratch.name)/'game.db')
 sys.path.insert(0,str(PROJECT))

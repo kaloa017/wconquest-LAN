@@ -232,6 +232,14 @@ def finish_campaign(conn,campaign,status,message):
 def settle_tile_campaigns(conn,key,message):
     for campaign in conn.execute("SELECT * FROM campaigns WHERE status='active' AND (target_key=? OR from_key=?)",(key,key)).fetchall(): finish_campaign(conn,campaign,'ended',message)
 
+def combat_strengths(result,troops,tactic,posture,supply,organization,adjacent):
+    width={'mountains':45,'forest':70,'city':60}.get(result['terrain'],100)
+    def width_factor(units):return (min(units,width)+max(0,units-width)*.25)/max(1,units)
+    attack=result['A']*width_factor(troops)*TACTICS[tactic][0]*supply*(.5+organization/200)*(1+min(.3,max(0,adjacent-1)*.1))
+    # Combat frontage limits BOTH sides; previously only attackers were penalized.
+    defense=result['D']*width_factor(result['def_force'])*(1.2 if posture=='entrench' else .9 if posture=='counterattack' else 1)
+    return attack,defense,width
+
 def tick_campaigns(conn, timestamp=None):
     timestamp=now() if timestamp is None else timestamp
     for original in conn.execute("SELECT * FROM campaigns WHERE status='active' AND last_tick<=?",(timestamp-COMBAT_TICK,)).fetchall():
@@ -249,10 +257,7 @@ def tick_campaigns(conn, timestamp=None):
         food=max(1,math.ceil(c['troops']*.02*TACTICS[c['tactic']][2]))
         if attacker['food']<food: supply*=.4
         else: conn.execute('UPDATE users SET food=food-? WHERE id=?',(food,c['attacker']))
-        width={'mountains':45,'forest':70,'city':60}.get(r['terrain'],100)
-        effective=min(c['troops'],width)+max(0,c['troops']-width)*.25
-        attack=r['A']*effective/max(1,c['troops'])*TACTICS[c['tactic']][0]*supply*(.5+c['attack_org']/200)*(1+min(.3,max(0,adjacent-1)*.1))
-        defense=r['D']*(1.2 if c['posture']=='entrench' else .9 if c['posture']=='counterattack' else 1)
+        attack,defense,width=combat_strengths(r,c['troops'],c['tactic'],c['posture'],supply,c['attack_org'],adjacent)
         ratio=attack/max(1,defense)
         c['attack_org']=max(0,c['attack_org']-max(2,9/max(.2,ratio))*TACTICS[c['tactic']][1]*(1.3 if c['posture']=='counterattack' else 1))
         c['defense_org']=max(0,c['defense_org']-max(2,min(30,9*ratio)))
@@ -303,6 +308,18 @@ def campaigns():
     for row in rows:
         item=dict(row);route=json.loads(item.pop('route_json'))
         item['targets_remaining']=route if item['attacker']==uid else []
+        if item['status']=='active':
+            attacker=user(conn,item['attacker'])
+            preview=core['resolve_battle'](conn,item['attacker'],attacker['username'],item['target_key'],item['troops'],'land',item['from_key'],dry=True)
+            gl,gg=core['parse_key'](item['target_key']);ids=core['group_ids'](conn,item['attacker'])
+            adjacent=sum(1 for key in core['adj_keys'](gl,gg) if (tile:=conn.execute('SELECT owner_id FROM territories WHERE grid_key=?',(key,)).fetchone()) and tile['owner_id'] in ids)
+            source=conn.execute('SELECT owner_id FROM territories WHERE grid_key=?',(item['from_key'],)).fetchone()
+            supply=1 if source and source['owner_id'] in ids else .25
+            food=max(1,math.ceil(item['troops']*.02*TACTICS[item['tactic']][2]))
+            if attacker['food']<food:supply*=.4
+            attack,defense,width=combat_strengths(preview,item['troops'],item['tactic'],item['posture'],supply,item['attack_org'],adjacent)
+            ratio=attack/max(1,defense)
+            item['forecast']=dict(assessment='Advantage' if ratio>1.2 else 'At risk' if ratio<.8 else 'Contested',strength_ratio=round(ratio,2),food_per_tick=food,frontage=width,supply=round(supply*100),explanation='Live estimate using terrain, combat frontage, supply, tactics and organization. Reinforcements can change it.')
         result.append(item)
     return jsonify(campaigns=result,tick_seconds=COMBAT_TICK)
 

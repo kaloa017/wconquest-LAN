@@ -3,7 +3,7 @@ import argparse,getpass,os,sqlite3
 from werkzeug.security import generate_password_hash
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['create-admin','reset-password','backup']);parser.add_argument('--username');parser.add_argument('--output');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['create-admin','reset-password','reset-two-factor','backup']);parser.add_argument('--username');parser.add_argument('--output');args=parser.parse_args()
     os.environ['DISABLE_SCHEDULER']='1'
     import app
     conn=app.get_db()
@@ -12,7 +12,14 @@ def main():
             if not args.output:parser.error('--output is required for backup')
             with sqlite3.connect(args.output) as dest:conn.backup(dest)
             print('Consistent database backup saved.');return
-        name=args.username or input('Username: ').strip();password=getpass.getpass('New password (8+ characters): ')
+        name=args.username or input('Username: ').strip()
+        if args.action=='reset-two-factor':
+            existing=conn.execute('SELECT id FROM users WHERE username=? COLLATE NOCASE',(name,)).fetchone()
+            if not existing:parser.error('Account not found')
+            if input('Disable two-factor for '+name+'? Type DISABLE: ')!='DISABLE':parser.error('Cancelled')
+            conn.execute('UPDATE users SET otp_secret="",otp_pending="",otp_pending_until=0,otp_last_step=-1,auth_version=auth_version+1 WHERE id=?',(existing['id'],))
+            conn.execute('INSERT INTO audit_log(ts,actor,action,target_id,details) VALUES(strftime("%s","now"),"Local host","reset-two-factor",?,"{}")',(existing['id'],));conn.commit();print('Two-factor disabled locally; existing sessions revoked.');return
+        password=getpass.getpass('New password (8+ characters): ')
         if len(password)<8 or password!=getpass.getpass('Repeat password: '):parser.error('Passwords must match and contain at least 8 characters')
         existing=conn.execute('SELECT id FROM users WHERE username=? COLLATE NOCASE',(name,)).fetchone()
         if args.action=='reset-password' and not existing:parser.error('Account not found')

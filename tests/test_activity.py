@@ -26,20 +26,20 @@ class ActivityTests(unittest.TestCase):
         for path in ('/api/me','/api/activity','/api/income'):
             response=self.client.get(path);self.assertEqual(response.status_code,200,response.json)
         income=self.client.get('/api/income').json
-        self.assertTrue(income['paused']);self.assertEqual(income['value_per_min'],0)
+        self.assertTrue(income['paused']);self.assertGreater(income['offline_seconds_remaining'],0)
         self.assertTrue(self.post('/api/activity',{'active':True}).json['inactive'])
         self.assertEqual(self.conn.execute('SELECT last_activity FROM player_activity WHERE user_id=?',(self.a,)).fetchone()[0],stamp-1800)
         self.assertEqual(self.post('/api/troops/build',{'amount':1}).status_code,423)
         self.assertEqual(self.post('/api/activity/resume',{}).status_code,200)
         self.assertEqual(self.post('/api/troops/build',{'amount':1}).status_code,200)
 
-    def test_earth_production_stops_at_exact_deadline_without_backlog(self):
+    def test_earth_production_preserves_two_hours_then_stops_without_backlog(self):
         stamp=int(time.time());self.tile('200,200',self.a,'farm')
-        self.mark(self.a,stamp-3600)
-        self.conn.execute('UPDATE territories SET last_collected=? WHERE owner_id=?',(stamp-3600,self.a));self.conn.commit()
+        self.mark(self.a,stamp-10800)
+        self.conn.execute('UPDATE territories SET last_collected=? WHERE owner_id=?',(stamp-10800,self.a));self.conn.commit()
         rate=app.income_rates(self.conn,self.a)[0]['food'];before=self.balance(self.a,'food')
         with patch.object(activity.time,'time',return_value=stamp):app.auto_collect(self.a,self.conn)
-        self.conn.commit();self.assertAlmostEqual(self.balance(self.a,'food')-before,rate*30)
+        self.conn.commit();self.assertAlmostEqual(self.balance(self.a,'food')-before,rate*120)
         before=self.balance(self.a,'food')
         with patch.object(activity.time,'time',return_value=stamp+3600):app.auto_collect(self.a,self.conn)
         self.conn.commit();self.assertAlmostEqual(self.balance(self.a,'food'),before)
@@ -76,12 +76,15 @@ class ActivityTests(unittest.TestCase):
         self.mark(self.a,stamp-3600)
         before=self.balance(self.a,'money')
         with patch.object(activity.time,'time',return_value=stamp):space.collect_space(self.conn,self.a)
-        self.conn.commit();self.assertAlmostEqual(self.balance(self.a,'money')-before,20000*30)
+        self.conn.commit();self.assertAlmostEqual(self.balance(self.a,'money')-before,20000*60)
         cargo=self.conn.execute('SELECT cargo FROM space_program WHERE user_id=?',(self.a,)).fetchone()[0]
         before=self.balance(self.a,'money')
-        with patch.object(activity.time,'time',return_value=stamp+3600):space.collect_space(self.conn,self.a)
+        with patch.object(activity.time,'time',return_value=stamp+10800):space.collect_space(self.conn,self.a)
+        self.conn.commit();self.assertAlmostEqual(self.balance(self.a,'money')-before,20000*60)
+        before=self.balance(self.a,'money')
+        with patch.object(activity.time,'time',return_value=stamp+14400):space.collect_space(self.conn,self.a)
         self.conn.commit();self.assertEqual(self.balance(self.a,'money'),before)
-        self.assertEqual(self.conn.execute('SELECT cargo FROM space_program WHERE user_id=?',(self.a,)).fetchone()[0],cargo)
+        self.assertGreaterEqual(sum(__import__('json').loads(self.conn.execute('SELECT cargo FROM space_program WHERE user_id=?',(self.a,)).fetchone()[0]).values()),sum(__import__('json').loads(cargo).values()))
 
     def test_recent_offline_faction_member_prevents_war(self):
         own=self.faction(self.a);target=self.faction(self.b);stamp=int(time.time())

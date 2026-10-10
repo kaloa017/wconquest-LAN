@@ -6,7 +6,8 @@ import features
 
 DEFAULT={'enabled':False,'badge':'Sponsored','title':'','message':'','button_text':'Learn more','link':'','image':'',
          'background':'#182437','text_color':'#eef2f8','accent':'#e6b963','border_color':'#3b516f',
-         'font_size':12,'width':220,'radius':10,'alignment':'left','show_mobile':True}
+         'font_size':12,'width':220,'radius':10,'alignment':'left','show_mobile':True,
+         'color_mode':'solid','alternate_color':'#345b83','cycle_seconds':8}
 core=None
 
 def validate(data):
@@ -18,9 +19,14 @@ def validate(data):
         value=result[key]
         if not isinstance(value,str) or len(value)>limit or any(ord(c)<32 for c in value):raise ValueError('Invalid '+key)
         result[key]=value.strip()
-    for key in ('background','text_color','accent','border_color'):
-        if not isinstance(result[key],str) or not re.fullmatch(r'#[0-9a-fA-F]{6}',result[key]):raise ValueError('Use a six-digit hex color for '+key)
-    for key,minimum,maximum in [('font_size',10,20),('width',100,360),('radius',0,24)]:
+    for key in ('background','text_color','accent','border_color','alternate_color'):
+        value=result[key]
+        if isinstance(value,str) and re.fullmatch(r'#[0-9a-fA-F]{6}',value):continue
+        match=re.fullmatch(r'rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)',value or '') if isinstance(value,str) else None
+        if not match or any(int(v)>255 for v in match.groups()):raise ValueError('Use #RRGGBB or rgb(0, 128, 255) for '+key)
+        result[key]='#'+''.join(f'{int(v):02x}' for v in match.groups())
+    if result['color_mode'] not in ('solid','alternate','rainbow'):raise ValueError('Choose solid, alternate or rainbow colors')
+    for key,minimum,maximum in [('font_size',10,20),('width',100,360),('radius',0,24),('cycle_seconds',3,60)]:
         value=result[key]
         if isinstance(value,bool) or not isinstance(value,int) or not minimum<=value<=maximum:raise ValueError('Invalid '+key)
     if result['alignment'] not in ('left','center'):raise ValueError('Choose left or center alignment')

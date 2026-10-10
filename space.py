@@ -5,7 +5,7 @@ from flask import jsonify, session, request
 import features
 from config import (SPACE_BUSINESSES, SPACE_PLANETS, SPACE_GRID_SIZE, SPACE_CARGO_CAPACITY,
     SPACE_IRIDIUM_PRICE, SPACE_MINE_COST, SPACE_MINE_MAX_LEVEL, SPACE_RESOURCE_RATES,
-    SPACE_COLLECTION_INTERVAL, MAX_ACCUM_MINS)
+    SPACE_COLLECTION_INTERVAL, MAX_ACCUM_MINS, MEGAPROJECTS)
 
 core = {}
 
@@ -62,6 +62,9 @@ def income(conn, uid):
     for row in conn.execute('SELECT business,quantity FROM space_businesses WHERE user_id=?',(uid,)):
         for key,rate in SPACE_BUSINESSES[row['business']]['production'].items():
             totals[key]=totals.get(key,0)+rate*row['quantity']
+    for row in conn.execute('SELECT project,level FROM megaprojects WHERE user_id=?',(uid,)):
+        for key,rate in MEGAPROJECTS[row['project']]['production'].items():totals[key]=totals.get(key,0)+rate*row['level']
+    if 'orbital_industry' in core['user_research'](conn,uid):totals={key:rate*1.10 for key,rate in totals.items()}
     return totals
 
 
@@ -70,6 +73,12 @@ def collect_space(conn, uid, timestamp=None, force=False):
     row=conn.execute('SELECT * FROM space_program WHERE user_id=?',(uid,)).fetchone()
     if not row:return
     program=dict(row)
+    for project in conn.execute('SELECT * FROM megaprojects WHERE user_id=? AND ready_at>0 AND ready_at<=?',(uid,timestamp)).fetchall():
+        # Collect old output through completion before the new level starts earning.
+        collect_space(conn,uid,project['ready_at']-1,force=True) if program['collected']<project['ready_at']-1 else None
+        conn.execute('UPDATE megaprojects SET level=level+1,ready_at=0 WHERE user_id=? AND project=?',(uid,project['project']))
+        core['create_notification'](conn,uid,'success','Megaproject completed: '+MEGAPROJECTS[project['project']]['name'])
+    program=dict(conn.execute('SELECT * FROM space_program WHERE user_id=?',(uid,)).fetchone())
     from activity import production_cutoff
     cutoff=production_cutoff(conn,uid,timestamp)
     elapsed=cutoff-program['collected']
@@ -140,7 +149,26 @@ def status():
     return jsonify(unlocked=enabled,program=program,planets=planets,tiles=tiles,businesses=SPACE_BUSINESSES,holdings=holdings,
         income=income(conn,uid) if enabled else {},grid_size=SPACE_GRID_SIZE,cargo_capacity=SPACE_CARGO_CAPACITY,
         iridium_price=iridium_price(program['planet']) if program else SPACE_IRIDIUM_PRICE,mine_max_level=SPACE_MINE_MAX_LEVEL,
-        tutorial_required=bool(enabled and program and not program['tutorial_seen']))
+        tutorial_required=bool(enabled and program and not program['tutorial_seen']),
+        megaprojects={key:{**definition,**dict(conn.execute('SELECT level,ready_at FROM megaprojects WHERE user_id=? AND project=?',(uid,key)).fetchone() or {'level':0,'ready_at':0})} for key,definition in MEGAPROJECTS.items()},
+        megaprojects_unlocked=bool(enabled and 'europa' in visited and 'stellar_engineering' in core['user_research'](conn,uid)))
+
+
+def build_megaproject():
+    conn=db();uid=session['user_id'];d=features.body();program=require_program(conn,uid);collect_space(conn,uid,force=True)
+    key=d.get('project')
+    if not isinstance(key,str) or key not in MEGAPROJECTS:raise ValueError('Unknown megaproject')
+    if 'europa' not in json.loads(program['visited']) or 'stellar_engineering' not in core['user_research'](conn,uid):raise ValueError('Return from Europa and complete Stellar Engineering first')
+    definition=MEGAPROJECTS[key];previous=definition['requires']
+    if previous and not conn.execute('SELECT 1 FROM megaprojects WHERE user_id=? AND project=? AND level>0',(uid,previous)).fetchone():raise ValueError('Complete the previous megaproject first')
+    held=conn.execute('SELECT * FROM megaprojects WHERE user_id=? AND project=?',(uid,key)).fetchone();level=held['level'] if held else 0
+    if held and held['ready_at']:raise ValueError('This megaproject is already under construction')
+    if level>=5:raise ValueError('Maximum project level reached')
+    cost={r:v*2**level for r,v in definition['cost'].items()};u=conn.execute('SELECT * FROM users WHERE id=?',(uid,)).fetchone()
+    if not core['can_afford'](u,cost):raise ValueError('Need '+core['fmt_cost'](cost))
+    core['pay'](conn,uid,cost);ready=int(time.time())+definition['duration_seconds']*(level+1)
+    conn.execute('INSERT INTO megaprojects VALUES(?,?,?,?) ON CONFLICT(user_id,project) DO UPDATE SET ready_at=excluded.ready_at',(uid,key,level,ready))
+    return jsonify(success=True,message='Megaproject construction started. Output begins on completion.')
 
 
 def buy_business():
@@ -227,5 +255,5 @@ def install(namespace):
             payload['value_per_min']+=rate*core['RATE_VAL'][key]
         response.set_data(json.dumps(payload));return response
     for path,method,fn in [('/api/space','GET',status),('/api/space/business','POST',buy_business),('/api/space/depart','POST',depart),
-            ('/api/space/mine','POST',build_mine),('/api/space/return','POST',return_home),('/api/space/tutorial/seen','POST',tutorial_seen)]:
+            ('/api/space/mine','POST',build_mine),('/api/space/return','POST',return_home),('/api/space/tutorial/seen','POST',tutorial_seen),('/api/space/megaproject','POST',build_megaproject)]:
         app.add_url_rule(path,'space_'+fn.__name__,core['require_login'](fn),methods=[method])

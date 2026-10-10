@@ -782,8 +782,9 @@ def pay(conn, uid, cost):
     for k, v in cost.items(): conn.execute(f'UPDATE users SET {k}={k}-? WHERE id=?', (v, uid))
 
 def military_travel_cost(kind, units, distance=1, queued=False):
+    from decimal import Decimal, ROUND_CEILING
     multiplier=QUEUED_ADVANCE_COST_MULTIPLIER if queued and kind=='land' else 1
-    return {resource: math.ceil(rate*units*distance*multiplier) for resource,rate in MILITARY_TRAVEL_COST[kind].items()}
+    return {resource:int((Decimal(str(rate))*units*Decimal(str(distance))*Decimal(str(multiplier))).to_integral_value(rounding=ROUND_CEILING)) for resource,rate in MILITARY_TRAVEL_COST[kind].items()}
 
 def prod(mods):
     p = 1.0
@@ -1154,12 +1155,13 @@ def cancel_alliance_invite():
 def leaderboard():
     conn = get_db()
     rows = conn.execute('''
-        SELECT u.username,u.color,u.is_admin,u.is_donator,u.donator_title,u.rank_override,
+        SELECT u.username,u.color,u.is_admin,u.is_donator,u.donator_title,u.rank_override,u.donated_ore,
+               COALESCE(p.play_seconds,0) play_seconds,
                COUNT(t.id) territories,
                COALESCE(SUM(t.population),0) total_pop, u.id, u.money, u.army, u.wins, f.tag
-        FROM users u LEFT JOIN territories t ON t.owner_id=u.id LEFT JOIN factions f ON f.id=u.faction_id
+        FROM users u LEFT JOIN territories t ON t.owner_id=u.id LEFT JOIN factions f ON f.id=u.faction_id LEFT JOIN player_activity p ON p.user_id=u.id
         WHERE u.is_banned=0
-        GROUP BY u.id ORDER BY territories DESC LIMIT 20
+        GROUP BY u.id ORDER BY territories DESC
     ''').fetchall()
     conn.close()
     result = []
@@ -1452,11 +1454,13 @@ def yield_ctx(conn, uid):
     rs = user_research(conn, uid); ft = ftechs(conn, uid); ide = ideo(conn, uid); w = my_wonders(conn, uid)
     base = faction_bonus(conn, uid) * float(get_setting(conn, 'income_mult', 1) or 1) * ide.get('yield', 1.0)
     if 'f_unity' in ft: base *= 1.05
+    if 'automation' in rs: base *= 1.10
     for key in w: base *= WONDERS.get(key, {}).get('yield', 1)
     base *= religion_for(conn, uid).get('yield', 1)
     return {'rs': rs, 'ft': ft, 'ide': ide, 'w': w, 'ev': ev_type(conn), 'base': base, 'religion': religion_for(conn, uid)}
 def res_mult2(rt, c):
     rs = c['rs']; m = c['base'] * c.get('religion', {}).get(rt, 1); ev = c['ev']
+    if rt in ('food','wood') and 'smart_farms' in rs:m *= 1.20
     if rt == 'food': m *= (1.25 if 'agri' in rs else 1) * (1.2 if 'irrigation' in rs else 1) * (1.5 if ev == 'harvest' else 1)
     if rt == 'wood': m *= (1.25 if 'agri' in rs else 1) * (1.5 if ev == 'harvest' else 1)
     if rt == 'money':
@@ -1659,6 +1663,7 @@ def defense_of(conn, owner_id, gk, terrain):
         if v != 1.0: mods.append((label, v))
     add(f'Terrain ({terrain})', TERRAIN_DEF.get(terrain, 1.0))
     if 'masonry' in rs: add('Masonry', 1.15)
+    if 'civil_defense' in rs: add('Civil defense', 1.10)
     b = conn.execute('SELECT level FROM buildings WHERE grid_key=? AND type="fort"', (gk,)).fetchone()
     if b: add(f'Fortress Lv{b["level"]}', 1 + (0.32 if 'fortification' in rs else 0.25)*b['level'])
     if 'f_bulwark' in ft: add('Bulwark', 1.08)
@@ -1677,6 +1682,7 @@ def attack_mods(conn, uid, rsch, kind, tgl, tgg, def_oid=None):
     if 'iron' in rsch: mods.append(('Iron Weapons', 1.2))
     if 'gunpowder' in rsch: mods.append(('Gunpowder', 1.3))
     if 'tactics' in rsch: mods.append(('Tactics', 1.05))
+    if 'precision_weapons' in rsch: mods.append(('Precision weapons', 1.10))
     if 'cavalry' in rsch and kind == 'land': mods.append(('Cavalry', 1.08))
     if 'artillery' in rsch and kind == 'land': mods.append(('Artillery', 1.12))
     if kind == 'air' and 'blitz' in rsch: mods.append(('Blitzkrieg', 1.2))
@@ -2716,8 +2722,9 @@ from expansion import migrate_orders as migrate_v14
 from space import migrate as migrate_v15
 from activity import migrate as migrate_v16
 from playtime import migrate as migrate_v17
+from experience import migrate as migrate_v18
 backup_before_upgrade(DB_PATH)
-init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db); migrate_v12(get_db); migrate_v13(get_db); migrate_v14(get_db); migrate_v15(get_db);migrate_v16(get_db);migrate_v17(get_db)
+init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db); migrate_v12(get_db); migrate_v13(get_db); migrate_v14(get_db); migrate_v15(get_db);migrate_v16(get_db);migrate_v17(get_db);migrate_v18(get_db)
 install_features(globals())
 
 if __name__ == '__main__':

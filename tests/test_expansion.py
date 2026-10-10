@@ -15,7 +15,7 @@ class ExpansionTests(unittest.TestCase):
         cls.saved=app.DB_PATH; cls.scratch=tempfile.TemporaryDirectory(dir=Path(__file__).parent)
         app.DB_PATH=str(Path(cls.scratch.name)/'game.db')
         app.init_db(); app.migrate_v4(); app.migrate_v5()
-        for migrate in (app.migrate_v6,app.migrate_v7,app.migrate_v8,app.migrate_v9,app.migrate_v10,app.migrate_v11,app.migrate_v12,app.migrate_v13,app.migrate_v14,app.migrate_v15,app.migrate_v16,app.migrate_v17): migrate(app.get_db)
+        for migrate in (app.migrate_v6,app.migrate_v7,app.migrate_v8,app.migrate_v9,app.migrate_v10,app.migrate_v11,app.migrate_v12,app.migrate_v13,app.migrate_v14,app.migrate_v15,app.migrate_v16,app.migrate_v17,app.migrate_v18): migrate(app.get_db)
         features._map_cache.clear()
 
     @classmethod
@@ -283,7 +283,7 @@ class ExpansionTests(unittest.TestCase):
 
     def test_queued_land_surcharge_does_not_change_initial_or_air_costs(self):
         self.assertEqual(app.military_travel_cost('land',1000),{'money':100,'oil':10})
-        self.assertEqual(app.military_travel_cost('land',1000,queued=True),{'money':125,'oil':13})
+        self.assertEqual(app.military_travel_cost('land',1000,queued=True),{'money':110,'oil':11})
         self.assertEqual(app.military_travel_cost('air',2,10),{'money':400,'oil':20})
         self.assertEqual(app.military_travel_cost('air',2,10,queued=True),{'money':400,'oil':20})
 

@@ -17,7 +17,7 @@ DEFAULTS={name:copy.deepcopy(getattr(config,name)) for name in ('BUILDINGS','WON
 CATEGORIES={'buildings':'BUILDINGS','wonders':'WONDERS','ideologies':'IDEOLOGIES','religions':'RELIGIONS'}
 RESOURCES=('money','food','wood','metal','oil','steel','uranium','gems')
 FONTS=('default','serif','mono','rounded')
-TIERS=('Supporter','Patron','Champion','Legend')
+TIERS=tuple(config.DONATION_TIERS)
 MULTIPLIERS={'atk','def','yield','money','food','wood','metal','oil','steel','uranium','gems','troop','research','claim','casualty'}
 EXTRAS={'yield_per_level','troops_per_level','def_per_level','research_discount_per_level','research_discount','casualty_per_level','claim_discount_per_level','range_per_level','floor','capacity','range','max_bonus','money_per_level','lat','lng'}
 
@@ -197,7 +197,14 @@ def donor_settings():
     color=d.get('name_color','');font=d.get('name_font','default');rgb=d.get('name_rgb',False)
     if not isinstance(color,str) or (color and not re.fullmatch('#[0-9a-fA-F]{6}',color)):raise ValueError('Choose a hex RGB color')
     if font not in FONTS or not isinstance(rgb,bool):raise ValueError('Choose a supported font and RGB toggle')
-    conn.execute('UPDATE users SET name_color=?,name_font=?,name_rgb=? WHERE id=?',(color,font,rgb,uid))
+    level=TIERS.index(u['donator_tier']) if u['donator_tier'] in TIERS else 0
+    badge=d.get('name_badge','');glow=d.get('name_glow',False)
+    if badge not in ('','💛','⭐','👑','💎','🌟','🚀') or not isinstance(glow,bool):raise ValueError('Choose a supported badge and glow setting')
+    if level<1 and font!='default':raise ValueError('Fonts require Patron or above')
+    if level<2 and rgb:raise ValueError('RGB animation requires Champion or above')
+    if level<3 and badge:raise ValueError('Custom badges require Legend or above')
+    if level<4 and glow:raise ValueError('Name glow requires Founder')
+    conn.execute('UPDATE users SET name_color=?,name_font=?,name_rgb=?,name_badge=?,name_glow=? WHERE id=?',(color,font,rgb,badge,glow,uid))
     return jsonify(success=True,message='Username style saved')
 
 def donor_tier():
@@ -208,7 +215,13 @@ def donor_tier():
     return jsonify(success=True,message='Cosmetic supporter tier updated')
 
 def name_style(row):
-    return {k:row[k] for k in ('is_donator','donator_tier','name_color','name_font','name_rgb','is_moderator')}
+    style={k:row[k] for k in ('is_donator','donator_tier','name_color','name_font','name_rgb','is_moderator','name_badge','name_glow')}
+    tier=TIERS.index(style['donator_tier']) if style['donator_tier'] in TIERS else 0
+    if tier<1:style['name_font']='default'
+    if tier<2:style['name_rgb']=0
+    if tier<3:style['name_badge']=''
+    if tier<4:style['name_glow']=0
+    return style
 
 def decorate_public(response):
     paths=('/api/online','/api/chat','/api/leaderboard','/api/territories','/api/map/sync')
@@ -224,7 +237,7 @@ def decorate_public(response):
     parts=[];parameters=[]
     if ids:parts.append('id IN ('+','.join('?' for _ in ids)+')');parameters.extend(ids)
     if names:parts.append('username IN ('+','.join('?' for _ in names)+')');parameters.extend(names)
-    rows=db().execute('SELECT id,username,is_donator,donator_tier,name_color,name_font,name_rgb,is_moderator FROM users WHERE '+' OR '.join(parts),parameters).fetchall()
+    rows=db().execute('SELECT id,username,is_donator,donator_tier,name_color,name_font,name_rgb,is_moderator,name_badge,name_glow FROM users WHERE '+' OR '.join(parts),parameters).fetchall()
     by_id={r['id']:r for r in rows};by_name={r['username']:r for r in rows}
     for item in items:
         if not isinstance(item,dict) or item.get('type')=='spectator':continue

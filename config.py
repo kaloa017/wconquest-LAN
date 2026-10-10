@@ -524,7 +524,7 @@ CLAIM_METAL_RATIO = 0.02
 NUKE_MONEY = 100000000
 
 # Request counters/presence are batched; purchases/combat commit immediately.
-VERSION = '6.5.1'
+VERSION = '6.6.0'
 SAVE_INTERVAL = 30
 SCHEDULER_INTERVAL = 30
 REQUESTS_PER_MINUTE = 0  # 0 = unlimited, until changed in the admin panel.
@@ -612,7 +612,7 @@ MILITARY_TRAVEL_COST = {
     'land': {'money': .10, 'oil': .01},  # Per troop per tile; previously free.
     'air': {'money': 20, 'oil': 1},  # Per plane per tile flown; previously free.
 }
-QUEUED_ADVANCE_COST_MULTIPLIER = 1.25  # Land follow-up steps only; initial attacks and planes unchanged.
+QUEUED_ADVANCE_COST_MULTIPLIER = 1.10  # Was 1.25. Land follow-up steps only; planes unchanged.
 ROCKET_COST = {'money': 1500, 'metal': 120, 'oil': 40}
 ROCKET_RANGE = 25
 ROCKET_COOLDOWN = 60
@@ -657,7 +657,33 @@ SPACE_MINE_MAX_LEVEL = 3  # Building tiers, not a purchase-quantity cap.
 SPACE_RESOURCE_RATES = {'steel':100,'uranium':20,'gems':40,'iridium':4}
 SPACE_COLLECTION_INTERVAL = 30
 INACTIVITY_SECONDS = 30*60
+OFFLINE_EARNING_SECONDS = 2*60*60  # Earnings continue for two hours; interaction still pauses at 30 minutes.
 WAR_RECENT_LOGIN_SECONDS = 24*60*60
 ONLINE_SECONDS = 180
 PLAYTIME_HEARTBEAT_GRACE = 90  # Longer gaps are not credited as online playtime.
 CLAIM_OWNED_TILE_FACTOR = .5  # Current owned tiles only, never lifetime claims.
+
+# Cosmetic donation tiers. Amounts are host-verified cumulative NOK, never game money.
+DONATION_TIERS = {'Supporter':25,'Patron':100,'Champion':250,'Legend':500,'Founder':1000}
+RESEARCH_BASE_SECONDS = 180
+RESEARCH_COST_SECONDS = 3
+LAB_SPEED_PER_LEVEL = .15
+LAB_MAX_SPEED_BONUS = 2.0
+BUILDINGS['laboratory'] = {'name':'Research Laboratory','icon':'🧪','desc':'Each level speeds current and future research by 15% (maximum +200%).','cost':{'money':500,'wood':100,'metal':100},'production':{}}
+RESEARCH_TREE.update({
+ 'automation':{'name':'Automation','icon':'🤖','cost':1500,'branch':'industry','requires':['industry','engineering'],'desc':'+10% all tile production; unlocks automated industry.'},
+ 'smart_farms':{'name':'Smart Agriculture','icon':'🌱','cost':1200,'branch':'economy','requires':['agri','scientific'],'desc':'+20% food and wood production.'},
+ 'civil_defense':{'name':'Civil Defense','icon':'🛡','cost':1800,'branch':'military','requires':['castle','medicine'],'desc':'+10% defense across your country.'},
+ 'precision_weapons':{'name':'Precision Weapons','icon':'🎯','cost':2200,'branch':'military','requires':['gunpowder','tactics'],'desc':'+10% attack strength.'},
+ 'orbital_industry':{'name':'Orbital Industry','icon':'🛰','cost':25000,'branch':'space','requires':['spaceflight','automation'],'desc':'+10% orbital business production.'},
+ 'stellar_engineering':{'name':'Stellar Engineering','icon':'🌟','cost':100000,'branch':'space','requires':['orbital_industry'],'desc':'Unlocks megaprojects after returning from Europa.'}
+})
+for _tech in RESEARCH_TREE.values():
+    _tech['duration_seconds'] = min(8*3600,RESEARCH_BASE_SECONDS + int(_tech['cost']*RESEARCH_COST_SECONDS))
+    if _tech.get('branch')=='naval':_tech['branch']='naval'
+RESEARCH_TREE['spaceflight']['branch']='space'
+MEGAPROJECTS = {
+ 'orbital_ring':{'name':'Orbital Ring','icon':'🪐','requires':None,'cost':{'money':500000000,'steel':20000,'gems':1000},'production':{'money':1500000},'duration_seconds':1800},
+ 'dyson_swarm':{'name':'Dyson Swarm','icon':'☀','requires':'orbital_ring','cost':{'money':2500000000,'steel':100000,'uranium':20000},'production':{'money':6000000,'uranium':200},'duration_seconds':3600},
+ 'star_gate':{'name':'Interstellar Trade Gate','icon':'🌌','requires':'dyson_swarm','cost':{'money':10000000000,'steel':250000,'gems':50000},'production':{'money':20000000,'gems':500},'duration_seconds':7200}
+}
