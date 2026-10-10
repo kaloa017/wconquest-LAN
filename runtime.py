@@ -46,7 +46,19 @@ class TrustedProxy:
                 try: environ['HTTP_X_FORWARDED_FOR'] = str(ipaddress.ip_address(environ['HTTP_CF_CONNECTING_IP']))
                 except ValueError: environ.pop('HTTP_X_FORWARDED_FOR',None)
             return self.fixed(environ,start_response)
+        # Waitress preserves these for our peer-address trust check. Never pass
+        # spoofed proxy headers from an untrusted connection to downstream code.
+        for name in ('FORWARDED','X_FORWARDED_FOR','X_FORWARDED_HOST','X_FORWARDED_PROTO','X_FORWARDED_PORT','X_FORWARDED_BY','CF_CONNECTING_IP'):
+            environ.pop('HTTP_'+name,None)
         return self.app(environ,start_response)
+
+def serve_game(app):
+    from waitress import serve
+    # TrustedProxy owns forwarding trust. Waitress's default header stripping
+    # otherwise removes X-Forwarded-Proto before that middleware can check it.
+    serve(app, host=os.environ.get('HOST','0.0.0.0'),
+          port=int(os.environ.get('PORT',5055)), threads=4,
+          clear_untrusted_proxy_headers=False)
 
 class RequestConnection(sqlite3.Connection):
     """Legacy handlers can close/commit; the request owns the real lifecycle."""

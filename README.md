@@ -1,4 +1,4 @@
-# World Conquest LAN — v6.6.0
+# World Conquest LAN — v6.6.1
 
 Persistent multiplayer strategy on a real-world grid: claim tiles, recruit armies,
 build an economy, research technology, form factions and fight for territory.
@@ -490,3 +490,7 @@ guarantee against compromise or a completed external penetration test.
 Migration 18 backs up older saves and preserves world/accounts/research; see
 [docs/MIGRATIONS.md](docs/MIGRATIONS.md). Restart the server and reload browsers
 when ready. No live world was used to develop or test this update.
+
+### Cloudflare login fix (6.6.1)
+
+The Python entrypoint preserves proxy headers through Waitress so the application can validate them against `TRUSTED_PROXIES`. Untrusted connections have forwarding headers removed. Set the proxy variables in the terminal that starts the **game server**, then restart Python. Setting them only in the Cloudflare terminal does not configure the game. See [tunnel troubleshooting](docs/DOMAIN_HOSTING.md#login-origin-troubleshooting).

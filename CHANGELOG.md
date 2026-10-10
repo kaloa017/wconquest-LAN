@@ -1,3 +1,8 @@
+# 6.6.1 — Cloudflare login repair
+
+- Fixed Waitress stripping the forwarded HTTPS header before the game could validate trusted proxy requests. Untrusted connections still cannot spoof forwarding headers.
+- Added production middleware regression checks for IPv4/IPv6 loopback tunnels and origin rejection. No save migration.
+
 # 6.6.0 — host security and player experience
 
 - Advertisement publishing explicitly enables the banner. Added RGB inputs, alternating colors and reduced-motion support.

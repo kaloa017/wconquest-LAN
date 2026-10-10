@@ -2728,6 +2728,6 @@ init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); m
 install_features(globals())
 
 if __name__ == '__main__':
-    from waitress import serve
+    from runtime import serve_game
     print('World Conquest: production server. See README.md for host setup.')
-    serve(app, host=os.environ.get('HOST', '0.0.0.0'), port=int(os.environ.get('PORT', 5055)), threads=4)
+    serve_game(app)

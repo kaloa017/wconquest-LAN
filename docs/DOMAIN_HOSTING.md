@@ -115,3 +115,29 @@ game's SQLite world or run its Python scheduler.
 - [Published application routing](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/routing-to-tunnel/)
 - [Tailscale Funnel and its limits](https://tailscale.com/docs/features/tailscale-funnel)
 - [Tailscale free plan eligibility](https://tailscale.com/docs/reference/free-plans-discounts)
+
+## Login origin troubleshooting
+
+Version 6.6.1 fixes Waitress removing `X-Forwarded-Proto` before the game's trusted-proxy middleware sees it. Restart the **Python game server** after updating. The variables below must be set in the same terminal that starts Python; the connector terminal has a separate environment. `.env.example` is a reference and is not automatically loaded.
+
+PowerShell:
+
+```powershell
+$env:TRUSTED_PROXIES = '127.0.0.1/32,::1/128'
+$env:PROXY_MODE = 'cloudflare'
+$env:PROXY_HOPS = '1'
+python app.py
+```
+
+Command Prompt:
+
+```bat
+set TRUSTED_PROXIES=127.0.0.1/32,::1/128
+set PROXY_MODE=cloudflare
+set PROXY_HOPS=1
+python app.py
+```
+
+Use the Python interpreter or activated virtual environment that already runs this project. Keep the connector running in a second terminal. For a quick tunnel, prefer `cloudflared tunnel --url http://127.0.0.1:5055` to avoid `localhost` resolving to IPv6 when the game listens only on IPv4. Restarting a quick tunnel changes its public URL. Connection-refused errors mean the destination address/port is not listening; they are separate from an origin rejection.
+
+If using the Waitress CLI instead of `python app.py`, add `--no-clear-untrusted-proxy-headers` so the game's own `TrustedProxy` middleware receives the headers and validates the original connection address. Keep `TRUSTED_PROXIES` restricted to your actual proxy, never the entire internet.
