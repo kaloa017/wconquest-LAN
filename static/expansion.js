@@ -5,9 +5,10 @@ function expansionDialog(title,html){
   document.getElementById('expansion-dialog')?.remove();
   const previous=document.activeElement, overlay=document.createElement('div');overlay.id='expansion-dialog';overlay.className='v6-overlay';
   overlay.innerHTML=`<section class="v6-dialog expansion-dialog" role="dialog" aria-modal="true" aria-labelledby="expansion-title"><h2 id="expansion-title">${esc(title)}</h2>${html}<button class="btn btn-ghost" data-close>Close</button></section>`;
-  const close=()=>{overlay.remove();previous?.focus()};overlay.querySelector('[data-close]').onclick=close;
-  overlay.addEventListener('keydown',e=>{if(e.key==='Escape')close();if(e.key==='Tab'){const nodes=[...overlay.querySelectorAll('button,input,select,textarea')].filter(n=>!n.disabled);const first=nodes[0],last=nodes.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}});
-  document.body.appendChild(overlay);overlay.querySelector('input,select,button')?.focus();return overlay;
+  const focusable=()=>[...overlay.querySelectorAll('a[href],button,input,select,textarea,summary,[tabindex]')].filter(n=>!n.disabled&&n.tabIndex>=0&&n.getClientRects().length);
+  const close=()=>{overlay.remove();if(previous?.isConnected)previous.focus()};overlay.querySelector('[data-close]').onclick=close;
+  overlay.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();overlay.querySelector('[data-close]').click()}if(e.key==='Tab'){const nodes=focusable(),first=nodes[0],last=nodes.at(-1);if(!first)return;if(e.shiftKey&&(document.activeElement===first||!nodes.includes(document.activeElement))){e.preventDefault();last.focus()}else if(!e.shiftKey&&(document.activeElement===last||!nodes.includes(document.activeElement))){e.preventDefault();first.focus()}}});
+  document.body.appendChild(overlay);focusable()[0]?.focus();return overlay;
 }
 function showTimeout(info){
   let overlay=document.getElementById('timeout-overlay');

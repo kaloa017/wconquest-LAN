@@ -1,3 +1,12 @@
+# 6.6.2 — security, production and interaction repairs
+
+- Bound password-change session revocation to the authenticated account. Added mandatory protection for password-confirmed profile and authenticator operations, and bounded the attempt tracker even when requests are rejected.
+- Fixed old income reappearing after resource resets. Player and explicit round resets now clear unfinished progression; player resets also remove rockets.
+- Buildings settle earned production before construction or demolition, and laboratory speed changes immediately. Barracks retain fractional recruitment between collections instead of losing troops through frequent polling.
+- Trade partner changes confirm and clear unsent drafts, offer review names the recipient, and delayed message replies preserve newly typed text. Older discussion responses cannot overwrite newer ones.
+- Delayed away and war notices wait for existing dialogs. Authenticator setup responses stay bound to their dialog. Keyboard navigation skips hidden controls and includes expandable sections.
+- Schema 19 adds a recruitment fraction ledger with a pre-upgrade backup; existing accounts, land and balances are preserved.
+
 # 6.6.1 — Cloudflare login repair
 
 - Fixed Waitress stripping the forwarded HTTPS header before the game could validate trusted proxy requests. Untrusted connections still cannot spoof forwarding headers.
