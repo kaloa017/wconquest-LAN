@@ -108,12 +108,12 @@ def host_control():
 def install(namespace):
     global core
     core=namespace;app=core['app'];original=core['auto_collect']
-    def tracked_collect(uid,conn):
+    def tracked_collect(uid,conn,force=False):
         from activity import state
         stamp=int(time.time());row=state(conn,uid,stamp)
         offline=stamp-row['last_activity']>180 and row['heartbeat']<=stamp-180
         before=conn.execute('SELECT '+','.join(RESOURCES)+' FROM users WHERE id=?',(uid,)).fetchone() if offline else None
-        original(uid,conn)
+        original(uid,conn,force=force)
         if before:
             after=conn.execute('SELECT '+','.join(RESOURCES)+' FROM users WHERE id=?',(uid,)).fetchone()
             gains={key:after[key]-before[key] for key in RESOURCES if after[key]>before[key]+.000001}

@@ -813,7 +813,11 @@ def building_demolish():
     gk = (request.json or {}).get('grid_key', ''); conn = get_db()
     if not conn.execute('SELECT 1 FROM territories WHERE grid_key=? AND owner_id=?', (gk, session['user_id'])).fetchone():
         conn.close(); return jsonify({'error': 'Not your territory'}), 403
-    conn.execute('DELETE FROM buildings WHERE grid_key=?', (gk,)); conn.commit(); conn.close()
+    auto_collect(session['user_id'],conn,force=True)
+    conn.execute('DELETE FROM buildings WHERE grid_key=?', (gk,))
+    from research import tick
+    tick(conn,session['user_id'])
+    conn.commit(); conn.close()
     return jsonify({'success': True, 'message': 'Building demolished'})
 
 @app.route('/api/buildings')
@@ -1526,14 +1530,14 @@ def casualty_mult(conn, uid, rsch):
     m *= 1 - min(0.30, 0.10*sum_levels(conn, uid, 'hospital'))
     return m
 
-def auto_collect(uid, conn):
+def auto_collect(uid, conn, force=False):
     from activity import production_cutoff
     wall_now=int(time.time());now=production_cutoff(conn,uid,wall_now);c=yield_ctx(conn,uid)
     rows = conn.execute('SELECT t.grid_key,t.terrain,t.last_collected,b.type bt,b.level bl FROM territories t LEFT JOIN buildings b ON b.grid_key=t.grid_key WHERE t.owner_id=?', (uid,)).fetchall()
     totals = {k: 0.0 for k in RATE_VAL}; troops = 0.0; upd = []; plants = []
     for r in rows:
         el = now - (r['last_collected'] or 0)
-        if el < AUTO_COLLECT_CD and now==wall_now: continue
+        if not force and el < AUTO_COLLECT_CD and now==wall_now: continue
         if el<=0:continue
         mins = min(el/60., MAX_ACCUM_MINS)
         for k, v in tile_yield(c, r['terrain'], r['bt'], r['bl']).items(): totals[k] += v*mins
@@ -1541,10 +1545,16 @@ def auto_collect(uid, conn):
         if r['bt'] == 'nuclear_plant': plants.append((r['grid_key'], r['bl'], mins))
         upd.append(r['grid_key'])
     if upd:
-        for k in upd: conn.execute('UPDATE territories SET last_collected=? WHERE grid_key=?', (wall_now, k))
+        conn.executemany('UPDATE territories SET last_collected=? WHERE grid_key=?', [(wall_now,k) for k in upd])
         sets = ','.join(f'{r}={r}+?' for r in totals)
         conn.execute(f'UPDATE users SET {sets} WHERE id=?', list(totals.values())+[uid])
-        if troops >= 1: pool_add(conn, uid, 'army', int(troops))
+        if troops>0:
+            saved=conn.execute('SELECT remainder FROM recruitment_progress WHERE user_id=?',(uid,)).fetchone()
+            troops+=saved['remainder'] if saved else 0
+            recruited=int(troops+1e-9)
+            remainder=max(0,troops-recruited)
+            conn.execute('INSERT INTO recruitment_progress VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET remainder=excluded.remainder',(uid,remainder))
+            if recruited:pool_add(conn, uid, 'army', recruited)
         for gk, bl, mins in plants:
             if random.random() < 1 - (1 - NUCLEAR_MELTDOWN_P*bl)**mins: meltdown(conn, gk)
     run_trades(conn, uid)
@@ -1766,6 +1776,8 @@ def do_assault(conn, uid, uname_, fk, tk, force, kind, units_label, committed_tr
     r.update({'win': win, 'msg': msg, 'lost': lost}); return r
 
 def do_game_reset(conn):
+    for table in ('recruitment_progress','research_projects','megaprojects','away_earnings','war_seen'):
+        conn.execute(f'DELETE FROM {table}')
     conn.execute('UPDATE territories SET owner_id=NULL,garrison=0,boats=0,planes=0')
     for t in ('space_businesses','planet_tiles','space_program','bank_loans', 'bank_offers', 'campaigns', 'exchanges', 'moderation_confirmations', 'strike_events', 'casino_rounds', 'buildings', 'fallout', 'embassies', 'trades', 'loans', 'wonders', 'faction_rel', 'faction_research', 'faction_requests', 'merges','stock_prices','stock_history','stock_holdings','stock_transactions','eva_deployments','faction_contributions'):
         conn.execute(f'DELETE FROM {t}')
@@ -2074,12 +2086,17 @@ def building_build():
     if lvl > BUILD_MAX_LEVEL: conn.close(); return jsonify({'error': 'Already max level'}), 400
     cost = build_cost(bt, lvl)
     if 'engineering' in rsch: cost = {k: int(v*ENGINEERING_DISCOUNT) for k, v in cost.items()}
+    auto_collect(uid,conn,force=True)
+    if not conn.execute('SELECT 1 FROM territories WHERE grid_key=? AND owner_id=?',(gk,uid)).fetchone():
+        conn.close();return jsonify({'error':'Territory changed during production settlement; refresh and try again'}),409
     u = conn.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
     if not can_afford(u, cost): conn.close(); return jsonify({'error': f'Need {fmt_cost(cost)}'}), 400
     pay(conn, uid, cost)
     if cur: conn.execute('UPDATE buildings SET level=? WHERE grid_key=?', (lvl, gk))
     else: conn.execute('INSERT INTO buildings(grid_key,type,level) VALUES(?,?,1)', (gk, bt))
     conn.execute('UPDATE territories SET invested=invested+? WHERE grid_key=?', (cost_value(cost), gk))
+    from research import tick
+    tick(conn,uid)
     ach = award_achievements(conn, uid); conn.commit(); conn.close()
     return jsonify({'success': True, 'message': f'{info["name"]} {"upgraded to Lv"+str(lvl) if cur else "built"} ({fmt_cost(cost)})', 'achievements': ach})
 
@@ -2715,7 +2732,7 @@ def detail_extra(conn, grid_key, row):
     return out
 
 from features import install_features, religion_for
-from migrations import migrate_v6, migrate_v7, migrate_v8, migrate_v9, migrate_v10, migrate_v11, backup_before_upgrade
+from migrations import migrate_v6, migrate_v7, migrate_v8, migrate_v9, migrate_v10, migrate_v11, migrate_v19, backup_before_upgrade
 from expansion import migrate as migrate_v12
 from economy import migrate as migrate_v13
 from expansion import migrate_orders as migrate_v14
@@ -2724,7 +2741,7 @@ from activity import migrate as migrate_v16
 from playtime import migrate as migrate_v17
 from experience import migrate as migrate_v18
 backup_before_upgrade(DB_PATH)
-init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db); migrate_v12(get_db); migrate_v13(get_db); migrate_v14(get_db); migrate_v15(get_db);migrate_v16(get_db);migrate_v17(get_db);migrate_v18(get_db)
+init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db); migrate_v12(get_db); migrate_v13(get_db); migrate_v14(get_db); migrate_v15(get_db);migrate_v16(get_db);migrate_v17(get_db);migrate_v18(get_db);migrate_v19(get_db)
 install_features(globals())
 
 if __name__ == '__main__':

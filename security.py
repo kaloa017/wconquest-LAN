@@ -5,6 +5,10 @@ from urllib.parse import urlsplit
 from flask import request,session,jsonify
 
 _attempts=OrderedDict();_lock=threading.Lock()
+MAX_AUTH_CLIENTS=10000
+AUTH_ROUTES=('/api/login','/api/register','/api/forgot_password',
+             '/api/profile/two_factor','/api/profile/recovery',
+             '/api/profile/change_password','/api/profile/change_username')
 
 def install(app):
     app.config['TRUSTED_HOSTS']=[host.strip() for host in os.getenv('ALLOWED_HOSTS','').split(',') if host.strip()] or None
@@ -26,19 +30,23 @@ def install(app):
             issued=session.setdefault('issued_at',int(time.time()))
             if time.time()-issued>12*3600:
                 session.clear();return jsonify(error='Session expired; please log in again'),401
-        if request.path in ('/api/login','/api/register','/api/forgot_password') and request.method=='POST':
+        if request.path in AUTH_ROUTES and request.method=='POST':
             # Separate from optional game limits: password hashing is expensive and needs protection.
             limit=max(1,int(os.getenv('AUTH_ATTEMPTS_PER_MINUTE','30')))
             data=request.get_json(silent=True) or {};name=data.get('username','') if isinstance(data,dict) else ''
             stamp=int(time.time()//60)
-            keys=['ip:'+str(request.remote_addr),'account:'+hashlib.sha256(str(name).casefold().encode()).hexdigest()]
+            account=('uid:'+str(session.get('user_id')) if request.path.startswith('/api/profile/')
+                     else 'account:'+hashlib.sha256(str(name).casefold().encode()).hexdigest())
+            keys=['ip:'+str(request.remote_addr),account]
+            blocked=False
             with _lock:
                 for key in keys:
                     previous=_attempts.get(key);count=previous[1]+1 if previous and previous[0]==stamp else 1
                     _attempts[key]=(stamp,count);_attempts.move_to_end(key)
-                    if count>limit:
-                        response=jsonify(error='Too many account attempts. Try again in one minute.');response.headers['Retry-After']='60';return response,429
-                while len(_attempts)>10000:_attempts.popitem(last=False)
+                    blocked=blocked or count>limit
+                while len(_attempts)>MAX_AUTH_CLIENTS:_attempts.popitem(last=False)
+            if blocked:
+                response=jsonify(error='Too many account attempts. Try again in one minute.');response.headers['Retry-After']='60';return response,429
     # Run before JSON parsing, hashing and database work in older request hooks.
     app.before_request_funcs[None].remove(protect)
     app.before_request_funcs[None].insert(0,protect)

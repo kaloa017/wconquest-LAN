@@ -9,10 +9,21 @@ def backup_before_upgrade(path):
     if not p.exists(): return
     with closing(sqlite3.connect(path)) as conn:
         if conn.execute("SELECT 1 FROM sqlite_master WHERE name='schema_migrations'").fetchone():
-            if conn.execute('SELECT 1 FROM schema_migrations WHERE version=18').fetchone(): return
-        backup=p.parent/'backups'/f'{p.stem}-before-v18-{time.time_ns()}.db'
+            if conn.execute('SELECT 1 FROM schema_migrations WHERE version=19').fetchone(): return
+        backup=p.parent/'backups'/f'{p.stem}-before-v19-{time.time_ns()}.db'
         backup.parent.mkdir(exist_ok=True)
         with closing(sqlite3.connect(backup)) as dest: conn.backup(dest)
+
+def migrate_v19(get_db):
+    """Keep sub-unit recruitment between collections without changing balances."""
+    c=get_db()
+    try:
+        c.execute('BEGIN IMMEDIATE')
+        if c.execute('SELECT 1 FROM schema_migrations WHERE version=19').fetchone():c.commit();return
+        c.execute('CREATE TABLE IF NOT EXISTS recruitment_progress(user_id INTEGER PRIMARY KEY,remainder REAL NOT NULL DEFAULT 0 CHECK(remainder>=0 AND remainder<1))')
+        c.execute('INSERT INTO schema_migrations VALUES(19,?)',(int(time.time()),));c.commit()
+    except Exception:c.rollback();raise
+    finally:c.close()
 
 def migrate_v6(get_db):
     c=get_db(); c.execute('PRAGMA journal_mode=WAL')

@@ -207,7 +207,7 @@ signals settle the current interval; long heartbeat gaps produce no offline time
 
 ## 6.6.0 — host security and timed progression (schema 18)
 
-Current upgrade backup: `backups/game-before-v18-<timestamp>.db`. Schema 18 adds
+Schema-18 upgrade backup: `backups/game-before-v18-<timestamp>.db`. Schema 18 adds
 verified donation totals and cosmetic fields to users, private authenticator
 secret/pending/replay fields, research projects, megaproject construction,
 private trade discussions, return earnings summaries and per-user war acknowledgments.
@@ -226,3 +226,14 @@ still uses 30 minutes. The prior schema-16 notes describe historical behavior.
 No historical donation amounts, time spent researching or offline earnings are
 invented. Existing custom religion/building definitions remain stored. Deploy
 code and static files together, restart one server instance and reload browsers.
+
+## 6.6.2 — recruitment accounting (schema 19)
+
+Current upgrade backup: `backups/game-before-v19-<timestamp>.db`. An idempotent
+migration adds `recruitment_progress`, which holds each country's fractional
+barracks recruitment between collections. Existing troops, resources, accounts,
+research and territory remain unchanged. Historical lost fractions are not
+invented. Explicit player and round resets clear progression queues and fractions.
+Construction and demolition settle production at the old rate before changing
+the building; laboratory speed updates at that boundary. Deploy code and static
+files together, then restart the server and reload browsers.

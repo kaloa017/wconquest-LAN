@@ -211,7 +211,8 @@ def after_request(response):
             safe={k:v for k,v in d.items() if k in ('user_id','resource','amount','grid_key','type','ban','promote','minutes','faction_id','key','value','action')}
             audit(conn,request.path,d.get('user_id'),safe)
         if request.path in ('/api/admin/reset_password','/api/profile/change_password'):
-            uid=(request.get_json(silent=True) or {}).get('user_id',session.get('user_id'))
+            uid=((request.get_json(silent=True) or {}).get('user_id')
+                 if request.path=='/api/admin/reset_password' else session.get('user_id'))
             conn.execute('UPDATE users SET auth_version=auth_version+1 WHERE id=?',(uid,))
             if uid==session.get('user_id'):session['auth_version']=conn.execute('SELECT auth_version FROM users WHERE id=?',(uid,)).fetchone()[0]
             audit(conn,'password_changed',uid)
@@ -618,6 +619,7 @@ def admin_player():
         selected=d.get('resource','all')
         if selected!='all' and selected not in resources:raise ValueError('Choose a valid resource or all resources')
         keys=resources if selected=='all' else (selected,)
+        core['auto_collect'](uid,conn,force=True)
         user=conn.execute('SELECT '+','.join(keys)+' FROM users WHERE id=?',(uid,)).fetchone()
         before={key:user[key] for key in keys}
         conn.execute('UPDATE users SET '+','.join(key+'=0' for key in keys)+' WHERE id=?',(uid,))
@@ -630,9 +632,9 @@ def admin_player():
             finish_campaign(conn,campaign,'ended','Offensive ended by an administrator player reset')
         leave_faction(conn,uid);conn.execute('DELETE FROM buildings WHERE grid_key IN (SELECT grid_key FROM territories WHERE owner_id=?)',(uid,))
         conn.execute('UPDATE territories SET owner_id=NULL WHERE owner_id=?',(uid,))
-        conn.execute('UPDATE users SET money=200,wood=100,food=100,metal=100,oil=25,steel=0,uranium=0,gems=0,army=10,boats=0,planes=0,nukes=0,capital_key=NULL,capital_ts=0 WHERE id=?',(uid,))
+        conn.execute('UPDATE users SET money=200,wood=100,food=100,metal=100,oil=25,steel=0,uranium=0,gems=0,army=10,boats=0,planes=0,nukes=0,rockets=0,capital_key=NULL,capital_ts=0 WHERE id=?',(uid,))
         conn.execute('UPDATE users SET research="[]",religion=NULL,religion_ts=0,ideology=NULL WHERE id=?',(uid,))
-        for table in ('wonders','stock_holdings','achievements','space_businesses','planet_tiles','space_program'):conn.execute(f'DELETE FROM {table} WHERE '+('owner_id' if table=='wonders' else 'user_id')+'=?',(uid,))
+        for table in ('wonders','stock_holdings','achievements','space_businesses','planet_tiles','space_program','research_projects','megaprojects','away_earnings','recruitment_progress'):conn.execute(f'DELETE FROM {table} WHERE '+('owner_id' if table=='wonders' else 'user_id')+'=?',(uid,))
     elif action=='faction':
         fid=integer(d.get('faction_id',0),0);f=conn.execute('SELECT 1 FROM factions WHERE id=?',(fid,)).fetchone() if fid else None
         if fid and not f:raise ValueError('Faction not found')

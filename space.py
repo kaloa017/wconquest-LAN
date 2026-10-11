@@ -238,8 +238,8 @@ def tutorial_seen():
 def install(namespace):
     global core
     core=namespace;app=core['app'];original=core['auto_collect']
-    def auto_collect(uid,conn):
-        original(uid,conn);collect_space(conn,uid)
+    def auto_collect(uid,conn,force=False):
+        original(uid,conn,force=force);collect_space(conn,uid,force=force)
     core['auto_collect']=auto_collect
     @app.after_request
     def include_orbital_income(response):
