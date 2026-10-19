@@ -37,6 +37,13 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Check dependencies
         run: python -m pip check
+      - name: Check Raspberry Pi installer syntax
+        if: runner.os == 'Linux'
+        run: |
+          bash -n deploy/raspberry-pi/install.sh
+          bash -n deploy/raspberry-pi/set-tunnel-token.sh
+      - name: Install offline UI test dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Check publishable files
         run: python tools/check_release.py
       - name: Check browser script syntax
@@ -50,6 +57,9 @@ jobs:
           node --check static/advertisements.js
           node --check static/playtime.js
           node --check static/experience.js
+          node --check static/interface.js
           node tests/client_audit.cjs
+      - name: Test interface in offline DOMs
+        run: npm run test:ui
       - name: Test isolated game databases
         run: python -m unittest discover -s tests -v

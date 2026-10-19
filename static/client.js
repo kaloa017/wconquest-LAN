@@ -181,10 +181,39 @@ loadLandGeoJSON=async function(){
   landGeoJSON={type:'FeatureCollection',features:[]};Object.keys(landCache).forEach(key=>delete landCache[key]);Object.keys(landMem).forEach(key=>delete landMem[key]);
   if(map){islandHoverLayer=null;hoveredIslandKey=null;map.off('moveend',drawPacificIslands);map.on('moveend',drawPacificIslands);drawPacificIslands();renderTerritories()}
 };
-function islandAt(lat,lng){const point=turf.point([lng,lat]);return (islandBuckets.get(Math.floor(lng/5)+','+Math.floor(lat/5))||[]).find(f=>(!f.properties.grid_tiles||territories[f.properties.key]?.owner_id)&&turf.booleanPointInPolygon(point,f))}
+// Return -1 outside, 0 on the boundary and 1 inside a GeoJSON ring.
+function islandRingLocation(ring,x,y){
+  let inside=false;
+  for(let i=0,j=ring.length-1;i<ring.length;j=i++){
+    const [ax,ay]=ring[j],[bx,by]=ring[i];
+    const cross=(x-ax)*(by-ay)-(y-ay)*(bx-ax);
+    if(cross===0&&x>=Math.min(ax,bx)&&x<=Math.max(ax,bx)&&y>=Math.min(ay,by)&&y<=Math.max(ay,by))return 0;
+    if((ay>y)!==(by>y)&&x<(bx-ax)*(y-ay)/(by-ay)+ax)inside=!inside;
+  }
+  return inside?1:-1;
+}
+function islandContainsPoint(feature,lat,lng){
+  const geometry=feature.geometry;
+  const polygons=geometry.type==='MultiPolygon'?geometry.coordinates:geometry.type==='Polygon'?[geometry.coordinates]:[];
+  return polygons.some(rings=>{
+    if(!rings.length||islandRingLocation(rings[0],lng,lat)<0)return false;
+    // Island shores and hole boundaries count as land; hole interiors do not.
+    return !rings.slice(1).some(ring=>islandRingLocation(ring,lng,lat)>0);
+  });
+}
+function islandAt(lat,lng){return (islandBuckets.get(Math.floor(lng/5)+','+Math.floor(lat/5))||[]).find(f=>(!f.properties.grid_tiles||territories[f.properties.key]?.owner_id)&&islandContainsPoint(f,lat,lng))}
 function inspectIsland(key){selectTerritory(key);if(isMobile())openMobileSheet(key);else{showPanel('territory');fetchAndBuildPanel(key)}}
-const ordinaryMapClick=onMapClick;
-onMapClick=function(event){const island=islandAt(event.latlng.lat,event.latlng.lng);if(island){inspectIsland(island.properties.key);return}ordinaryMapClick(event)};
+// Background land clicks use the same selection path as territory layers.
+// Hover information is optional and must never block opening a tile.
+onMapClick=function(event){
+  try{
+    const {lat,lng}=event.latlng,island=islandAt(lat,lng);
+    inspectIsland(island?.properties.key||`${Math.floor(lat/GRID)},${Math.floor(lng/GRID)}`);
+  }catch(error){
+    console.error('Territory selection failed:',error);
+    toast('Could not select this tile. Reload the page and try again.','error');
+  }
+};
 function drawPacificIslands(){
   if(!map||!terrainBits)return;
   if(islandLayer)map.removeLayer(islandLayer);if(islandMarkers)map.removeLayer(islandMarkers);
@@ -289,7 +318,7 @@ async function refreshIncomeTooltips(){if(!currentUser||incomeBusy||Date.now()-i
 const incomeNavbar=updateNavbar;
 updateNavbar=function(user){incomeNavbar(user);applyIncomeTooltips();refreshIncomeTooltips()};
 const communitySession=startSession;
-startSession=async function(user){recentChat={global:[],faction:[]};incomeSnapshot=null;incomeUpdated=0;chatCollapsed=true;try{const started=await communitySession(user);if(started===false)return;if(user){await api('GET','/api/chat?channel=global&since=0');if(!localStorage.getItem('wc_tut')&&(currentUser?.territory_count||0)===0)showTutorial(0)}}catch{stopPolling();document.getElementById('game-screen').style.display='none';document.getElementById('auth-overlay').style.display='flex';document.getElementById('auth-msg').textContent='Unable to load the game. Check the connection and reload to try again.'}};
+startSession=async function(user){recentChat={global:[],faction:[]};incomeSnapshot=null;incomeUpdated=0;chatCollapsed=true;try{const started=await communitySession(user);if(started===false)return;if(user){await api('GET','/api/chat?channel=global&since=0');if(!localStorage.getItem('wc_tut')&&(currentUser?.territory_count||0)===0)showTutorial(0)}}catch(error){console.error('Game startup failed:',error);stopPolling();document.getElementById('game-screen').style.display='none';document.getElementById('auth-overlay').style.display='flex';document.getElementById('auth-msg').textContent='Unable to load the game. Check the connection and reload to try again.'}};
 startGame=startSession;startSpectatorMode=()=>startSession(null);
 const communityLogout=doLogout;
 doLogout=async function(){await communityLogout();recentChat={global:[],faction:[]};incomeSnapshot=null;document.body.classList.remove('is-admin')};

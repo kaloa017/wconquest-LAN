@@ -1,0 +1,24 @@
+[Unit]
+Description=World Conquest permanent Cloudflare Tunnel
+Wants=network-online.target wconquest.service
+After=network-online.target wconquest.service
+ConditionPathExists=/etc/wconquest/tunnel-token
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+DynamicUser=true
+LoadCredential=tunnel-token:/etc/wconquest/tunnel-token
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --metrics 127.0.0.1:20241 run --token-file %d/tunnel-token
+Restart=always
+RestartSec=5
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=Consistent World Conquest save and private asset backup
+
+[Service]
+Type=oneshot
+User=wconquest
+Group=wconquest
+WorkingDirectory=/opt/wconquest
+EnvironmentFile=/etc/wconquest/game.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/wconquest/.venv/bin/python /opt/wconquest/tools/pi_backup.py --directory /var/backups/wconquest --keep 14
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/wconquest /var/lib/wconquest

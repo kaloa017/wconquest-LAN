@@ -1,5 +1,10 @@
 # Production hosting on Raspberry Pi OS
 
+For the automated Raspberry Pi 5 setup with a permanent tunnel, boot services and
+daily backups, use [Raspberry Pi hosting](RASPBERRY_PI.md). It runs the existing
+Waitress entrypoint directly; the manual Gunicorn/proxy alternatives below remain
+available.
+
 Use Raspberry Pi OS **64-bit**, preferably an SSD and Ethernet. Substitute your
 own hostname for `game.example.com`. Commands below assume `/opt/wconquest`,
 dedicated user `wconquest`, and save directory `/var/lib/wconquest`.

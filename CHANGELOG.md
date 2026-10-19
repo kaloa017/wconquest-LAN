@@ -1,3 +1,31 @@
+# 6.7.0 — application-wide interface overhaul
+
+- Add Raspberry Pi 5 ARM64 deployment services for a loopback-only game server,
+  permanent Cloudflare Tunnel, private token credentials and daily verified SQLite
+  backups with 14-backup retention. Include installation, save transfer, health
+  checks, restore guidance and a public-code packaging command.
+- Fix unclaimed-tile clicks and map hover failing when Turf's point helper is
+  unavailable. Island hit testing now handles GeoJSON polygons locally, including
+  holes, boundaries and multipolygons; the page no longer loads the unused library.
+- Open unclaimed grid cells through the territory selection path without running
+  hover rendering first. Show a retry action and log unexpected territory-panel
+  errors instead of leaving a silently failed selection.
+- Group all 18 destinations into Your country, Command, Economy, Community,
+  World & progress, and Administration. Search menus on desktop and mobile;
+  role-specific controls appear only for authorized players.
+- Use consistent names, shared colors, readable text, cards, forms, touch targets,
+  action states, tables, progress indicators and responsive layouts across screens.
+- Organize Settings into Appearance, Sound, Account, Supporter and Information.
+  Keep one visible recovery-code workflow and preserve account controls on refresh.
+- Keep unsaved drafts, offer keep/discard choices before leaving edited screens,
+  protect newer edits from delayed responses and prevent repeated pending actions.
+- Show persistent inline status and errors, with associated field labels and
+  numeric validation instead of relying only on transient notifications.
+- Improve dialog titles, focus containment, focus return, acknowledgement safety,
+  keyboard tabs, reduced-motion behavior and policy-page presentation.
+- Add offline DOM and accessibility checks. No save migration or gameplay balance
+  change is included. Read docs/UI_UX_RELEASE.md for verification limits.
+
 # 6.6.2 — security, production and interaction repairs
 
 - Bound password-change session revocation to the authenticated account. Added mandatory protection for password-confirmed profile and authenticator operations, and bounded the attempt tracker even when requests are rejected.

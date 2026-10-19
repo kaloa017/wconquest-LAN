@@ -1572,6 +1572,7 @@ function onMapClick(e){
 }
 async function fetchAndBuildPanel(key){
   const generation=sessionGeneration;
+  try{
   await reportWater(key);
   const t=await api('GET',`/api/territory/${key}`);if(generation!==sessionGeneration||key!==selectedKey)return;
   if(t.error){const el=isMobile()?document.getElementById('mobile-sheet-content'):document.getElementById('territory-actions');if(el)el.textContent=t.error;return;}
@@ -1579,6 +1580,15 @@ async function fetchAndBuildPanel(key){
   window.__force=true;
   if(isMobile()){const c=document.getElementById('mobile-sheet-content');if(sheetPanel==='territory'&&c)buildTerritoryPanel(key,t,c)}
   else buildTerritoryPanel(key,t,null);
+  }catch(error){
+    console.error('Territory panel failed:',key,error);
+    if(generation!==sessionGeneration||key!==selectedKey)return;
+    const host=isMobile()?(sheetPanel==='territory'&&document.getElementById('mobile-sheet-content')):document.getElementById('territory-actions');
+    if(!host)return;
+    const message=document.createElement('p');message.setAttribute('role','alert');message.textContent='This territory could not load. Try again.';
+    const retry=document.createElement('button');retry.className='btn btn-primary';retry.textContent='Retry territory';retry.onclick=()=>fetchAndBuildPanel(key);
+    host.replaceChildren(message,retry);
+  }
 }
 
 /* keep scouting info (coast, weather) when the periodic refresh replaces the territory list */

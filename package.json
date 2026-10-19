@@ -1,0 +1,15 @@
+{
+  "name": "world-conquest-interface-checks",
+  "private": true,
+  "description": "Offline DOM regression checks; not required to host the game.",
+  "scripts": {
+    "test:ui": "node --test tests/interface.test.cjs"
+  },
+  "devDependencies": {
+    "axe-core": "4.14.0",
+    "jsdom": "30.1.3"
+  },
+  "engines": {
+    "node": ">=24.15.0"
+  }
+}

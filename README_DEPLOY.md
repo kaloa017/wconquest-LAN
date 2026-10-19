@@ -1,5 +1,8 @@
 # Deployment guide
 
+For always-on Raspberry Pi 5 hosting, start with [the Pi setup](docs/RASPBERRY_PI.md).
+It includes an installer, permanent Cloudflare Tunnel service and scheduled backups.
+
 The current instructions are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 They cover Raspberry Pi OS, Gunicorn/systemd, Apache/Nginx, HTTPS, trusted client-IP

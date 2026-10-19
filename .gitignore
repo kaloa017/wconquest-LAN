@@ -40,5 +40,6 @@ tests/tmp*/
 .idea/
 Thumbs.db
 .DS_Store
+node_modules/
 # Track the empty environment reference, not local configuration.
 !.env.example

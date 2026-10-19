@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily World Conquest backup
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=15m
+Persistent=true
+Unit=wconquest-backup.service
+
+[Install]
+WantedBy=timers.target

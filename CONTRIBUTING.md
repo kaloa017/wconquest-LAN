@@ -14,9 +14,13 @@ node --check static/legacy-client.js
 node --check static/expansion.js
 node --check static/economy.js
 node tests/client_audit.cjs
+npm ci --ignore-scripts --no-audit --no-fund
+npm run test:ui
 ```
 
-Node.js is needed only for the JavaScript syntax checks. Game tests use disposable
+Node.js 24.15 or newer is needed for development checks. The offline DOM suite uses
+jsdom and axe-core; it does not open a browser or connect to a running game.
+The game server does not require Node or npm. Game tests use disposable
 SQLite databases and disable the scheduler; never use a real player save as a test
 fixture. For manual testing, set DB_PATH to a separate file and use a test account.
 

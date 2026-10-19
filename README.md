@@ -1,8 +1,26 @@
-# World Conquest LAN — v6.6.2
+# World Conquest LAN — v6.7.0
 
 Persistent multiplayer strategy on a real-world grid: claim tiles, recruit armies,
 build an economy, research technology, form factions and fight for territory.
 Flask serves the game; SQLite stores accounts and saves. The browser uses Leaflet.
+
+## Interface update in 6.7.0
+
+All game sections use grouped, searchable navigation and shared controls, typography,
+spacing and status messages. Desktop and mobile use the same menu inventory.
+Settings are grouped into Appearance, Sound, Account, Supporter (when available)
+and Information. Editing screens retain drafts; leaving an edited screen offers
+keep, discard and continue choices. Request failures keep typed input and show
+inline feedback. Repeated pending actions are submitted once.
+
+Keyboard focus, dialog handling, input labels and responsive layouts have been
+updated across the game and administration screens. Advanced country and banner
+controls remain available through labeled disclosure sections. Existing game rules,
+roles, server permissions and saves are preserved.
+
+See `docs/UI_UX_AUDIT.md` and `docs/UI_UX_RELEASE.md` for coverage and verification.
+Browser connections and real-device checks were deliberately not attempted for
+this release; the automated UI checks run against offline DOMs and disposable saves.
 
 ## Start on Windows or Linux
 
@@ -16,8 +34,9 @@ python app.py
 ```
 
 Open http://localhost:5055. Other LAN players use the host's LAN address and port
-5055. `app.py` runs Waitress, a production WSGI server. Raspberry Pi deployment
-uses Gunicorn instead; see [Deployment](docs/DEPLOYMENT.md). No default password
+5055. `app.py` runs Waitress, a production WSGI server. For permanent Raspberry Pi 5
+hosting, use [the Pi installer and tunnel guide](docs/RASPBERRY_PI.md); manual
+Gunicorn alternatives are in [Deployment](docs/DEPLOYMENT.md). No default password
 or special username grants administrator access. Passwords need eight characters.
 
 Before upgrading, stop the old server and back up its folder. A consistent SQLite

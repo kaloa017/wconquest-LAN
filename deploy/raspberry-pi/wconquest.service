@@ -1,0 +1,29 @@
+[Unit]
+Description=World Conquest game
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=wconquest
+Group=wconquest
+WorkingDirectory=/opt/wconquest
+EnvironmentFile=/etc/wconquest/game.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/wconquest/.venv/bin/python /opt/wconquest/app.py
+Restart=always
+RestartSec=5
+TimeoutStopSec=45
+UMask=0077
+StateDirectory=wconquest
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
