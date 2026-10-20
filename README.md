@@ -1,6 +1,6 @@
 # World Conquest LAN — v6.7.0
 
-Wallahi, this game is peak asf🥹🔥
+Link to the game: https://world-conquest.lol
 
 Persistent multiplayer strategy on a real-world grid: claim tiles, recruit armies,
 build an economy, research technology, form factions and fight for territory.
