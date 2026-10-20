@@ -1,5 +1,5 @@
 """Check the public release without importing the game or opening its save."""
-import argparse, ast, gzip, json, re, subprocess
+import argparse, ast, gzip, hashlib, json, re, subprocess
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -8,11 +8,11 @@ REQUIRED=('LICENSE','README.md','CHANGELOG.md','requirements.txt','config.py','a
 
 def private_path(name):
     path=Path(name);parts={part.lower() for part in path.parts};base=path.name.lower()
-    return (bool(parts & {'backups','media','.cloudflared','terrain-source','eva_images'}) or
+    return (bool(parts & {'backups','admin-backups','media','.cloudflared','terrain-source','eva_images'}) or
             base in {'.session-secret','ideas.txt'} or
             (base.startswith('.env') and base!='.env.example') or
             base.startswith('credentials') or path.suffix.lower() in {'.db','.sqlite','.sqlite3','.pem','.key','.mp3'} or
-            base.endswith(('-wal','-shm')) or
+            base.endswith(('-wal','-shm','-journal')) or
             ('static' in parts and 'eva' in parts and path.suffix.lower() in {'.jpg','.jpeg','.png'}))
 
 def check_files(root,names):
@@ -44,6 +44,16 @@ def validate(root,names):
         keys=[feature['properties']['key'] for feature in collection['features']]
         if len(keys)!=len(set(keys)):errors.append('data/pacific-islands.geojson: duplicate territory IDs')
         if gzip.decompress((root/'data/pacific-islands.geojson.gz').read_bytes())!=raw:errors.append('data/pacific-islands.geojson.gz: stale compressed geography')
+        if gzip.decompress((root/'data/land-cells.bin.gz').read_bytes())!=(root/'data/land-cells.bin').read_bytes():errors.append('data/land-cells.bin.gz: stale terrain mask')
+        manifest=json.loads((root/'static/map/manifest.json').read_text(encoding='utf-8'))
+        delivered={}
+        for url in [manifest['world'],*manifest['regions'].values()]:
+            path=root/url.lstrip('/');payload=path.read_bytes()
+            if hashlib.sha256(payload).hexdigest()[:16] not in path.name:errors.append(str(path.relative_to(root))+': content hash mismatch')
+            if gzip.decompress(Path(str(path)+'.gz').read_bytes())!=payload:errors.append(str(path.relative_to(root))+': compressed map mismatch')
+            if '/islands-' in url:
+                for feature in json.loads(payload)['features']:delivered[feature['properties']['key']]=feature
+        if delivered!={f['properties']['key']:f for f in collection['features']}:errors.append('static/map: detailed regions must preserve original island geometry and IDs')
         for name in ('countries.geojson','land.geojson'):
             if json.loads((root/'data'/name).read_text(encoding='utf-8')).get('type')!='FeatureCollection':errors.append(f'data/{name}: invalid collection')
     except (OSError,ValueError,KeyError) as error:errors.append(f'data: geography validation failed ({type(error).__name__})')

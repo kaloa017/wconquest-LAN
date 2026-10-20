@@ -3,9 +3,14 @@ import json,time,math
 from flask import request,session,jsonify
 import features
 from config import RESEARCH_TREE,LAB_SPEED_PER_LEVEL,LAB_MAX_SPEED_BONUS
+from late_research import research_bonus
+from contextvars import ContextVar
+_settling=ContextVar('research_settling',default=frozenset())
 core=None
 
-def speed(conn,uid):return 1+min(LAB_MAX_SPEED_BONUS,core['sum_levels'](conn,uid,'laboratory')*LAB_SPEED_PER_LEVEL)
+def speed(conn,uid):
+    row=conn.execute('SELECT research FROM users WHERE id=?',(uid,)).fetchone()
+    return 1+min(LAB_MAX_SPEED_BONUS,core['sum_levels'](conn,uid,'laboratory')*LAB_SPEED_PER_LEVEL)+research_bonus(json.loads(row['research'] or '[]') if row else [],'research_speed')
 
 def tick(conn,uid,stamp=None):
     stamp=int(time.time()) if stamp is None else stamp
@@ -15,6 +20,11 @@ def tick(conn,uid,stamp=None):
     if remaining<=0:
         u=conn.execute('SELECT research FROM users WHERE id=?',(uid,)).fetchone()
         if not u:return None
+        # Settle production at the old rate before granting an economic bonus.
+        # A request-local guard avoids recursively settling this same project.
+        token=_settling.set(_settling.get()|{uid})
+        try:core['auto_collect'](uid,conn,force=True)
+        finally:_settling.reset(token)
         completed=set(json.loads(u['research'] or '[]'));completed.add(row['tech'])
         conn.execute('UPDATE users SET research=? WHERE id=?',(json.dumps(sorted(completed)),uid))
         conn.execute('DELETE FROM research_projects WHERE user_id=?',(uid,))
@@ -48,7 +58,8 @@ def install(namespace):
     global core
     core=namespace;app=core['app'];original=core['user_research']
     def completed(conn,uid):
-        tick(conn,uid);return original(conn,uid)
+        if uid not in _settling.get():tick(conn,uid)
+        return original(conn,uid)
     core['user_research']=completed
     app.view_functions['get_research']=core['require_login'](status)
     app.view_functions['unlock_research']=core['require_login'](start)

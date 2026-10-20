@@ -32,8 +32,8 @@ function installScrollButtons(){
 refreshTerritories=async function(){
   const r=await api('GET','/api/map/sync'+(mapVersion?'?since='+encodeURIComponent(mapVersion):''));if(r.error)return;
   if(r.reset){territories={};for(const k of Object.keys(tlayers)){map.removeLayer(tlayers[k]);delete tlayers[k]}}
-  for(const k of r.removed||[]){delete territories[k];if(tlayers[k]){map.removeLayer(tlayers[k]);delete tlayers[k]}}
-  for(const t of r.changed||[]){t.color=currentUser?.display_faction_colors!==false&&currentUser?.display_faction_colors!==0?(t.faction_color||t.base_color):t.base_color;const previous=territories[t.grid_key];for(const flag of ['coastal','water','weather'])if(previous?.[flag]!==undefined)t[flag]=previous[flag];if(t.owner_id)t.water=false;territories[t.grid_key]=t;if(tlayers[t.grid_key]){map.removeLayer(tlayers[t.grid_key]);delete tlayers[t.grid_key]}}
+  for(const k of r.removed||[]){window.WCMap?.invalidateOwnership();delete territories[k];if(tlayers[k]){map.removeLayer(tlayers[k]);delete tlayers[k]}}
+  for(const t of r.changed||[]){t.color=currentUser?.display_faction_colors!==false&&currentUser?.display_faction_colors!==0?(t.faction_color||t.base_color):t.base_color;const previous=territories[t.grid_key];if(previous?.owner_id!==t.owner_id||previous?.color!==t.color)window.WCMap?.invalidateOwnership();for(const flag of ['coastal','water','weather'])if(previous?.[flag]!==undefined)t[flag]=previous[flag];if(t.owner_id)t.water=false;territories[t.grid_key]=t;if(tlayers[t.grid_key]){map.removeLayer(tlayers[t.grid_key]);delete tlayers[t.grid_key]}}
   mapVersion=r.version;if(r.reset||r.changed?.length||r.removed?.length)renderTerritories();
 };
 function stopPolling(){sharedAudio.pause();for(const t of pollHandles)clearInterval(t);pollHandles=[];clearInterval(refreshTimer);clearInterval(spectatorTimer)}
@@ -44,9 +44,12 @@ async function startSession(user){
   const [buildings,research]=await Promise.all([api('GET','/api/buildings'),api('GET','/api/research')]);if(!buildings.error)BLD=buildings;if(research.tree)Object.assign(RESEARCH_TREE,research.tree);
   if(user){await refreshUser();if(!currentUser)return false}else updateNavbarGuest();await refreshTerritories();await refreshOnline();drawFallout();updateHud();
   await loadLandGeoJSON();
+  let secondaryPoll=0;
   pollHandles.push(setInterval(async()=>{if(document.hidden||pollBusy)return;pollBusy=true;try{
-    if(currentUser)await refreshUser();await refreshTerritories();await refreshOnline();pollAnnouncements();updateHud();
-    if(currentUser){pollNotifications();pollChat();await refreshMusic()}else await api('POST','/api/spectate',{});await drawEva();
+    if(currentUser)await refreshUser();await refreshTerritories();updateHud();
+    const secondary=++secondaryPoll%3===0;
+    if(secondary){await refreshOnline();pollAnnouncements();await drawEva();}
+    if(currentUser){pollNotifications();pollChat();if(secondary)await refreshMusic()}else await api('POST','/api/spectate',{});
   }finally{pollBusy=false}},12000));
   pollHandles.push(setInterval(()=>{if(!document.hidden)drawFallout()},60000));
   if(user){await refreshMusic();const c=await api('GET','/api/changelog');if(c.show)showTextModal('What changed — '+c.version,c.text,async()=>{await api('POST','/api/changelog/seen',{version:c.version})},'Don’t show again until the next update')}
@@ -314,7 +317,7 @@ buildChat=async function(){await menuBuildChat();const content=document.getEleme
 const communityApi=api;
 api=async function(method,url,data){const generation=sessionGeneration,faction=currentUser?.faction?.id;const result=await communityApi(method,url,data);if(generation!==sessionGeneration)return {error:'Session changed; please retry.'};if(method==='GET'&&url.startsWith('/api/chat')&&Array.isArray(result.messages)){const channel=new URL(url,location.origin).searchParams.get('channel')||'global';if(recentChat[channel]&&(channel!=='faction'||faction===currentUser?.faction?.id)){const messages=new Map(recentChat[channel].map(message=>[message.id,message]));for(const message of result.messages)messages.set(message.id,message);recentChat[channel]=[...messages.values()].sort((a,b)=>a.id-b.id).slice(-8);renderChatPreview()}}if(method==='GET'&&url.startsWith('/api/income')&&result.rates){incomeSnapshot=result;incomeUpdated=Date.now();applyIncomeTooltips()}return result};
 function applyIncomeTooltips(){if(!incomeSnapshot)return;document.querySelectorAll('#resource-bar .res-pill').forEach((pill,index)=>{const keys=['food','wood','metal','oil','money',...['steel','uranium','gems'].filter(key=>currentUser?.[key]>0)],key=keys[index];if(!key)return;const rate=incomeSnapshot.rates[key]||0,text=`${RES_CFG[key]?.label||key}: +${rate.toLocaleString('en-US')} per minute · +${(rate*60).toLocaleString('en-US')} per hour`;pill.title=text;pill.setAttribute('aria-label',text);pill.tabIndex=0;pill.onclick=()=>toast(text,'success')})}
-async function refreshIncomeTooltips(){if(!currentUser||incomeBusy||Date.now()-incomeUpdated<12000)return;incomeBusy=true;try{await api('GET','/api/income?minutes=1')}finally{incomeBusy=false}}
+async function refreshIncomeTooltips(){if(!currentUser||incomeBusy||Date.now()-incomeUpdated<60000)return;incomeBusy=true;try{await api('GET','/api/income?minutes=1')}finally{incomeBusy=false}}
 const incomeNavbar=updateNavbar;
 updateNavbar=function(user){incomeNavbar(user);applyIncomeTooltips();refreshIncomeTooltips()};
 const communitySession=startSession;

@@ -232,7 +232,9 @@ def after_request(response):
     # the site's origin, never the player's page path or query string.
     response.headers['Referrer-Policy']='strict-origin-when-cross-origin'
     response.headers['X-Frame-Options']='DENY'
-    if response.mimetype=='application/json' and request.path!='/api/islands':response.headers['Cache-Control']='no-store'
+    if response.mimetype=='application/json' and request.path.startswith('/api/') and request.path!='/api/islands':response.headers['Cache-Control']='no-store'
+    if request.path.startswith('/static/') and not request.path.startswith('/static/map/') and response.status_code<400:
+        response.headers['Cache-Control']='public, max-age=86400'
     # Never compress credentials/recovery responses alongside attacker input.
     if request.method=='GET' and request.path in ('/api/territories','/api/map/sync','/api/buildings','/api/fallout') and request.accept_encodings['gzip']>0 and response.status_code==200:
         raw=response.get_data()
@@ -291,11 +293,19 @@ def bootstrap():
     return jsonify(csrf=session['csrf'],version=VERSION,community=COMMUNITY,ideologies=IDEOLOGIES,religions=RELIGIONS,
         queued_advance_cost_multiplier=QUEUED_ADVANCE_COST_MULTIPLIER,military_travel_cost=MILITARY_TRAVEL_COST,faction_colors=FACTION_COLORS,prices={'boat':{'money':BOAT_COST_M,'wood':BOAT_COST_W},'plane':{'money':PLANE_COST_M,'metal':PLANE_COST_X,'oil':PLANE_COST_O},'voyage_money':VOYAGE_MONEY,'voyage_wood':VOYAGE_WOOD},stock_fee=STOCK_FEE,stock_interval=STOCK_INTERVAL)
 
-def map_snapshot(conn):
+def map_snapshot(conn, keys=None):
+    if keys is not None:
+        keys=list(keys)
+        if not keys:return {}
+        if len(keys)>500:
+            result={}
+            for start in range(0,len(keys),500):result.update(map_snapshot(conn,keys[start:start+500]))
+            return result
     am=army_map(conn)
     rows=conn.execute('''SELECT t.grid_key,t.owner_id,t.terrain,t.population,u.username,u.color,u.base_color,u.capital_key,
         b.type bt,b.level bl,f.tag,f.color faction_color FROM territories t JOIN users u ON u.id=t.owner_id
-        LEFT JOIN buildings b ON b.grid_key=t.grid_key LEFT JOIN factions f ON f.id=u.faction_id WHERE t.owner_id IS NOT NULL''').fetchall()
+        LEFT JOIN buildings b ON b.grid_key=t.grid_key LEFT JOIN factions f ON f.id=u.faction_id WHERE t.owner_id IS NOT NULL'''+
+        (' AND t.grid_key IN ('+','.join('?' for _ in keys)+')' if keys is not None else ''),keys or []).fetchall()
     return {r['grid_key']:{'grid_key':r['grid_key'],'owner_id':r['owner_id'],'owner':r['username'],'color':r['color'] or '#888','base_color':r['base_color'] or r['color'],
         'faction_color':r['faction_color'],'terrain':r['terrain'],'population':r['population'],'garrison':int(am[r['owner_id']][0]/am[r['owner_id']][1]**.55+3),
         'boats':0,'planes':0,'building':r['bt'],'blevel':r['bl'],'tag':r['tag'],'capital':r['capital_key']==r['grid_key']} for r in rows}
@@ -307,12 +317,23 @@ def map_sync():
     version=f'{epoch}:{seq}'
     since=request.args.get('since','')
     if since==version:return jsonify(version=version,reset=False,changed=[],removed=[])
+    floor=conn.execute('SELECT COALESCE(MIN(seq),0) FROM map_changes').fetchone()[0]
     with _lock:
-        if _map_cache.get('version')!=version:_map_cache.update(version=version,tiles=map_snapshot(conn))
+        if _map_cache.get('version')!=version:
+            try:cached_epoch,cached_seq=map(int,_map_cache.get('version','').split(':'))
+            except (ValueError,TypeError):cached_epoch,cached_seq=-1,-1
+            if cached_epoch==epoch and floor-1<=cached_seq<=seq:
+                updated={r['grid_key'] for r in conn.execute('SELECT grid_key FROM map_changes WHERE seq>?',(cached_seq,))}
+                if len(updated)>max(500,len(_map_cache['tiles'])//4):tiles=map_snapshot(conn)
+                else:
+                    tiles=dict(_map_cache['tiles'])
+                    for key in updated:tiles.pop(key,None)
+                    tiles.update(map_snapshot(conn,updated))
+            else:tiles=map_snapshot(conn)
+            _map_cache.update(version=version,tiles=tiles)
         tiles=_map_cache['tiles']
     try:old_epoch,old_seq=map(int,since.split(':'))
     except (ValueError,TypeError):old_epoch,old_seq=-1,-1
-    floor=conn.execute('SELECT COALESCE(MIN(seq),0) FROM map_changes').fetchone()[0]
     reset=old_epoch!=epoch or old_seq<floor-1 or old_seq>seq
     if reset:return jsonify(version=version,reset=True,changed=list(tiles.values()),removed=[])
     keys={r['grid_key'] for r in conn.execute('SELECT grid_key FROM map_changes WHERE seq>?',(old_seq,))}
@@ -512,6 +533,8 @@ def scheduler_tick():
         refresh_catalog(conn)
         tick_campaigns(conn, now)
         process_loans(conn, now)
+        from guest_analytics import prune as prune_guest_history
+        prune_guest_history(conn)
         due=conn.execute('SELECT next_tick FROM scheduler_state WHERE id=1').fetchone()[0]
         if now>=due:
             conn.execute('UPDATE scheduler_state SET next_tick=? WHERE id=1',(now+SCHEDULER_INTERVAL,))
@@ -742,7 +765,13 @@ def changelog_seen():
 def ignore_water_reports():return jsonify(success=True,message='Terrain is validated by the server')
 def land_file():return send_file(Path(core['app'].root_path)/'data'/'land.geojson',mimetype='application/json',conditional=True)
 
-def terrain_cells():return send_file(Path(core['app'].root_path)/'data'/'land-cells.bin',mimetype='application/octet-stream',conditional=True,max_age=3600)
+def terrain_cells():
+    path=Path(core['app'].root_path)/'data'/'land-cells.bin'
+    compressed=request.accept_encodings['gzip']>0 and path.with_suffix('.bin.gz').is_file()
+    response=send_file(path.with_suffix('.bin.gz') if compressed else path,mimetype='application/octet-stream',conditional=True,max_age=3600)
+    if compressed:response.headers['Content-Encoding']='gzip'
+    response.headers['Vary']='Accept-Encoding'
+    return response
 def islands_file():
     path=Path(core['app'].root_path)/'data'/'pacific-islands.geojson'
     compressed=request.accept_encodings['gzip']>0
@@ -827,4 +856,12 @@ def install_features(namespace):
     install_security(app)
     from two_factor import install as install_two_factor
     install_two_factor(namespace)
+    from map_delivery import install as install_map_delivery
+    install_map_delivery(app)
+    from community_tools import install as install_community_tools
+    install_community_tools(namespace)
+    from admin_dashboard import install as install_admin_dashboard
+    install_admin_dashboard(namespace)
+    from guest_analytics import install as install_guest_analytics
+    install_guest_analytics(namespace)
     if os.getenv('DISABLE_SCHEDULER')!='1':threading.Thread(target=scheduler_loop,name='game-scheduler',daemon=True).start()

@@ -5,7 +5,7 @@ Open: http://localhost:5055
 Host setup: python manage.py create-admin --username USERNAME
 """
 
-from flask import Flask, request, jsonify, session, send_file
+from flask import Flask, request, jsonify, session, send_file, has_request_context
 from config import *
 from runtime import connect_db, initialize_security
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -54,7 +54,14 @@ def _touch_spectator(ip):
     with _spectator_lock:
         if ip not in _spectators:
             while len(_spectators)>=MAX_TRACKED_CLIENTS:_spectators.pop(next(iter(_spectators)))
-        geo = _geo_cache.get(ip, {'flag':'🌐','country':'?'})
+        code=request.environ.get('wconquest.country') if has_request_context() else None
+        if code:
+            geo={'flag':_country_flag(code),'country':code,'country_code':code,'city':''}
+            _geo_cache[ip]=geo
+            while len(_geo_cache)>MAX_TRACKED_CLIENTS:_geo_cache.pop(next(iter(_geo_cache)))
+        elif ip in ('127.0.0.1','::1'):
+            geo={'flag':'🖥','country':'Local network','city':''}
+        else:geo = _geo_cache.get(ip, {'flag':'🌐','country':'Country unavailable','city':''})
         _spectators[ip] = {**geo, 'last_seen':time.time()}
         if os.getenv('ENABLE_IP_GEOLOOKUP')=='1' and ip not in _geo_cache and ip not in _geo_pending:
             try:_geo_queue.put_nowait(ip);_geo_pending.add(ip)
@@ -521,6 +528,7 @@ def set_pin():
 @app.route('/api/spectate', methods=['POST'])
 def spectate():
     """Called by guests to register their presence on the map."""
+    if session.get('user_id'):return jsonify(success=True)
     ip = request.remote_addr or ''
     if ip:
         _touch_spectator(ip)  # fast: just dict update, geo is queued async
@@ -547,10 +555,10 @@ def online_users():
     with _spectator_lock:spectators=list(_spectators.items())
     for ip, s in spectators:
         if now - s['last_seen'] < 180:
-            guests.append({'username': f"{s['flag']} Guest", 'color':'#607090',
+            guests.append({'username': 'Guest', 'color':'#607090',
                            'is_admin':False,'territories':0,'type':'spectator',
                            'flag': s['flag'], 'country': s.get('country','?'),
-                           'city': s.get('city','')})
+                           'country_code':s.get('country_code'), 'city':''})
     return jsonify(players + guests)
 
 # ── Sell resources ────────────────────────────────────────────────────────────
@@ -1246,6 +1254,8 @@ def admin_ban():
     target = conn.execute('SELECT is_admin,username FROM users WHERE id=?',(uid,)).fetchone()
     if not target:
         conn.close(); return jsonify({'error':'User not found'}),404
+    if ban and (int(uid)==session['user_id'] or (target['is_admin'] and conn.execute('SELECT COUNT(*) FROM users WHERE is_admin=1 AND is_banned=0').fetchone()[0]<=1)):
+        conn.close(); return jsonify(error='Cannot ban yourself or the last active administrator'),400
     if target['is_admin'] and target['username'].lower()=='admin':
         conn.close(); return jsonify({'error':'Cannot ban the main admin'}),403
     conn.execute('UPDATE users SET is_banned=? WHERE id=?',(ban,uid))
@@ -1287,6 +1297,11 @@ def admin_promote():
     d   = request.json or {}
     uid = d.get('user_id'); val = 1 if d.get('promote',True) else 0
     conn = get_db()
+    target=conn.execute('SELECT is_admin FROM users WHERE id=?',(uid,)).fetchone()
+    if not target:
+        conn.close(); return jsonify(error='User not found'),404
+    if not val and (int(uid)==session['user_id'] or (target['is_admin'] and conn.execute('SELECT COUNT(*) FROM users WHERE is_admin=1 AND is_banned=0').fetchone()[0]<=1)):
+        conn.close(); return jsonify(error='Cannot demote yourself or the last active administrator'),400
     conn.execute('UPDATE users SET is_admin=? WHERE id=?',(val,uid))
     conn.commit(); conn.close()
     return jsonify({'success':True})
@@ -1355,12 +1370,16 @@ def admin_reset_game():
 def export_db():
     import io
     conn = get_db()
+    from features import audit
+    audit(conn,'legacy_sql_downloaded')
     buf = io.BytesIO()
     for chunk in conn.iterdump():
         buf.write((chunk + '\n').encode())
     conn.close(); buf.seek(0)
     from flask import send_file as _sf
-    return _sf(buf, as_attachment=True, download_name='world_conquest_backup.sql', mimetype='text/plain')
+    response=_sf(buf, as_attachment=True, download_name='world_conquest_backup.sql', mimetype='text/plain')
+    response.headers['Cache-Control']='private, no-store'
+    return response
 
 # ── Run ───────────────────────────────────────────────────────────────────────
 
@@ -1461,9 +1480,10 @@ def yield_ctx(conn, uid):
     if 'automation' in rs: base *= 1.10
     for key in w: base *= WONDERS.get(key, {}).get('yield', 1)
     base *= religion_for(conn, uid).get('yield', 1)
-    return {'rs': rs, 'ft': ft, 'ide': ide, 'w': w, 'ev': ev_type(conn), 'base': base, 'religion': religion_for(conn, uid)}
+    return {'rs': rs, 'ft': ft, 'ide': ide, 'w': w, 'ev': ev_type(conn), 'base': base, 'religion': religion_for(conn, uid), 'advanced':research_effects(rs)}
 def res_mult2(rt, c):
     rs = c['rs']; m = c['base'] * c.get('religion', {}).get(rt, 1); ev = c['ev']
+    advanced=c.get('advanced',{});m *= (1+advanced.get('production',0))*(1+advanced.get(rt,0))
     if rt in ('food','wood') and 'smart_farms' in rs:m *= 1.20
     if rt == 'food': m *= (1.25 if 'agri' in rs else 1) * (1.2 if 'irrigation' in rs else 1) * (1.5 if ev == 'harvest' else 1)
     if rt == 'wood': m *= (1.25 if 'agri' in rs else 1) * (1.5 if ev == 'harvest' else 1)
@@ -1494,7 +1514,7 @@ def claim_price(conn, uid, terrain):
     inc = sum(rates[k]*RATE_VAL[k] for k in rates)
     rt, rate = TERRAIN_RES[terrain]
     price = (CLAIM_COST + CLAIM_OWNED_TILE_FACTOR*mc + CLAIM_TILE_FACTOR*rate*RATE_VAL[rt] + CLAIM_INCOME_FACTOR*inc) * c['ide'].get('claim', 1.0) * c['religion'].get('claim', 1) * (0.8 if 'banking' in c['rs'] else 1.0)
-    price = max(CLAIM_COST, int(price))
+    price = max(CLAIM_COST, int(price*(1-research_bonus(c['rs'],'claim_discount'))))
     cost = {'money': price, 'wood': max(1, int(price*CLAIM_WOOD_RATIO/4)), 'food': max(1, int(price*CLAIM_FOOD_RATIO/2))}
     if mc >= 15: cost['metal'] = max(1, int(price*CLAIM_METAL_RATIO/6))
     return cost
@@ -1523,7 +1543,7 @@ def troop_cost_for(conn, uid, rsch):
     return max(1, int(round(c)))
 
 def casualty_mult(conn, uid, rsch):
-    m = 1.0
+    m = 1.0-research_bonus(rsch,'casualty_reduction')
     if 'medicine' in rsch: m *= 0.75
     if 'f_medic' in ftechs(conn, uid): m *= 0.85
     m *= ideo(conn, uid).get('casualty', 1.0) * religion_for(conn, uid).get('casualty', 1)
@@ -1674,6 +1694,7 @@ def defense_of(conn, owner_id, gk, terrain):
     add(f'Terrain ({terrain})', TERRAIN_DEF.get(terrain, 1.0))
     if 'masonry' in rs: add('Masonry', 1.15)
     if 'civil_defense' in rs: add('Civil defense', 1.10)
+    add('Advanced defensive doctrine',1+research_bonus(rs,'defense'))
     b = conn.execute('SELECT level FROM buildings WHERE grid_key=? AND type="fort"', (gk,)).fetchone()
     if b: add(f'Fortress Lv{b["level"]}', 1 + (0.32 if 'fortification' in rs else 0.25)*b['level'])
     if 'f_bulwark' in ft: add('Bulwark', 1.08)
@@ -1689,6 +1710,8 @@ def defense_of(conn, owner_id, gk, terrain):
 
 def attack_mods(conn, uid, rsch, kind, tgl, tgg, def_oid=None):
     mods = []; ft = ftechs(conn, uid); ide = ideo(conn, uid); w = my_wonders(conn, uid)
+    advanced=research_bonus(rsch,'attack')+research_bonus(rsch,kind+'_attack')
+    if advanced:mods.append(('Advanced combat doctrine',1+advanced))
     if 'iron' in rsch: mods.append(('Iron Weapons', 1.2))
     if 'gunpowder' in rsch: mods.append(('Gunpowder', 1.3))
     if 'tactics' in rsch: mods.append(('Tactics', 1.05))
@@ -1880,6 +1903,7 @@ def voyage_cost(conn, uid, fk, tk, boats):
     f = 1.0
     if 'shipping' in rs: f *= 0.75
     if 'f_navy' in ftechs(conn, uid): f *= 0.75
+    f *= 1-research_bonus(rs,'voyage_discount')
     return {'money': int(boats*dist*VOYAGE_MONEY*f), 'wood': round(boats*dist*VOYAGE_WOOD*f,2), 'cells': dist}
 
 def _target_checks(conn, uid, tk):
@@ -2740,8 +2764,9 @@ from space import migrate as migrate_v15
 from activity import migrate as migrate_v16
 from playtime import migrate as migrate_v17
 from experience import migrate as migrate_v18
+from guest_analytics import migrate as migrate_v20
 backup_before_upgrade(DB_PATH)
-init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db); migrate_v12(get_db); migrate_v13(get_db); migrate_v14(get_db); migrate_v15(get_db);migrate_v16(get_db);migrate_v17(get_db);migrate_v18(get_db);migrate_v19(get_db)
+init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db); migrate_v12(get_db); migrate_v13(get_db); migrate_v14(get_db); migrate_v15(get_db);migrate_v16(get_db);migrate_v17(get_db);migrate_v18(get_db);migrate_v19(get_db);migrate_v20(get_db)
 install_features(globals())
 
 if __name__ == '__main__':

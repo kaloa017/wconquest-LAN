@@ -39,16 +39,21 @@ class TrustedProxy:
         self.hops = int(os.getenv('PROXY_HOPS','1'))
         self.fixed = ProxyFix(app, x_for=self.hops, x_proto=1, x_host=0, x_port=0)
     def __call__(self, environ, start_response):
+        environ.pop('wconquest.country',None)
         try: trusted = any(ipaddress.ip_address(environ.get('REMOTE_ADDR','')) in n for n in self.networks)
         except ValueError: trusted = False
         if trusted:
             if os.getenv('PROXY_MODE') == 'cloudflare' and environ.get('HTTP_CF_CONNECTING_IP'):
-                try: environ['HTTP_X_FORWARDED_FOR'] = str(ipaddress.ip_address(environ['HTTP_CF_CONNECTING_IP']))
+                try:
+                    environ['HTTP_X_FORWARDED_FOR'] = str(ipaddress.ip_address(environ['HTTP_CF_CONNECTING_IP']))
+                    country=environ.get('HTTP_CF_IPCOUNTRY','').upper()
+                    if len(country)==2 and country.isascii() and country.isalpha() and country not in ('XX','T1'):
+                        environ['wconquest.country']=country
                 except ValueError: environ.pop('HTTP_X_FORWARDED_FOR',None)
             return self.fixed(environ,start_response)
         # Waitress preserves these for our peer-address trust check. Never pass
         # spoofed proxy headers from an untrusted connection to downstream code.
-        for name in ('FORWARDED','X_FORWARDED_FOR','X_FORWARDED_HOST','X_FORWARDED_PROTO','X_FORWARDED_PORT','X_FORWARDED_BY','CF_CONNECTING_IP'):
+        for name in ('FORWARDED','X_FORWARDED_FOR','X_FORWARDED_HOST','X_FORWARDED_PROTO','X_FORWARDED_PORT','X_FORWARDED_BY','CF_CONNECTING_IP','CF_IPCOUNTRY'):
             environ.pop('HTTP_'+name,None)
         return self.app(environ,start_response)
 

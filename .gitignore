@@ -1,6 +1,8 @@
 game.db
 *.db-wal
 *.db-shm
+*.db-journal
+admin-backups/
 .session-secret
 .venv/
 __pycache__/

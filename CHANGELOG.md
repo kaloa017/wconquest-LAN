@@ -1,3 +1,37 @@
+# 6.9.0 — server dashboard and account administration
+
+- Add private Pi/host health: uptime, load/CPU, memory, disk, temperature, power
+  warnings, available fan/clock sensors, network counters, service/tunnel status,
+  database/game statistics and bounded request timings. No extra runtime dependency.
+- Centralize existing tools, add searchable accounts, staff roles, session
+  revocation, research grants, registration/maintenance controls and DB checks.
+- Add reviewed, typed-confirmation account deletion with battle/faction/trade
+  cleanup and self/last-admin protections. Preserve the existing save.
+- Download a consistent private game.db snapshot and audited CSV/JSON user
+  exports without authentication secrets or IPs. Add private manual snapshots.
+- Show public last-seen indicators in Ranks, and raw Unix timestamps to admins.
+- Fix guest country flags using trusted Cloudflare country headers and readable
+  country names, without leaking guest IP/city or enabling an external lookup.
+- Update Privacy Policy and Terms for school hosting, exports, deletion, backups,
+  public last seen and maintenance. Email verification remains a future option.
+- Add an admin-only guest analytics page with IP/country history, page counts,
+  retention controls and a 20,000-record cap. Schema 20 adds only guest history,
+  after a consistent pre-upgrade backup; existing progress is preserved.
+
+# 6.8.0 — lighter maps, moderation filters and late-game progression
+
+- Replace per-cell ownership layers with a viewport canvas and merged low-zoom
+  runs. Use a simplified local world overview, with streets and labels at closer zoom.
+- Split island detail into 49 cached regions, fetched on demand with a bounded
+  client cache. Compress terrain masks and retain exact server geography and IDs.
+- Update warm map snapshots incrementally; reduce nonessential polling. Keep
+  ownership deltas private and publish compressed content-hashed static map assets.
+- Add administrator-configurable chat word filters and public social-link previews.
+- Expand research from 43 to 123 technologies with real effects, searchable eras,
+  three more expedition destinations and three more megaprojects.
+- Preserve the existing save, accounts, territory ownership and progression. See
+  docs/PERFORMANCE_6_8.md for benchmarks, limitations and Pi update instructions.
+
 # 6.7.0 — application-wide interface overhaul
 
 - Add Raspberry Pi 5 ARM64 deployment services for a loopback-only game server,

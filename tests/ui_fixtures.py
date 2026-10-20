@@ -23,10 +23,18 @@ def fixtures():
         '/api/space','/api/territories','/api/territory/200,200','/api/territory/200,201','/api/territory/0,0','/api/faction/page','/api/faction/list','/api/faction/info',
         '/api/leaderboard','/api/battle_log','/api/battle_log/all','/api/alliances','/api/embassy/list','/api/wonders',
         '/api/eva','/api/income','/api/stocks','/api/moderation/players','/api/catalog','/api/admin/users','/api/admin/stats',
-        '/api/admin/requests','/api/admin/advertisement','/api/notifications','/api/profile/two_factor',
+        '/api/admin/requests','/api/admin/advertisement','/api/admin/chat_filter','/api/notifications','/api/profile/two_factor',
         '/api/map/sync','/api/online','/api/fallout','/api/music','/api/advertisement','/api/changelog','/api/chat',
         '/api/space','/api/activity','/api/away','/api/wars/unseen','/api/eva/deployments']
-    return {path:client.get(path).get_json() for path in endpoints}
+    output={path:client.get(path).get_json() for path in endpoints}
+    for path in ('/api/admin/health','/api/admin/server/settings','/api/admin/accounts','/api/players','/api/admin/analytics'):
+        output[path]=client.get(path).get_json()
+    output['/api/admin/account']=client.get('/api/admin/account?user_id='+str(uid)).get_json()
+    conn=app.get_db()
+    other=conn.execute('INSERT INTO users(username,password) VALUES("DeletionFixture","unusable-test-only-hash")').lastrowid
+    conn.commit();conn.close()
+    output['/api/admin/account/delete-preview']=client.get('/api/admin/account/delete-preview?user_id='+str(other)).get_json()
+    return output
 
 
 if __name__=='__main__':

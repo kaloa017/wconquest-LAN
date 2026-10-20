@@ -1,10 +1,21 @@
-# World Conquest LAN — v6.7.0
+# World Conquest LAN — v6.9.0
 
 Link to the game: https://world-conquest.lol
 
 Persistent multiplayer strategy on a real-world grid: claim tiles, recruit armies,
 build an economy, research technology, form factions and fight for territory.
 Flask serves the game; SQLite stores accounts and saves. The browser uses Leaflet.
+
+Version 6.9 adds a private server health dashboard, account lifecycle tools,
+consistent game.db downloads, CSV/JSON user exports and public last-seen indicators.
+Read [admin dashboard notes](docs/ADMIN_DASHBOARD.md) for Pi telemetry, deletion
+effects, private backups and school-hosting policy updates.
+
+Version 6.8 uses a viewport ownership canvas, a simplified world overview, regional
+map detail and smaller incremental updates. It also adds configurable chat filters,
+social link previews and 80 late-game research nodes, three new expeditions and
+three megaprojects. Existing saves and progression are preserved. Read
+[performance and upgrade notes](docs/PERFORMANCE_6_8.md) before updating the Pi.
 
 ## Interface update in 6.7.0
 

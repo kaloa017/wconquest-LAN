@@ -524,7 +524,7 @@ CLAIM_METAL_RATIO = 0.02
 NUKE_MONEY = 100000000
 
 # Request counters/presence are batched; purchases/combat commit immediately.
-VERSION = '6.7.0'
+VERSION = '6.9.0'
 SAVE_INTERVAL = 30
 SCHEDULER_INTERVAL = 30
 REQUESTS_PER_MINUTE = 0  # 0 = unlimited, until changed in the admin panel.
@@ -687,3 +687,15 @@ MEGAPROJECTS = {
  'dyson_swarm':{'name':'Dyson Swarm','icon':'☀','requires':'orbital_ring','cost':{'money':2500000000,'steel':100000,'uranium':20000},'production':{'money':6000000,'uranium':200},'duration_seconds':3600},
  'star_gate':{'name':'Interstellar Trade Gate','icon':'🌌','requires':'dyson_swarm','cost':{'money':10000000000,'steel':250000,'gems':50000},'production':{'money':20000000,'gems':500},'duration_seconds':7200}
 }
+from late_research import expand_research, research_effects, research_bonus
+expand_research(RESEARCH_TREE)
+SPACE_PLANETS.update({
+ 'titan':{'name':'Titan','icon':'🟠','previous':'europa','agency_level':3,'outbound':{'money':500000000,'steel':10000,'oil':20000},'return':{'money':200000000,'oil':10000},'travel_seconds':900,'yield_multiplier':6,'iridium_value_multiplier':30},
+ 'enceladus':{'name':'Enceladus','icon':'❄','previous':'titan','agency_level':3,'outbound':{'money':1500000000,'steel':25000,'oil':50000},'return':{'money':750000000,'oil':25000},'travel_seconds':1500,'yield_multiplier':10,'iridium_value_multiplier':75},
+ 'neptune':{'name':'Neptune Orbit','icon':'🔵','previous':'enceladus','agency_level':3,'outbound':{'money':5000000000,'steel':100000,'oil':150000},'return':{'money':2500000000,'oil':75000},'travel_seconds':2400,'yield_multiplier':16,'iridium_value_multiplier':300}
+})
+MEGAPROJECTS.update({
+ 'antimatter_forge':{'name':'Antimatter Forge','icon':'⚛','requires':'star_gate','research':'advanced_mineral_3','cost':{'money':50000000000,'steel':1000000,'uranium':100000},'production':{'money':75000000,'steel':5000},'duration_seconds':14400},
+ 'quantum_relay':{'name':'Quantum Trade Relay','icon':'📡','requires':'antimatter_forge','research':'advanced_orbital_3','cost':{'money':250000000000,'steel':5000000,'gems':1000000},'production':{'money':300000000,'gems':10000},'duration_seconds':28800},
+ 'colony_fleet':{'name':'Interstellar Colony Fleet','icon':'🚀','requires':'quantum_relay','research':'advanced_propulsion_4','cost':{'money':1000000000000,'steel':20000000,'uranium':5000000},'production':{'money':1200000000,'uranium':20000},'duration_seconds':57600}
+})

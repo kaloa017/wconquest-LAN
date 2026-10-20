@@ -533,7 +533,7 @@
     if (typeof w.stopPolling === 'function') { const old = w.stopPolling; w.stopPolling = function (...args) { state.drafts.clear(); state.baseline.clear(); return old(...args); }; }
     installNavigation(); wrapRenderers(); installRequestFeedback(); enhance();
     const observer = new w.MutationObserver(records => {
-      if (records.some(record => record.type === 'childList' && [...record.addedNodes].some(node => node.nodeType === 1 && !node.classList?.contains('ui-field-label')) || record.type === 'attributes' && record.attributeName === 'class')) queueEnhance();
+      if (records.some(record => !record.target.closest?.('#map') && (record.type === 'childList' && [...record.addedNodes].some(node => node.nodeType === 1 && !node.classList?.contains('ui-field-label')) || record.type === 'attributes' && record.attributeName === 'class'))) queueEnhance();
     });
     observer.observe(doc.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
     return { state, enhance, updateNavigation, groupSettings, feedback, confirmLeave, disconnect: () => observer.disconnect() };

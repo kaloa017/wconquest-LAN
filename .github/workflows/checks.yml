@@ -58,6 +58,10 @@ jobs:
           node --check static/playtime.js
           node --check static/experience.js
           node --check static/interface.js
+          node --check static/map-performance.js
+          node --check static/community-upgrades.js
+          node --check static/research-upgrades.js
+          node --check static/admin-dashboard.js
           node tests/client_audit.cjs
       - name: Test interface in offline DOMs
         run: npm run test:ui

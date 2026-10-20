@@ -9,12 +9,14 @@ const {JSDOM} = require('jsdom');
 const ui = require('../static/interface.js');
 const source = fs.readFileSync(path.join(__dirname, '../static/interface.js'), 'utf8');
 const css = fs.readFileSync(path.join(__dirname, '../static/interface.css'), 'utf8');
+const mapModel=require('../static/map-performance.js');
 const pause = () => new Promise(resolve => setTimeout(resolve, 15));
 function productionDOM(t,options={}) {
   const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
   const dom=new JSDOM(html,{runScripts:'outside-only',url:'https://offline.invalid/'});t.after(()=>dom.window.close());const w=dom.window;
   w.fetch=options.fetch||(()=>new Promise(()=>{}));w.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}});w.Audio=function(){this.play=async()=>{};this.pause=()=>{};this.load=()=>{};this.removeAttribute=()=>{}};w.confirm=()=>false;
   if(options.canvas){
+    w.CanvasRenderingContext2D=function(){};
     w.HTMLCanvasElement.prototype.getContext=function(){return new Proxy({canvas:this,measureText:()=>({width:80}),getLineDash:()=>[]},{get:(target,key)=>key in target?target[key]:()=>{}})};
     Object.defineProperty(w.HTMLElement.prototype,'clientWidth',{configurable:true,get(){return this.id==='map'?1000:800}});
     Object.defineProperty(w.HTMLElement.prototype,'clientHeight',{configurable:true,get(){return 600}});
@@ -60,12 +62,32 @@ test('one complete route inventory with explicit role restrictions',()=>{
   assert.deepEqual(ui.visibleGroups({id:1},undefined,'loan').flatMap(g=>g.routes),['banks']);
 });
 
+test('ownership canvas merges same-owner cells while keeping borders and viewport boundaries',()=>{
+  const tiles={};for(let a=0;a<100;a++)for(let b=0;b<100;b++)tiles[`${a},${b}`]={grid_key:`${a},${b}`,owner_id:1,color:'#abcdef'};
+  tiles['island:test']={grid_key:'island:test',owner_id:1};
+  const runs=mapModel.runs(tiles);assert.equal(runs.length,100);
+  assert.equal(runs.reduce((count,row)=>count+row.end-row.b+1,0),10000);
+  assert.equal(mapModel.visible(runs[0],{north:2,south:0,east:2,west:0},.18),true);
+  assert.equal(mapModel.visible(runs[0],{north:20,south:19,east:2,west:0},.18),false);
+  tiles['0,50'].owner_id=2;assert.equal(mapModel.runs(tiles).length,102);
+});
+
 test('all fields have visible associated labels without duplicates',t=>{
   const w=fixture(t),doc=w.document,scope=doc.getElementById('catalog-content');
   scope.innerHTML='<input id="amount" type="number" placeholder="Amount"><label>Reason<textarea id="reason"></textarea></label><select id="choice" aria-label="Choose a player"><option>A</option></select>';
   w.WCInterface.runtime.enhance();w.WCInterface.runtime.enhance();
   for(const input of scope.querySelectorAll('input,textarea,select'))assert.equal(input.labels.length,1,input.id);
   assert.equal(scope.querySelectorAll('label[for="amount"]').length,1);
+});
+
+test('map animation mutations do not schedule a whole-interface scan',async t=>{
+  const w=fixture(t),map=w.document.createElement('div');map.id='map';w.document.body.appendChild(map);await pause();await pause();
+  assert.equal(w.WCInterface.runtime.state.queued,false);
+  map.className='leaflet-zoom-anim';map.appendChild(w.document.createElement('canvas'));
+  await Promise.resolve();await Promise.resolve();
+  assert.equal(w.WCInterface.runtime.state.queued,false);
+  const input=w.document.createElement('input');input.id='normal-form-field';w.document.getElementById('catalog-content').appendChild(input);
+  await pause();assert.equal(input.labels.length,1);
 });
 
 test('desktop grouping, search and roving keyboard focus',t=>{
@@ -209,14 +231,35 @@ test('major feature renderers use real API-shaped fixtures without network acces
   vm.runInContext('currentUser=__fixture["/api/me"];gameConfig=__fixture["/api/bootstrap"];BLD=__fixture["/api/buildings"];Object.assign(RESEARCH_TREE,__fixture["/api/research"].tree);territories=Object.fromEntries(__fixture["/api/territories"].map(t=>[t.grid_key,t]));',dom.getInternalVMContext());
   w.api=async(method,url)=>structuredClone(fixtures[url.split('?')[0]]??{error:'No offline fixture for '+url});
   w.WCInterface.runtime.updateNavigation();
-  for(const name of ['buildResearch','buildOperations','buildTrading','buildBanks','buildCatalogEditor','loadLeaderboard','buildSettings','buildModeration','buildSpace']){
+  for(const name of ['buildResearch','buildOperations','buildTrading','buildBanks','buildCatalogEditor','loadLeaderboard','buildSettings','buildModeration','buildSpace','buildServerDashboard','buildAdminAccounts','buildGuestAnalytics']){
     await assert.doesNotReject(async()=>w[name](),name);w.WCInterface.runtime.enhance();
   }
   assert.ok(w.document.querySelector('#research-content .research-branch'));
   assert.ok(w.document.querySelector('#catalog-content #catalog-fields'));
   assert.ok(w.document.querySelector('#moderation-content #moderate-player'));
+  assert.ok(w.document.querySelector('#chat-filter-settings'));
+  assert.ok(w.document.querySelector('#research-filters'));
+  const search=w.document.getElementById('research-search');search.value='Fusion Propulsion';search.dispatchEvent(new w.Event('input',{bubbles:true}));
+  assert.equal([...w.document.querySelectorAll('.focus-node')].filter(node=>!node.hidden).length,4);
+  assert.ok([...w.document.querySelectorAll('.focus-node')].filter(node=>!node.hidden).every(node=>node.textContent.includes('Fusion Propulsion')));
   assert.ok(w.document.querySelector('#settings-content .ui-settings-tabs'));
   assert.ok(w.document.querySelector('#space-content').textContent.length>50);
+  assert.ok(w.document.querySelector('#server-health .server-metrics'));
+  assert.ok(w.document.querySelector('#admin-account-search'));
+  assert.ok(w.document.querySelector('#public-player-presence time'));
+  assert.ok(w.document.querySelector('#guest-analytics-retention'));
+  assert.ok([...w.document.querySelectorAll('#admin-section-select option')].some(o=>o.textContent==='Server dashboard'));
+  assert.ok([...w.document.querySelectorAll('#admin-section-select option')].some(o=>o.textContent==='Analytics'));
+  await assert.doesNotReject(()=>w.inspectAdminAccount(fixtures['/api/me'].id));
+  assert.ok(w.document.querySelector('#dashboard-account-role'));
+  assert.ok(w.document.querySelector('#dashboard-account-research option'));
+  await assert.doesNotReject(()=>w.reviewAccountDeletion(fixtures['/api/admin/account/delete-preview'].user_id));
+  assert.ok(w.document.querySelector('#delete-account-name'));
+  assert.ok(w.document.querySelector('#account-delete-review').textContent.includes('without repayment'));
+  const calls=[];w.act=async(path,data)=>{calls.push({path,data});return {error:'Stop test'}};
+  w.document.getElementById('delete-account-name').value='wrong name';await w.confirmAccountDeletion();assert.equal(calls.length,0);
+  const before=w.document.getElementById('admin-server').textContent;vm.runInContext('currentUser=null',dom.getInternalVMContext());
+  await w.buildServerDashboard();assert.equal(w.document.getElementById('admin-server').textContent,before);
 });
 
 test('axe checks navigation, settings and auth semantics in offline DOMs',async t=>{
@@ -248,6 +291,7 @@ test('full guest map and signed-in startup complete with local terrain and API f
     const base=String(url).split('?')[0];
     if(base==='/api/terrain/cells')return {ok:true,arrayBuffer:async()=>{const data=fs.readFileSync(path.join(__dirname,'../data/land-cells.bin'));return data.buffer.slice(data.byteOffset,data.byteOffset+data.byteLength)}};
     if(base==='/api/islands')return {ok:true,json:async()=>JSON.parse(fs.readFileSync(path.join(__dirname,'../data/pacific-islands.geojson'),'utf8'))};
+    if(base.startsWith('/static/map/'))return {ok:true,json:async()=>JSON.parse(fs.readFileSync(path.join(__dirname,'..',base),'utf8'))};
     const response=base==='/api/changelog'?{show:false}:base==='/api/away'?{}:base==='/api/wars/unseen'?{wars:[]}:base==='/api/strikes'?{events:[]}:options.method==='POST'?{success:true}:fixtures[base]??{};
     return {ok:true,status:200,json:async()=>structuredClone(response)};
   };
@@ -260,6 +304,18 @@ test('full guest map and signed-in startup complete with local terrain and API f
   assert.equal(w.document.getElementById('game-screen').style.display,'flex',failures.join('\n'));
   assert.equal(w.document.getElementById('auth-overlay').style.display,'none',failures.join('\n'));
   assert.deepEqual(failures,[]);
+  await pause();
+  assert.ok(w.document.querySelector('.ownership-canvas'));
+  assert.equal(w.document.querySelector('.leaflet-world-overview-pane').style.zIndex,'210');
+  assert.ok(w.document.querySelector('.ownership-canvas').parentElement.classList.contains('leaflet-overlay-pane'));
+  assert.equal(vm.runInContext('Object.keys(tlayers).length',dom.getInternalVMContext()),0);
+  assert.ok(w.WCMap.lastFrame);
+  const originalLoad=w.fetch;let regionRequests=0;
+  w.fetch=async(...args)=>{if(String(args[0]).includes('/islands-'))regionRequests++;return originalLoad(...args);};
+  const index=JSON.parse(fs.readFileSync(path.join(__dirname,'../static/map/manifest.json'),'utf8'));
+  const region=Object.keys(index.regions)[0];
+  await Promise.all([w.WCMap.loadRegion(region),w.WCMap.loadRegion(region)]);
+  assert.equal(regionRequests,1);await w.WCMap.loadRegion(region);assert.equal(regionRequests,1);
   const unclaimed=fixtures['/api/territory/200,201'];
   assert.ok(unclaimed,'Real unclaimed-territory response is required');
   w.api=async(method,url)=>structuredClone(url==='/api/territory/200,201'?unclaimed:fixtures[url.split('?')[0]]??{});

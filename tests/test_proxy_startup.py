@@ -12,7 +12,7 @@ class ProxyStartupTests(unittest.TestCase):
         @application.route('/api/check',methods=['GET','POST'])
         def check():
             return jsonify(scheme=request.scheme,host=request.host,ip=request.remote_addr,
-                           forwarded=request.headers.get('X-Forwarded-Proto'))
+                           forwarded=request.headers.get('X-Forwarded-Proto'),country=request.environ.get('wconquest.country'))
         with patch.dict(os.environ,{'TRUSTED_PROXIES':'127.0.0.1/32,::1/128','PROXY_HOPS':'1'}):
             application.wsgi_app=proxy_headers_middleware(runtime.TrustedProxy(application.wsgi_app),clear_untrusted=clear)
         return application.test_client()
@@ -31,6 +31,17 @@ class ProxyStartupTests(unittest.TestCase):
             headers={'Origin':'https://game.trycloudflare.com','X-Forwarded-Proto':'https'},json={})
         self.assertEqual(response.status_code,403)
         self.assertEqual(response.json['error'],'Request origin does not match this game')
+
+    def test_country_header_requires_trusted_cloudflare_peer_and_valid_ip(self):
+        with patch.dict(os.environ,{'PROXY_MODE':'cloudflare'}):
+            client=self.client()
+            headers={'CF-Connecting-IP':'203.0.113.4','CF-IPCountry':'NO'}
+            self.assertEqual(client.get('/api/check',headers=headers).json['country'],'NO')
+            self.assertIsNone(client.get('/api/check',headers=headers,environ_overrides={'REMOTE_ADDR':'198.51.100.2'}).json['country'])
+            self.assertIsNone(client.get('/api/check',headers={**headers,'CF-Connecting-IP':'invalid'}).json['country'])
+            self.assertIsNone(client.get('/api/check',headers={**headers,'CF-IPCountry':'XX'}).json['country'])
+        with patch.dict(os.environ,{'PROXY_MODE':''}):
+            self.assertIsNone(self.client().get('/api/check',headers=headers).json['country'])
 
     def test_untrusted_forwarding_is_stripped_and_foreign_origins_rejected(self):
         client=self.client();headers={'X-Forwarded-Proto':'https','X-Forwarded-For':'203.0.113.4'}

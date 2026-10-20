@@ -636,8 +636,10 @@ async function refreshOnline(){
   document.getElementById('online-list').innerHTML=list.map(u=>{
     const isMe=currentUser&&u.username===currentUser.username;
     const isSpec=u.type==='spectator';
-    const dot=isSpec?`<span style="font-size:11px">${u.flag||'🌐'}</span>`:`<span class="online-dot" style="background:${u.color}"></span>`;
-    const name=`<span class="online-name${isMe?' me':''}" title="${isSpec?esc(u.country||''):''}">` + esc(u.username) + `</span>`;
+    let country=u.country||'Country unavailable';
+    if(isSpec&&u.country_code){try{country=new Intl.DisplayNames([navigator.language||'en'],{type:'region'}).of(u.country_code)||country}catch{}}
+    const dot=isSpec?`<span style="font-size:11px" aria-label="${esc(country)}">${esc(u.flag||'🌐')}</span>`:`<span class="online-dot" style="background:${u.color}"></span>`;
+    const name=`<span class="online-name${isMe?' me':''}" title="${isSpec?esc(country+' · approximate IP country'):''}">` + esc(isSpec?'Guest · '+country:u.username) + `</span>`;
     const badge=u.is_admin?'<span class="online-admin">MOD</span>':'';
     const tc=isSpec?'<span class="online-tc" style="font-size:9px">watching</span>':`<span class="online-tc">🗺${u.territories}</span>`;
     return `<div class="online-row">${dot}${name}${badge}${tc}</div>`;
@@ -1486,7 +1488,8 @@ function initMap(){
   canvasR=L.canvas({padding:.5});
   const wb=L.latLngBounds(L.latLng(-85,-180),L.latLng(85,180));
   map=L.map('map',{zoomControl:true,attributionControl:true,preferCanvas:true,worldCopyJump:false,maxBoundsViscosity:1.0,maxBounds:wb,minZoom:2,zoomSnap:.5,tap:true}).setView([30,15],4);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',maxZoom:12,minZoom:2,noWrap:true,bounds:wb,className:'dark-tiles',crossOrigin:true}).addTo(map);
+  window.wcBaseMapLayer=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',maxZoom:12,minZoom:2,noWrap:true,bounds:wb,className:'dark-tiles',crossOrigin:true});
+  if(map.getZoom()>=6)window.wcBaseMapLayer.addTo(map);
   map.on('mousemove',onMapMove);map.on('click',onMapClick);
   map.on('moveend',()=>updateHud());
   // The active client installs one resize listener for the map and mobile sheet.
@@ -1576,6 +1579,7 @@ async function fetchAndBuildPanel(key){
   await reportWater(key);
   const t=await api('GET',`/api/territory/${key}`);if(generation!==sessionGeneration||key!==selectedKey)return;
   if(t.error){const el=isMobile()?document.getElementById('mobile-sheet-content'):document.getElementById('territory-actions');if(el)el.textContent=t.error;return;}
+  if(territories[key]?.owner_id!==t.owner_id)window.WCMap?.invalidateOwnership();
   territories[key]={...(territories[key]||{}),...t};renderTerritories();
   window.__force=true;
   if(isMobile()){const c=document.getElementById('mobile-sheet-content');if(sheetPanel==='territory'&&c)buildTerritoryPanel(key,t,c)}

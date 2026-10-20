@@ -1,10 +1,13 @@
 # World Conquest — Privacy policy
-Updated 9 October 2026
+Updated 20 October 2026
 
 ## Who handles your data
-The host operating this particular server is responsible for its player data.
-Contact that server's host/admin for privacy questions or requests. No private
-phone number or public contact address is published by this project.
+The operator of the server you joined handles its player data. For the
+world-conquest.lol community, contact Kasper or a server administrator directly
+for privacy questions, access requests or deletion requests. No support email
+address has been configured yet. Hosting on a Raspberry Pi at school does not
+by itself make this an official school service. The operator must identify the
+responsible organisation and contact if the school operates the service.
 
 ## What is stored and why
 The server stores your username, password hash, recovery-code hashes, account
@@ -31,7 +34,11 @@ basis, retention periods and any additional processing for its deployment.
 
 ## Who can see information
 Other players see usernames, public country/faction information, public chat and
-online presence. Faction chat is limited to the faction; admins may access game
+online presence. The public Ranks page also shows each non-banned player's last
+recorded contact with the game as a relative time and date. This can include
+background requests and does not prove the person is at their keyboard.
+Administrators additionally see last-seen timestamps in Unix seconds.
+Faction chat is limited to the faction; admins may access game
 data for hosting and moderation. Private campaign information is limited to the
 attacker and current defender through the game API. People with host/database or
 backup access can access stored game data. Do not submit sensitive information.
@@ -39,10 +46,19 @@ backup access can access stored game data. Do not submit sensitive information.
 ## Cookies, browser storage and external services
 A session cookie supports login and request security. Browser storage remembers
 tutorial completion. The game does not include advertising analytics.
+When guest history is enabled, the existing signed session cookie also holds a
+random guest-session marker. The server stores a keyed hash of that marker with
+the guest IP, approximate country if available, first/last contact and landing
+page count for private hosting, traffic and abuse review. It does not fingerprint
+devices, record precise location or identify a guest's real name. Multiple people
+can share an IP; clearing cookies can create a new record. This is first-party
+server analytics, not a third-party advertising tracker.
 Background map tiles come from OpenStreetMap; its tile service receives normal
 web requests, including your IP address and requested map tile coordinates.
 If the host uses Cloudflare or another reverse proxy/tunnel, that provider handles
-connection data under its own policies. Optional IP geolocation is disabled by
+connection data under its own policies. Trusted Cloudflare country headers can
+provide an approximate country and flag for guests in the public online list;
+the list does not expose guest IP addresses or cities. Optional external IP geolocation is disabled by
 default; if enabled by the host, IP addresses are sent to ip-api.com, currently
 over HTTP, to display approximate locations. Hosting operators should leave this
 off unless they have assessed and disclosed that processing appropriately.
@@ -60,6 +76,61 @@ automatic age-based deletion of accounts, chat, ideas, audit records or backups.
 The host must review retention, delete data when no longer needed, and explain its
 actual retention schedule to players. Backups may retain older records until the
 host rotates them. Keep server files and backups private; they do not belong in GitHub.
+
+## Server dashboard, exports and account deletion
+Only administrators can access host uptime, CPU load, memory, storage,
+temperature, available power/fan sensors, network traffic totals, game/database
+statistics, backup metadata and game/tunnel service state. These checks inspect
+the game host; they do not inspect students' devices, browsing history or other
+school network traffic. Hardware samples are cached briefly in memory.
+The private Analytics tab shows guest records and IP addresses only to admins;
+players and moderators are denied by the server API. No guest IP or city is
+returned by the public online list. History starts with this update; older
+visits are not reconstructed. Analytics access and settings changes are audited.
+The host must establish an appropriate legal basis and explain this processing
+to its community; school hosting does not automatically authorise collecting
+student data.
+
+Administrators can download a consistent game.db copy for backup and support.
+It contains private account data, password/recovery hashes and authenticator
+keys and must be protected like the server database. CSV and JSON user exports
+include usernames, roles, game resources, research, account creation and
+last-seen times. They exclude password hashes, recovery secrets, authenticator
+keys and IP addresses. Export and account-management actions are audited.
+
+Dashboard account deletion removes the login, progression, authored chat,
+private trade discussions and linked transactions from the live database,
+releases land and anonymizes structured historical author fields. It is not
+complete automatic erasure of every mention: names or other data in free-text
+messages, ideas.txt, audit details, downloaded exports, school/proxy logs and
+older backups need separate review by the operator. Security records may be
+retained where justified by applicable law. When restoring a backup, the
+operator must reapply fulfilled deletion requests.
+
+The supplied Pi setup keeps the latest 14 completed scheduled backup folders,
+normally one per day. Manual dashboard snapshots are separate database copies,
+capped at 10, and remain until the host removes them. Downloaded copies are
+controlled by their recipient. The operator must set and communicate retention
+for those copies and any additional logs.
+Guest history defaults to 30 days from last contact, configurable from 7 to 90
+days, with a maximum 20,000 browser/IP records. Old records are pruned on visits
+and scheduled game ticks. Admins can disable new collection, shorten retention
+or clear live history. Backups remain separate and may contain guest records
+until rotated or reviewed. Pre-upgrade backups are also separate from the
+scheduled 14-folder rotation.
+
+## School hosting and email
+Use a game nickname and a unique password, not a school account password. Do not
+submit student numbers, class lists, health information or other sensitive data
+in chat or ideas. Players can ask the operator for help understanding this notice.
+School-managed networks or devices may have their own logging and policies,
+which are outside this game's dashboard.
+
+The current game does not collect email addresses or send verification emails.
+Before introducing email verification or email recovery, the operator must
+update this notice with the provider, purposes, stored email/token data,
+retention and any relevant international transfers. Existing accounts are not
+required to provide an email address by this update.
 
 ## Your choices and rights
 You can change available account preferences and mute shared music. Ask the host

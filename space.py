@@ -3,6 +3,7 @@ import json
 import time
 from flask import jsonify, session, request
 import features
+from late_research import research_bonus
 from config import (SPACE_BUSINESSES, SPACE_PLANETS, SPACE_GRID_SIZE, SPACE_CARGO_CAPACITY,
     SPACE_IRIDIUM_PRICE, SPACE_MINE_COST, SPACE_MINE_MAX_LEVEL, SPACE_RESOURCE_RATES,
     SPACE_COLLECTION_INTERVAL, MAX_ACCUM_MINS, MEGAPROJECTS)
@@ -56,6 +57,11 @@ def resource_at(planet, x, y):
 
 def iridium_price(planet):return SPACE_IRIDIUM_PRICE*SPACE_PLANETS[planet]['iridium_value_multiplier'] if planet else SPACE_IRIDIUM_PRICE
 
+def space_bonus(conn,uid,key):return research_bonus(core['user_research'](conn,uid),key)
+def cargo_capacity(conn,uid):return int(SPACE_CARGO_CAPACITY*(1+space_bonus(conn,uid,'cargo')))
+def mining_multiplier(conn,uid):return 1+space_bonus(conn,uid,'space_mining')
+def travel_time(conn,uid,planet):return max(1,int(SPACE_PLANETS[planet]['travel_seconds']*(1-space_bonus(conn,uid,'space_travel_discount'))))
+
 
 def income(conn, uid):
     totals={}
@@ -65,6 +71,7 @@ def income(conn, uid):
     for row in conn.execute('SELECT project,level FROM megaprojects WHERE user_id=?',(uid,)):
         for key,rate in MEGAPROJECTS[row['project']]['production'].items():totals[key]=totals.get(key,0)+rate*row['level']
     if 'orbital_industry' in core['user_research'](conn,uid):totals={key:rate*1.10 for key,rate in totals.items()}
+    multiplier=1+space_bonus(conn,uid,'space_income');totals={key:rate*multiplier for key,rate in totals.items()}
     return totals
 
 
@@ -102,13 +109,13 @@ def collect_space(conn, uid, timestamp=None, force=False):
         conn.execute("UPDATE space_program SET state='earth',planet=NULL,arrival=0,cargo='{}',visited=?,last_mined=? WHERE user_id=?",(json.dumps(visited),timestamp,uid))
         core['create_notification'](conn,uid,'info',f'Returned to Earth. Cargo delivered; iridium sold for {cargo.get("iridium",0)*iridium_price(program["planet"]):,.0f} money.')
     elif program['state']=='surface' and cutoff>program['last_mined'] and cutoff-program['last_mined']>=interval:
-        cargo=json.loads(program['cargo']);production={}
+        cargo=json.loads(program['cargo']);production={};multiplier=mining_multiplier(conn,uid)
         for tile in conn.execute('SELECT x,y,level FROM planet_tiles WHERE user_id=? AND planet=?',(uid,program['planet'])):
             key=resource_at(program['planet'],tile['x'],tile['y'])
-            production[key]=production.get(key,0)+SPACE_RESOURCE_RATES[key]*tile['level']*SPACE_PLANETS[program['planet']]['yield_multiplier']
+            production[key]=production.get(key,0)+SPACE_RESOURCE_RATES[key]*tile['level']*SPACE_PLANETS[program['planet']]['yield_multiplier']*multiplier
         minutes=min(MAX_ACCUM_MINS,(cutoff-program['last_mined'])/60)
         total=sum(production.values())*minutes
-        available=max(0,SPACE_CARGO_CAPACITY-sum(cargo.values()))
+        available=max(0,cargo_capacity(conn,uid)-sum(cargo.values()))
         scale=min(1,available/total) if total else 0
         for key,rate in production.items():cargo[key]=cargo.get(key,0)+rate*minutes*scale
         conn.execute('UPDATE space_program SET cargo=?,last_mined=? WHERE user_id=?',(json.dumps(cargo),timestamp,uid))
@@ -134,9 +141,9 @@ def status():
         reason=''
         if definition['previous'] and definition['previous'] not in visited:reason='Return from '+SPACE_PLANETS[definition['previous']]['name']+' first'
         elif level<definition['agency_level']:reason=f'Need {definition["agency_level"]} Space Agency levels'
-        planets.append(dict(key=key,**definition,available=enabled and not reason,lock_reason=reason,iridium_price=iridium_price(key)))
+        planets.append(dict(key=key,**{**definition,'travel_seconds':travel_time(conn,uid,key)},available=enabled and not reason,lock_reason=reason,iridium_price=iridium_price(key)))
     holdings={r['business']:r['quantity'] for r in conn.execute('SELECT * FROM space_businesses WHERE user_id=?',(uid,))}
-    tiles=[]
+    tiles=[];mining_boost=mining_multiplier(conn,uid)
     if program and program['planet']:
         built={(r['x'],r['y']):r['level'] for r in conn.execute('SELECT * FROM planet_tiles WHERE user_id=? AND planet=?',(uid,program['planet']))}
         for y in range(SPACE_GRID_SIZE):
@@ -145,9 +152,9 @@ def status():
                 adjacent=not built and (x,y)==(SPACE_GRID_SIZE//2,SPACE_GRID_SIZE//2) or any((x+dx,y+dy) in built for dx,dy in ((0,1),(1,0),(0,-1),(-1,0)))
                 cost={k:v*2**level for k,v in SPACE_MINE_COST.items()}
                 tiles.append(dict(x=x,y=y,resource=resource,level=level,can_build=bool(adjacent or level),cost=cost,
-                    rate=SPACE_RESOURCE_RATES[resource]*max(1,level)*SPACE_PLANETS[program['planet']]['yield_multiplier']))
+                    rate=SPACE_RESOURCE_RATES[resource]*max(1,level)*SPACE_PLANETS[program['planet']]['yield_multiplier']*mining_boost))
     return jsonify(unlocked=enabled,program=program,planets=planets,tiles=tiles,businesses=SPACE_BUSINESSES,holdings=holdings,
-        income=income(conn,uid) if enabled else {},grid_size=SPACE_GRID_SIZE,cargo_capacity=SPACE_CARGO_CAPACITY,
+        income=income(conn,uid) if enabled else {},grid_size=SPACE_GRID_SIZE,cargo_capacity=cargo_capacity(conn,uid),
         iridium_price=iridium_price(program['planet']) if program else SPACE_IRIDIUM_PRICE,mine_max_level=SPACE_MINE_MAX_LEVEL,
         tutorial_required=bool(enabled and program and not program['tutorial_seen']),
         megaprojects={key:{**definition,**dict(conn.execute('SELECT level,ready_at FROM megaprojects WHERE user_id=? AND project=?',(uid,key)).fetchone() or {'level':0,'ready_at':0})} for key,definition in MEGAPROJECTS.items()},
@@ -160,6 +167,7 @@ def build_megaproject():
     if not isinstance(key,str) or key not in MEGAPROJECTS:raise ValueError('Unknown megaproject')
     if 'europa' not in json.loads(program['visited']) or 'stellar_engineering' not in core['user_research'](conn,uid):raise ValueError('Return from Europa and complete Stellar Engineering first')
     definition=MEGAPROJECTS[key];previous=definition['requires']
+    if definition.get('research') and definition['research'] not in core['user_research'](conn,uid):raise ValueError('Complete '+core['RESEARCH_TREE'][definition['research']]['name']+' first')
     if previous and not conn.execute('SELECT 1 FROM megaprojects WHERE user_id=? AND project=? AND level>0',(uid,previous)).fetchone():raise ValueError('Complete the previous megaproject first')
     held=conn.execute('SELECT * FROM megaprojects WHERE user_id=? AND project=?',(uid,key)).fetchone();level=held['level'] if held else 0
     if held and held['ready_at']:raise ValueError('This megaproject is already under construction')
@@ -201,7 +209,7 @@ def depart():
     user=conn.execute('SELECT * FROM users WHERE id=?',(uid,)).fetchone()
     if not core['can_afford'](user,cost):raise ValueError('Round trip requires '+core['fmt_cost'](cost))
     core['pay'](conn,uid,cost);stamp=int(time.time())
-    conn.execute("UPDATE space_program SET state='outbound',planet=?,arrival=?,cargo='{}',last_mined=? WHERE user_id=?",(key,stamp+planet['travel_seconds'],stamp,uid))
+    conn.execute("UPDATE space_program SET state='outbound',planet=?,arrival=?,cargo='{}',last_mined=? WHERE user_id=?",(key,stamp+travel_time(conn,uid,key),stamp,uid))
     return jsonify(success=True,message='Departed for '+planet['name']+'. Both travel legs are paid; open Space for arrival progress.')
 
 
@@ -225,7 +233,7 @@ def return_home():
     conn=db();uid=session['user_id'];collect_space(conn,uid,force=True)
     program=conn.execute('SELECT * FROM space_program WHERE user_id=?',(uid,)).fetchone()
     if not program or program['state']!='surface':raise ValueError('Land on a planet before returning')
-    conn.execute("UPDATE space_program SET state='returning',arrival=?,last_mined=? WHERE user_id=?",(int(time.time())+SPACE_PLANETS[program['planet']]['travel_seconds'],int(time.time()),uid))
+    conn.execute("UPDATE space_program SET state='returning',arrival=?,last_mined=? WHERE user_id=?",(int(time.time())+travel_time(conn,uid,program['planet']),int(time.time()),uid))
     return jsonify(success=True,message='Returning to Earth. Travel is prepaid; cargo is delivered once on arrival.')
 
 

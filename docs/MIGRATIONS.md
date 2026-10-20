@@ -1,9 +1,9 @@
-# Save upgrades through schema v10 and rollback
+# Save upgrades through schema v20 and rollback
 
 Stop the old game, copy the project folder and make a consistent SQLite backup.
-Starting the current version creates `backups/game-before-v10-<timestamp>.db` before changing an
+Starting the current version creates `backups/game-before-v20-<timestamp>.db` before changing an
 existing database. `DB_PATH` can select another location; backups go beside it.
-Migrations v6–v10 are transactional and marked in `schema_migrations`; each runs once.
+Migrations v6–v20 are transactional and marked in `schema_migrations`; each runs once.
 Legacy v4/v5 schema upgrades are retained for older saves. Do not remove backups.
 
 ## Changes
@@ -237,3 +237,11 @@ invented. Explicit player and round resets clear progression queues and fraction
 Construction and demolition settle production at the old rate before changing
 the building; laboratory speed updates at that boundary. Deploy code and static
 files together, then restart the server and reload browsers.
+
+## 6.9.0 — guest analytics (schema 20)
+
+An idempotent migration adds only guest_visits, its last-seen index and a
+20,000-record cap trigger. Players, territory IDs, ownership, resources,
+research and factions are preserved. Guest history begins on deployment;
+old visits are not backfilled. The pre-upgrade snapshot is separate from
+scheduled backups and requires host retention review. See ADMIN_DASHBOARD.md.

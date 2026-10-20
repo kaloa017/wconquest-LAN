@@ -140,7 +140,7 @@ class ActivityTests(unittest.TestCase):
 
     def test_public_policies_and_idempotent_activity_migration(self):
         for path in ('/terms','/privacy'):
-            r=app.app.test_client().get(path);self.assertEqual(r.status_code,200);self.assertIn(b'9 October 2026',r.data)
+            r=app.app.test_client().get(path);self.assertEqual(r.status_code,200);self.assertIn(b'20 October 2026',r.data)
         self.mark(self.a,int(time.time())-3600,paused=1);before=dict(self.conn.execute('SELECT * FROM player_activity WHERE user_id=?',(self.a,)).fetchone())
         app.migrate_v16(app.get_db);app.migrate_v16(app.get_db)
         self.assertEqual(before,dict(self.conn.execute('SELECT * FROM player_activity WHERE user_id=?',(self.a,)).fetchone()))
