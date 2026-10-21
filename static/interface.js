@@ -10,7 +10,7 @@
     { id: 'command', name: 'Command', routes: ['operations', 'battles'] },
     { id: 'economy', name: 'Economy', routes: ['market', 'trading', 'banks', 'stocks'] },
     { id: 'community', name: 'Community', routes: ['chat', 'faction', 'social'] },
-    { id: 'world', name: 'World & progress', routes: ['leaderboard', 'playtime', 'space'] },
+    { id: 'world', name: 'World & progress', routes: ['leaderboard', 'playtime', 'space', 'stats'] },
     { id: 'host', name: 'Administration', routes: ['moderation', 'catalog'] }
   ];
   const routes = {
@@ -30,6 +30,7 @@
     leaderboard: { name: 'Rankings', description: 'Compare countries and player progress.', public: true },
     playtime: { name: 'Playtime', description: 'Your activity and time spent playing.', public: true },
     space: { name: 'Space program', description: 'Orbital businesses and planetary expeditions.' },
+    stats: { name: 'Statistics', description: 'Your country in numbers; world totals for admins.' },
     moderation: { name: 'Moderation', description: 'Player conduct, timeouts and territory disputes.', permission: 'moderator' },
     catalog: { name: 'Game editor', description: 'Edit buildings, wonders and country effects.', permission: 'admin' }
   };
@@ -101,7 +102,8 @@
       if (overlay) return `${overlay.id || 'dialog'}:${overlay.querySelector('h2,h3')?.textContent || 'form'}:${scope.classList.contains('trade-room') ? 'trade' : scope.classList.contains('modal-body') ? 'body' : 'dialog'}`;
       return scope.dataset.uiScope ||= `ui-scope-${++state.nextId}`;
     };
-    const meaningful = input => !['range', 'file', 'hidden'].includes(input.type)
+    const meaningful = input => !!input.closest('#panel-catalog,#admin-editor,#admin-advertisements,#profile-modal,#chat-filter-settings,#server-settings,[data-ui-drafts]')
+      && !['range', 'file', 'hidden'].includes(input.type)
       && !/(?:sort|filter|path|nav-|research-path)/.test(input.id || '')
       && !input.hasAttribute('data-ui-filter');
 
@@ -186,6 +188,7 @@
       if (first && !tabs.querySelector('[tabindex="0"]:not([hidden])')) first.tabIndex = 0;
       doc.getElementById('ui-nav-empty').hidden = shown.size > 0;
       doc.getElementById('ui-nav-context').textContent = state.query ? `${shown.size} matching destinations` : `Current section: ${routes[state.active]?.name || 'Territory'}`;
+      const summary=doc.getElementById('ui-nav-summary');if(summary)summary.textContent='☰ Menus · '+(routes[state.active]?.name||'Territory');
       for (const [id, item] of Object.entries(routes)) {
         const panel = doc.getElementById('panel-' + id); if (!panel) continue;
         let heading = panel.querySelector('.panel-heading');
@@ -203,9 +206,9 @@
       const scrollWrapper = tabs.closest('.scroll-controls');
       if (scrollWrapper) { scrollWrapper.before(tabs); scrollWrapper.remove(); }
       const nav = doc.createElement('nav'); nav.id = 'ui-navigation'; nav.setAttribute('aria-label', 'Game sections');
-      nav.innerHTML = '<label class="ui-search-label" for="ui-nav-search">Find a feature</label><input id="ui-nav-search" data-ui-filter type="search" class="form-input" placeholder="Search menus…" autocomplete="off"><label class="ui-sr-only" for="ui-nav-group">Feature group</label><select id="ui-nav-group" class="form-input" data-ui-filter></select><p id="ui-nav-context" class="ui-nav-context"></p>';
-      tabs.before(nav); nav.appendChild(tabs);
-      const empty = doc.createElement('p'); empty.id = 'ui-nav-empty'; empty.className = 'ui-empty'; empty.hidden = true; empty.textContent = 'No matching menu. Try another name.'; nav.appendChild(empty);
+      nav.innerHTML = '<details id="ui-menu-picker"><summary id="ui-nav-summary">☰ Menus · Territory</summary><div class="ui-menu-controls"><label class="ui-sr-only" for="ui-nav-search">Find a feature</label><input id="ui-nav-search" data-ui-filter type="search" class="form-input" placeholder="Find a menu…" autocomplete="off"><label class="ui-sr-only" for="ui-nav-group">Feature group</label><select id="ui-nav-group" class="form-input" data-ui-filter></select></div><p id="ui-nav-context" class="ui-nav-context"></p></details>';
+      tabs.before(nav); nav.querySelector('details').appendChild(tabs);
+      const empty = doc.createElement('p'); empty.id = 'ui-nav-empty'; empty.className = 'ui-empty'; empty.hidden = true; empty.textContent = 'No matching menu. Try another name.'; nav.querySelector('details').appendChild(empty);
       doc.getElementById('ui-nav-search').addEventListener('input', event => { state.query = event.target.value; updateNavigation(); });
       doc.getElementById('ui-nav-group').addEventListener('change', event => { state.group = event.target.value; state.query = ''; doc.getElementById('ui-nav-search').value = ''; updateNavigation(); });
       tabs.addEventListener('keydown', event => {
@@ -226,6 +229,7 @@
         const current = doc.getElementById('panel-' + state.active);
         const navigate = () => {
           state.active = id; state.group = groups.find(group => group.routes.includes(id))?.id || state.group; state.query = '';
+          doc.getElementById('ui-menu-picker').open=false;
           doc.getElementById('ui-nav-search').value = ''; const result = oldShow(id); updateNavigation(); queueEnhance(); return result;
         };
         if (id !== state.active && current && state.drafts.has(scopeKey(current))) return confirmLeave(current, navigate);
@@ -423,7 +427,7 @@
             if (result?.error) {
               feedback(scope, result.error + ' ' + errorHint(result.error), 'error');
               // Keep an in-memory copy even if a legacy handler redraws after failure.
-              if (scope && !state.drafts.has(scopeKey(scope))) state.drafts.set(scopeKey(scope), saved);
+              if (scope && [...scope.querySelectorAll('input,select,textarea')].some(meaningful) && !state.drafts.has(scopeKey(scope))) state.drafts.set(scopeKey(scope), saved);
               w.setTimeout(() => {
                 if (generation !== (typeof sessionGeneration === 'undefined' ? 0 : sessionGeneration)) return;
                 const current = scope?.id ? doc.getElementById(scope.id) : scope;

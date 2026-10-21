@@ -3,16 +3,25 @@ import argparse,getpass,os,sqlite3
 from werkzeug.security import generate_password_hash
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['create-admin','reset-password','reset-two-factor','backup']);parser.add_argument('--username');parser.add_argument('--output');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('action',choices=['create-admin','reset-password','reset-two-factor','disable-email','backup']);parser.add_argument('--username');parser.add_argument('--output');args=parser.parse_args()
     os.environ['DISABLE_SCHEDULER']='1'
     import app
     conn=app.get_db()
     try:
+        if args.action=='disable-email':
+            if input('Disable email authentication for this server? Type DISABLE: ')!='DISABLE':parser.error('Cancelled')
+            import json
+            from email_verification import state
+            settings=state(conn);settings['enabled']=False
+            app.set_setting(conn,'email_verification',json.dumps(settings))
+            conn.execute('INSERT INTO audit_log(ts,actor,action,details) VALUES(strftime("%s","now"),"Local host","email-disabled-locally","{}")')
+            conn.commit();print('Email authentication disabled locally; passwords and authenticator codes remain required.');return
         if args.action=='backup':
             if not args.output:parser.error('--output is required for backup')
             with sqlite3.connect(args.output) as dest:conn.backup(dest)
             print('Consistent database backup saved.');return
         name=args.username or input('Username: ').strip()
+        if name.casefold()=='admin' and args.action=='create-admin':parser.error('Use a personal administrator username instead of the retired admin login')
         if args.action=='reset-two-factor':
             existing=conn.execute('SELECT id FROM users WHERE username=? COLLATE NOCASE',(name,)).fetchone()
             if not existing:parser.error('Account not found')

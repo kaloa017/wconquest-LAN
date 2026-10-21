@@ -14,16 +14,22 @@ PANELS.leaderboard.f=loadLeaderboard;
 async function showReturnSummary(){
   if(!currentUser||returnDialogBusy||document.hidden||document.getElementById('activity-paused')||document.querySelector('.v6-overlay'))return;
   returnDialogBusy=true;
+  const expectedGeneration=sessionGeneration,expectedUser=currentUser.id;
   try{
     const r=await api('GET','/api/away');
-    if(!currentUser||document.hidden||document.getElementById('activity-paused')||document.querySelector('.v6-overlay'))return;
+    if(expectedGeneration!==sessionGeneration||currentUser?.id!==expectedUser||document.hidden||document.getElementById('activity-paused')||document.querySelector('.v6-overlay'))return;
     if(r.summary){
+      const uid=currentUser.id,generation=sessionGeneration,since=r.summary.since;
+      try{if(localStorage.getItem('wc-away-ack-'+uid)===String(since))return}catch{}
       const dialog=expansionDialog('While you were away…',`<p>Your country continued earning for up to two hours after your last activity.</p><div class="return-gains">${Object.entries(r.summary.resources).map(([key,amount])=>`<div><span>${esc(key)}</span><b>+${fmtN(amount,1)}</b></div>`).join('')}</div><p class="v4-sub">Recorded resource gains and deliveries while away. Longer absences do not earn extra production.</p><button class="btn btn-primary" id="away-ack">Welcome back</button>`);
-      const acknowledge=async()=>{const response=await api('POST','/api/away',{});if(response.error)return toast(response.error,'error');dialog.remove();await showWarAlert()};
+      dialog.dataset.awaySince=String(since);
+      let acknowledging=false;
+      const acknowledge=async()=>{if(acknowledging)return;acknowledging=true;const response=await api('POST','/api/away',{since});if(response.error){acknowledging=false;return toast(response.error,'error')}if(generation!==sessionGeneration||currentUser?.id!==uid)return;try{localStorage.setItem('wc-away-ack-'+uid,String(since))}catch{}dialog.remove();await showWarAlert()};
       dialog.querySelector('#away-ack').onclick=acknowledge;dialog.querySelector('[data-close]').onclick=acknowledge;
     }else await showWarAlert();
   }finally{returnDialogBusy=false}
 }
+window.addEventListener('storage',event=>{const dialog=document.querySelector('#expansion-dialog:has(#away-ack)');if(event.key==='wc-away-ack-'+currentUser?.id&&dialog?.dataset.awaySince===event.newValue)dialog.remove()});
 async function showWarAlert(){
   if(!currentUser||document.hidden||document.querySelector('.v6-overlay')||document.getElementById('activity-paused'))return;
   const r=await api('GET','/api/wars/unseen');const war=r.wars?.[0];if(!war||!currentUser||document.hidden||document.querySelector('.v6-overlay')||document.getElementById('activity-paused'))return;

@@ -7,7 +7,7 @@ from flask import request,session,jsonify
 _attempts=OrderedDict();_lock=threading.Lock()
 MAX_AUTH_CLIENTS=10000
 AUTH_ROUTES=('/api/login','/api/register','/api/forgot_password',
-             '/api/profile/two_factor','/api/profile/recovery',
+             '/api/profile/two_factor','/api/profile/recovery','/api/profile/email',
              '/api/profile/change_password','/api/profile/change_username')
 
 def install(app):

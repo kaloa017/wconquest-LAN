@@ -177,10 +177,13 @@ def before_request():
         if not rate_allowed('auth:'+str(request.remote_addr),_rate_settings['auth']):return jsonify(error='Too many account attempts; wait a minute'),429
     uid=session.get('user_id')
     if uid:
-        conn=db();u=conn.execute('SELECT auth_version,is_banned FROM users WHERE id=?',(uid,)).fetchone()
+        conn=db();u=conn.execute('SELECT auth_version,is_banned,is_admin FROM users WHERE id=?',(uid,)).fetchone()
         if not u or u['is_banned'] or session.get('auth_version',0)!=u['auth_version']:
             session.clear()
             if request.path not in ('/api/login','/api/logout'):return jsonify(error='Session ended; please log in again'),401
+    if request.path.startswith('/api/admin/'):
+        if not uid:return jsonify(error='Not authenticated'),401
+        if not u or not u['is_admin']:return jsonify(error='Admin required'),403
     if request.method=='POST':
         if not hmac.compare_digest(request.headers.get('X-WC-CSRF',''),session.get('csrf','!')):return jsonify(error='Refresh the page to renew your request token'),403
         if request.mimetype!='multipart/form-data':
@@ -200,6 +203,7 @@ def before_request():
                 if not isinstance(d.get('message'),str) or len(d['message'])>4000:raise ValueError('Announcement must be below 4,000 characters')
                 if d.get('image_url') and (not isinstance(d['image_url'],str) or len(d['image_url'])>2048 or urlsplit(d['image_url']).scheme not in ('http','https')):raise ValueError('Image URL must use HTTP or HTTPS')
             if request.path in ('/api/profile/change_password','/api/admin/reset_password') and len(d.get('new_password',''))<8:raise ValueError('New passwords need at least 8 characters')
+            if request.path in ('/api/profile/change_username','/api/admin/change_username') and str(d.get('new_username','')).strip().casefold()=='admin':raise ValueError('The default admin name is retired; use a personal username')
             if request.path in ('/api/admin/give_money','/api/admin/give_resource','/api/admin/give_territory') and d.get('confirm') is not True:raise ValueError('Cheating is unethical and unfair to other players. Explicit confirmation required.')
     return None
 
@@ -232,11 +236,11 @@ def after_request(response):
     # the site's origin, never the player's page path or query string.
     response.headers['Referrer-Policy']='strict-origin-when-cross-origin'
     response.headers['X-Frame-Options']='DENY'
-    if response.mimetype=='application/json' and request.path.startswith('/api/') and request.path!='/api/islands':response.headers['Cache-Control']='no-store'
+    if response.mimetype=='application/json' and request.path.startswith('/api/') and request.path!='/api/islands' and not (request.path=='/api/cities' and response.status_code in (200,304)):response.headers['Cache-Control']='no-store'
     if request.path.startswith('/static/') and not request.path.startswith('/static/map/') and response.status_code<400:
         response.headers['Cache-Control']='public, max-age=86400'
     # Never compress credentials/recovery responses alongside attacker input.
-    if request.method=='GET' and request.path in ('/api/territories','/api/map/sync','/api/buildings','/api/fallout') and request.accept_encodings['gzip']>0 and response.status_code==200:
+    if request.method=='GET' and request.path in ('/api/territories','/api/map/sync','/api/spectator/sync','/api/buildings','/api/fallout') and request.accept_encodings['gzip']>0 and response.status_code==200:
         raw=response.get_data()
         if len(raw)>512:response.set_data(gzip.compress(raw,compresslevel=3));response.headers['Content-Encoding']='gzip';response.headers['Vary']='Accept-Encoding'
     response.headers['Server-Timing']=f'app;dur={(time.perf_counter()-g.get("started",time.perf_counter()))*1000:.2f}'
@@ -252,11 +256,15 @@ def error_response(error):
 
 def register_account():
     d=body();name=d.get('username','').strip();password=d.get('password','')
+    from email_verification import normalized
+    email=normalized(d['email']) if d.get('email') else None
+    if name.casefold()=='admin':raise ValueError('The default admin name is retired; choose a personal username')
     if not re.fullmatch(r'[\w .-]{3,20}',name):raise ValueError('Name must be 3–20 letters, numbers, spaces, dots or dashes')
     if len(password)<8:raise ValueError('Password needs at least 8 characters')
     code=secrets.token_urlsafe(24);conn=db()
     cursor=conn.execute('INSERT INTO users(username,password,color,base_color,recovery_hash) VALUES(?,?,?,?,?)',(name,generate_password_hash(password),random.choice(PLAYER_COLORS),None,generate_password_hash(code)))
     conn.execute('UPDATE users SET base_color=color WHERE id=?',(cursor.lastrowid,))
+    if email:conn.execute('INSERT INTO account_emails(user_id,email) VALUES(?,?)',(cursor.lastrowid,email))
     audit(conn,'recovery_generated',cursor.lastrowid)
     return jsonify(success=True,message='Account created. Save your recovery code; it is shown once.',recovery_code=code,is_admin=False)
 
@@ -264,9 +272,14 @@ def login_account():
     d=body();conn=db();u=conn.execute('SELECT * FROM users WHERE username=? COLLATE NOCASE',(d.get('username',''),)).fetchone()
     if not u or not core['password_matches'](u['password'],d.get('password','')):return jsonify(error='Invalid username or password'),401
     if u['is_banned']:return jsonify(error='Account banned'),403
+    from email_verification import login_challenge
+    challenge=login_challenge(conn,u,d)
+    if challenge is not None:
+        session.pop('user_id',None);session.pop('username',None)
+        return challenge
     if len(u['password'])==64:conn.execute('UPDATE users SET password=? WHERE id=?',(generate_password_hash(d['password']),u['id']))
     csrf=session.get('csrf',secrets.token_urlsafe(32));session.clear();session.update(user_id=u['id'],username=u['username'],auth_version=u['auth_version'],csrf=csrf)
-    return jsonify(success=True,user={'id':u['id'],'username':u['username'],'color':u['color'],'is_admin':bool(u['is_admin'])})
+    return jsonify(success=True,email_fallback=bool(getattr(g,'email_quota_fallback',False)),user={'id':u['id'],'username':u['username'],'color':u['color'],'is_admin':bool(u['is_admin'])})
 
 def recover_account():
     d=body();conn=db();u=conn.execute('SELECT * FROM users WHERE username=? COLLATE NOCASE',(d.get('username',''),)).fetchone()
@@ -293,15 +306,16 @@ def bootstrap():
     return jsonify(csrf=session['csrf'],version=VERSION,community=COMMUNITY,ideologies=IDEOLOGIES,religions=RELIGIONS,
         queued_advance_cost_multiplier=QUEUED_ADVANCE_COST_MULTIPLIER,military_travel_cost=MILITARY_TRAVEL_COST,faction_colors=FACTION_COLORS,prices={'boat':{'money':BOAT_COST_M,'wood':BOAT_COST_W},'plane':{'money':PLANE_COST_M,'metal':PLANE_COST_X,'oil':PLANE_COST_O},'voyage_money':VOYAGE_MONEY,'voyage_wood':VOYAGE_WOOD},stock_fee=STOCK_FEE,stock_interval=STOCK_INTERVAL)
 
-def map_snapshot(conn, keys=None):
+def map_snapshot(conn, keys=None, armies=None):
     if keys is not None:
         keys=list(keys)
         if not keys:return {}
         if len(keys)>500:
             result={}
-            for start in range(0,len(keys),500):result.update(map_snapshot(conn,keys[start:start+500]))
+            armies=armies if armies is not None else army_map(conn)
+            for start in range(0,len(keys),500):result.update(map_snapshot(conn,keys[start:start+500],armies))
             return result
-    am=army_map(conn)
+    am=armies if armies is not None else army_map(conn)
     rows=conn.execute('''SELECT t.grid_key,t.owner_id,t.terrain,t.population,u.username,u.color,u.base_color,u.capital_key,
         b.type bt,b.level bl,f.tag,f.color faction_color FROM territories t JOIN users u ON u.id=t.owner_id
         LEFT JOIN buildings b ON b.grid_key=t.grid_key LEFT JOIN factions f ON f.id=u.faction_id WHERE t.owner_id IS NOT NULL'''+
@@ -864,4 +878,9 @@ def install_features(namespace):
     install_admin_dashboard(namespace)
     from guest_analytics import install as install_guest_analytics
     install_guest_analytics(namespace)
-    if os.getenv('DISABLE_SCHEDULER')!='1':threading.Thread(target=scheduler_loop,name='game-scheduler',daemon=True).start()
+    from game_statistics import install as install_statistics
+    install_statistics(namespace)
+    from traffic_controls import install as install_traffic
+    install_traffic(namespace)
+    from email_verification import install as install_email
+    install_email(namespace)

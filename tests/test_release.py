@@ -6,7 +6,7 @@ release=importlib.util.module_from_spec(spec);spec.loader.exec_module(release)
 
 class ReleaseTests(unittest.TestCase):
     def test_private_paths_are_rejected(self):
-        for name in ('game.db','game.db-wal','.session-secret','ideas.txt','.env','media/world.mp3','static/eva/eva-01.jpg','backups/save.db','.cloudflared/account.json'):
+        for name in ('game.db','game.db-wal','.session-secret','ideas.txt','.env','email.env','game.env','media/world.mp3','static/eva/eva-01.jpg','backups/save.db','.cloudflared/account.json'):
             with self.subTest(name=name):self.assertTrue(release.private_path(name))
         for name in ('.env.example','docs/EVA_IMAGES.md','static/eva/README.md','tests/legacy_schema.sql'):
             with self.subTest(name=name):self.assertFalse(release.private_path(name))

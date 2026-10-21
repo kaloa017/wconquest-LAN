@@ -10,6 +10,7 @@ const ui = require('../static/interface.js');
 const source = fs.readFileSync(path.join(__dirname, '../static/interface.js'), 'utf8');
 const css = fs.readFileSync(path.join(__dirname, '../static/interface.css'), 'utf8');
 const mapModel=require('../static/map-performance.js');
+const polish=require('../static/game-polish.js');
 const pause = () => new Promise(resolve => setTimeout(resolve, 15));
 function productionDOM(t,options={}) {
   const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
@@ -51,8 +52,8 @@ function fixture(t, options={}) {
 }
 
 test('one complete route inventory with explicit role restrictions',()=>{
-  assert.equal(Object.keys(ui.routes).length,18);
-  assert.equal(new Set(ui.groups.flatMap(g=>g.routes)).size,18);
+  assert.equal(Object.keys(ui.routes).length,19);
+  assert.equal(new Set(ui.groups.flatMap(g=>g.routes)).size,19);
   assert.equal(ui.canVisit('catalog',{is_moderator:1}),false);
   assert.equal(ui.canVisit('moderation',{is_moderator:1}),true);
   assert.equal(ui.canVisit('catalog',{is_admin:1}),true);
@@ -93,12 +94,46 @@ test('map animation mutations do not schedule a whole-interface scan',async t=>{
 test('desktop grouping, search and roving keyboard focus',t=>{
   const w=fixture(t),doc=w.document;
   assert.equal(doc.querySelector('.scroll-controls'),null);
+  assert.equal(doc.getElementById('ui-menu-picker').open,false);
   const select=doc.getElementById('ui-nav-group');select.value='economy';select.dispatchEvent(new w.Event('change',{bubbles:true}));
   const visible=[...doc.querySelectorAll('.stab')].filter(b=>!b.hidden);
   assert.deepEqual(visible.map(b=>b.dataset.panel),['market','trading','banks','stocks']);
   visible[0].focus();visible[0].dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));assert.equal(doc.activeElement,visible[1]);
   const search=doc.getElementById('ui-nav-search');search.value='loan';search.dispatchEvent(new w.Event('input',{bubbles:true}));
   assert.deepEqual([...doc.querySelectorAll('.stab')].filter(b=>!b.hidden).map(b=>b.dataset.panel),['banks']);
+});
+
+test('email sign-in challenge stays inside the form and never starts an unverified session',async t=>{
+  const {w}=productionDOM(t);
+  assert.ok(w.document.querySelector('#form-login #li-email-code'));
+  assert.ok(w.document.querySelector('#form-register #rg-email'));
+  let started=0,calls=[];w.startGame=async()=>started++;
+  w.api=async(method,path,data)=>{calls.push({path,data});return {email_required:true,message:'Code queued',retry_after:60}};
+  w.document.getElementById('li-user').value='Example';w.document.getElementById('li-pass').value='disposable-password';
+  await w.doLogin();assert.equal(started,0);assert.equal(w.document.getElementById('li-email-code').parentElement.parentElement.hidden,false);
+  assert.equal(w.document.getElementById('resend-login-code').disabled,true);
+  assert.equal(calls[0].data.resend_email,false);
+  w.api=async()=>({success:true,user:{id:99,username:'Example'}});w.document.getElementById('li-email-code').value='12345678';
+  await w.doLogin();assert.equal(started,1);assert.equal(w.document.getElementById('li-email-code').value,'');
+});
+
+test('tile finder parses grid IDs, island IDs and geographic coordinates',()=>{
+  const cell=polish.parseTileTarget('200, 100');assert.equal(cell.key,'200,100');assert.ok(Math.abs(cell.lat-36.09)<1e-8);
+  assert.equal(polish.parseTileTarget('59.91, 10.75','latlng').key,'332,59');
+  assert.equal(polish.parseTileTarget('-0.01 -0.01','latlng').key,'-1,-1');
+  assert.equal(polish.parseTileTarget('island:sample-1').key,'island:sample-1');
+  for(const [value,mode] of [['Infinity,2','grid'],['200.2,2','grid'],['500,1','grid'],['91,0','latlng'],['0,180','latlng']])assert.throws(()=>polish.parseTileTarget(value,mode));
+});
+
+test('action quantities and searches never create discard controls, editors still do',async t=>{
+  const w=fixture(t),doc=w.document;
+  const scope=doc.getElementById('panel-market');scope.insertAdjacentHTML('beforeend','<input id="sell-quantity" value="1"><button id="sell-action">Sell</button>');w.WCInterface.runtime.enhance();
+  const input=doc.getElementById('sell-quantity');input.focus();input.value='20';input.dispatchEvent(new w.Event('input',{bubbles:true}));
+  assert.equal(scope.querySelector('.ui-draft-status'),null);
+  doc.getElementById('sell-action').click();await w.api('POST','/api/resources/sell',{});await pause();
+  assert.equal(scope.querySelector('.ui-draft-status'),null);
+  const editor=doc.getElementById('panel-catalog');editor.insertAdjacentHTML('beforeend','<input id="real-editor" value="Old">');w.WCInterface.runtime.enhance();
+  const field=doc.getElementById('real-editor');field.focus();field.value='New';field.dispatchEvent(new w.Event('input',{bubbles:true}));assert.ok(editor.querySelector('.ui-draft-status'));
 });
 
 test('mobile menu uses the same role-filtered routes and searches locally',t=>{
@@ -231,7 +266,7 @@ test('major feature renderers use real API-shaped fixtures without network acces
   vm.runInContext('currentUser=__fixture["/api/me"];gameConfig=__fixture["/api/bootstrap"];BLD=__fixture["/api/buildings"];Object.assign(RESEARCH_TREE,__fixture["/api/research"].tree);territories=Object.fromEntries(__fixture["/api/territories"].map(t=>[t.grid_key,t]));',dom.getInternalVMContext());
   w.api=async(method,url)=>structuredClone(fixtures[url.split('?')[0]]??{error:'No offline fixture for '+url});
   w.WCInterface.runtime.updateNavigation();
-  for(const name of ['buildResearch','buildOperations','buildTrading','buildBanks','buildCatalogEditor','loadLeaderboard','buildSettings','buildModeration','buildSpace','buildServerDashboard','buildAdminAccounts','buildGuestAnalytics']){
+  for(const name of ['buildResearch','buildOperations','buildTrading','buildBanks','buildCatalogEditor','loadLeaderboard','buildSettings','buildModeration','buildSpace','buildServerDashboard','buildAdminAccounts','buildGuestAnalytics','buildStatistics','buildEmpire','buildMarket','buildStocks','buildFaction','buildChat','buildQuests','loadBattleLog','buildPlaytime','buildAdminEmail','buildIpRestrictions']){
     await assert.doesNotReject(async()=>w[name](),name);w.WCInterface.runtime.enhance();
   }
   assert.ok(w.document.querySelector('#research-content .research-branch'));
@@ -247,8 +282,18 @@ test('major feature renderers use real API-shaped fixtures without network acces
   assert.ok(w.document.querySelector('#server-health .server-metrics'));
   assert.ok(w.document.querySelector('#admin-account-search'));
   assert.ok(w.document.querySelector('#public-player-presence time'));
+  vm.runInContext('currentUser={...currentUser,territory_count:0,building_counts:{},research:[]}',dom.getInternalVMContext());
+  await vm.runInContext('PANELS.empire.f()',dom.getInternalVMContext());
+  assert.ok(w.document.querySelector('#country-first-steps'),'Country navigation uses the final objectives renderer');
+  assert.ok(w.document.querySelector('#capital-development'),'Country navigation includes real capital development status');
   assert.ok(w.document.querySelector('#guest-analytics-retention'));
-  assert.ok([...w.document.querySelectorAll('#admin-section-select option')].some(o=>o.textContent==='Server dashboard'));
+  assert.equal(w.document.querySelectorAll('#guest-analytics-traffic').length,1,'Crawler filter belongs only to guest analytics');
+  await Promise.all([w.buildServerDashboard(),w.buildServerDashboard()]);
+  assert.equal([...w.document.querySelectorAll('#admin-server h3')].filter(e=>e.textContent==='Administration').length,1,'Concurrent dashboard renders do not duplicate cards');
+  assert.equal(w.document.querySelectorAll('.admin-group-tabs [role="tab"]').length,5);
+  assert.equal(w.document.querySelector('.admin-tabs').hidden,true);
+  assert.equal(w.document.querySelectorAll('#admin-section-select option').length,5);
+  assert.ok([...w.document.querySelectorAll('#admin-tool-select option')].some(o=>o.textContent==='Server dashboard'));
   assert.ok([...w.document.querySelectorAll('#admin-section-select option')].some(o=>o.textContent==='Analytics'));
   await assert.doesNotReject(()=>w.inspectAdminAccount(fixtures['/api/me'].id));
   assert.ok(w.document.querySelector('#dashboard-account-role'));
@@ -260,6 +305,16 @@ test('major feature renderers use real API-shaped fixtures without network acces
   w.document.getElementById('delete-account-name').value='wrong name';await w.confirmAccountDeletion();assert.equal(calls.length,0);
   const before=w.document.getElementById('admin-server').textContent;vm.runInContext('currentUser=null',dom.getInternalVMContext());
   await w.buildServerDashboard();assert.equal(w.document.getElementById('admin-server').textContent,before);
+});
+
+test('away summary acknowledges an episode once across repeated calls and rapid clicks',async t=>{
+  const {w,dom}=productionDOM(t);Object.defineProperty(w.document,'hidden',{configurable:true,value:false});
+  vm.runInContext('currentUser={id:55};',dom.getInternalVMContext());
+  let acknowledgements=0,resolveAck;const response=new Promise(resolve=>resolveAck=resolve);
+  w.api=async(method,path)=>{if(path==='/api/away')return method==='POST'?(acknowledgements++,response):{summary:{since:123,resources:{money:12}}};return {wars:[]}};
+  await Promise.all([w.showReturnSummary(),w.showReturnSummary()]);assert.equal(w.document.querySelectorAll('#away-ack').length,1);
+  w.document.getElementById('away-ack').click();w.document.querySelector('#expansion-dialog [data-close]').click();assert.equal(acknowledgements,1);
+  resolveAck({success:true});await pause();await w.showReturnSummary();assert.equal(w.document.getElementById('away-ack'),null);
 });
 
 test('axe checks navigation, settings and auth semantics in offline DOMs',async t=>{
@@ -275,12 +330,83 @@ test('axe checks navigation, settings and auth semantics in offline DOMs',async 
 });
 
 test('shared foreground colors meet WCAG AA against shared surfaces',()=>{
-  const color=name=>css.match(new RegExp('--'+name+':\\s*(#[0-9a-f]{6})','i'))[1];
   const luminance=hex=>{const rgb=hex.slice(1).match(/../g).map(s=>parseInt(s,16)/255).map(n=>n<=.04045?n/12.92:((n+.055)/1.055)**2.4);return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722};
-  for(const foreground of ['text','text2','text3'])for(const background of ['bg','panel','panel2','panel3']){const a=luminance(color(foreground)),b=luminance(color(background));assert.ok((Math.max(a,b)+.05)/(Math.min(a,b)+.05)>=4.5,foreground+' on '+background)}
+  for(const sheet of [css,fs.readFileSync(path.join(__dirname,'../static/product-ui.css'),'utf8')]){
+    const color=name=>sheet.match(new RegExp('--'+name+':\\s*(#[0-9a-f]{6})','i'))[1];
+    for(const foreground of ['text','text2','text3'])for(const background of ['bg','panel','panel2','panel3']){const a=luminance(color(foreground)),b=luminance(color(background));assert.ok((Math.max(a,b)+.05)/(Math.min(a,b)+.05)>=4.5,foreground+' on '+background)}
+  }
+});
+
+test('older map responses never undo newer ownership or a world reset',t=>{
+  const {w,dom}=productionDOM(t);let renders=0;w.renderTerritories=()=>renders++;
+  vm.runInContext('mapVersion="3:20";territories={"200,200":{owner_id:1,grid_key:"200,200"}};',dom.getInternalVMContext());
+  w.applyTerritoryDelta({version:'3:19',reset:false,changed:[],removed:['200,200']});
+  w.applyTerritoryDelta({version:'2:9999',reset:true,changed:[],removed:[]});
+  assert.equal(vm.runInContext('territories["200,200"].owner_id',dom.getInternalVMContext()),1);assert.equal(renders,0);
+  w.applyTerritoryDelta({version:'3:21',reset:false,changed:[{grid_key:'200,200',owner_id:2,base_color:'#123456'}],removed:[]});
+  assert.equal(vm.runInContext('territories["200,200"].owner_id',dom.getInternalVMContext()),2);
+  w.applyTerritoryDelta({version:'4:0',reset:true,changed:[],removed:[]});
+  assert.equal(vm.runInContext('Object.keys(territories).length',dom.getInternalVMContext()),0);
+});
+
+test('display preferences persist locally and first-country goals use real progress',t=>{
+  const {w}=productionDOM(t);w.WCProduct.setPreferences({effects:'reduced',motion:'off'});
+  assert.equal(w.document.documentElement.dataset.effects,'reduced');assert.equal(w.document.documentElement.dataset.motion,'off');
+  assert.equal(w.localStorage.getItem('wc-visual-effects'),'reduced');
+  const steps=w.WCProduct.objectives({territory_count:1,building_counts:{farm:{count:1}},research:[]});
+  assert.deepEqual(Array.from(steps,s=>s.done),[true,true,false]);
+  w.showDisplayOptions();assert.equal(w.document.querySelector('[data-display-option=effects]').value,'reduced');
+  const select=w.document.querySelector('[data-display-option=effects]');select.value='auto';select.dispatchEvent(new w.Event('change',{bubbles:true}));
+  assert.equal(w.WCProduct.preferences().effects,'auto');
+});
+
+test('copying a recovery code does not acknowledge or close its safeguard',async t=>{
+  const {w}=productionDOM(t);let copied='',ack=0;
+  w.requestAnimationFrame=cb=>w.setTimeout(cb,0);
+  Object.defineProperty(w.navigator,'clipboard',{configurable:true,value:{writeText:async value=>copied=value}});
+  w.showTextModal('Save your one-time recovery code','disposable-code\n\nKeep it private.',()=>ack++,'I saved the code');
+  const copy=[...w.document.querySelectorAll('#v6-dialog button')].find(b=>b.textContent==='Copy recovery code');assert.ok(copy);copy.click();await pause();
+  assert.equal(copied,'disposable-code');assert.equal(ack,0);assert.ok(w.document.querySelector('#v6-dialog'));
+});
+
+test('city directory searches locally, escapes names and filters owned tiles',async t=>{
+  let calls=0;
+  const records=[{id:'1',name:'Oslo',country:'Norway',population:600000,national_capital:true,grid_key:'332,59',playable:true},{id:'2',name:'<Test City>',country:'Japan',population:300000,grid_key:'200,200',playable:true}];
+  const {w,dom}=productionDOM(t,{fetch:async url=>{if(!url.startsWith('/api/cities'))return new Promise(()=>{});calls++;return {ok:true,json:async()=>({cities:records})}}});
+  vm.runInContext('currentUser={id:77};territories={"332,59":{owner_id:77,owner:"Preview"}}',dom.getInternalVMContext());
+  await w.showCityDirectory();assert.equal(calls,1);
+  const search=w.document.getElementById('city-search'),results=w.document.getElementById('city-results');
+  assert.match(results.textContent,/Oslo/);assert.match(results.innerHTML,/&lt;Test City&gt;/);
+  search.value='Japan';search.dispatchEvent(new w.Event('input',{bubbles:true}));assert.doesNotMatch(results.textContent,/Oslo/);assert.match(results.textContent,/<Test City>/);
+  search.value='';search.dispatchEvent(new w.Event('input',{bubbles:true}));const owned=w.document.getElementById('city-owned');owned.checked=true;owned.dispatchEvent(new w.Event('change',{bubbles:true}));assert.match(results.textContent,/Oslo/);assert.doesNotMatch(results.textContent,/<Test City>/);assert.equal(calls,1);
+});
+
+test('fallout skips unknown legacy islands and redraws when their geometry becomes available',async t=>{
+  const {w,dom}=productionDOM(t);let rectangles=0,islands=0;
+  w.L.layerGroup=()=>({addTo(map){this._map=map;return this}});
+  w.L.rectangle=bounds=>{assert.ok(bounds.flat().every(Number.isFinite));rectangles++;return {addTo(){}}};
+  w.L.geoJSON=()=>{islands++;return {addTo(){}}};
+  vm.runInContext('map={removeLayer(){}};foLayer=null;pacificIslands={}',dom.getInternalVMContext());
+  const keys=['1,2','island:legacy','broken','999999,4'];
+  await w.drawFallout(keys);assert.equal(rectangles,1);assert.equal(islands,0);
+  await w.drawFallout(keys);assert.equal(rectangles,1);
+  vm.runInContext('pacificIslands["island:legacy"]={type:"Feature",properties:{},geometry:{type:"Polygon",coordinates:[]}}',dom.getInternalVMContext());
+  await w.drawFallout(keys);assert.equal(islands,1);assert.equal(rectangles,2);
+});
+
+test('sync feedback observes existing requests and clears after a successful retry',async t=>{
+  let failed=true,mapCalls=0;
+  const fetch=async url=>({ok:true,status:200,json:async()=>{
+    if(url==='/api/bootstrap')return {csrf:'fixture',ideologies:{},religions:{},faction_colors:[]};
+    if(String(url).startsWith('/api/map/sync')){mapCalls++;return failed?{error:'Connection interrupted. Please try again.'}:{version:'1:1',changed:[],removed:[]}};
+    return {banner:{enabled:false}};
+  }});
+  const {w}=productionDOM(t,{fetch});await w.api('GET','/api/map/sync');assert.equal(w.document.getElementById('product-sync-status').hidden,false);
+  failed=false;await w.api('GET','/api/map/sync');assert.equal(w.document.getElementById('product-sync-status').hidden,true);assert.equal(mapCalls,2);
 });
 
 test('full guest map and signed-in startup complete with local terrain and API fixtures',async t=>{
+  const fetched=[];
   let fixtures;
   if(process.env.WC_STARTUP_FIXTURES)fixtures=JSON.parse(fs.readFileSync(process.env.WC_STARTUP_FIXTURES,'utf8'));
   else {
@@ -289,6 +415,7 @@ test('full guest map and signed-in startup complete with local terrain and API f
   }
   const fetch=async(url,options={})=>{
     const base=String(url).split('?')[0];
+    fetched.push(base);
     if(base==='/api/terrain/cells')return {ok:true,arrayBuffer:async()=>{const data=fs.readFileSync(path.join(__dirname,'../data/land-cells.bin'));return data.buffer.slice(data.byteOffset,data.byteOffset+data.byteLength)}};
     if(base==='/api/islands')return {ok:true,json:async()=>JSON.parse(fs.readFileSync(path.join(__dirname,'../data/pacific-islands.geojson'),'utf8'))};
     if(base.startsWith('/static/map/'))return {ok:true,json:async()=>JSON.parse(fs.readFileSync(path.join(__dirname,'..',base),'utf8'))};
@@ -296,8 +423,17 @@ test('full guest map and signed-in startup complete with local terrain and API f
     return {ok:true,status:200,json:async()=>structuredClone(response)};
   };
   const {w,dom}=productionDOM(t,{fetch,canvas:true});
+  Object.defineProperty(w.document,'hidden',{configurable:true,value:false});
+  const guestIntervals=[],realInterval=w.setInterval;
+  w.setInterval=(fn,ms)=>{const id=realInterval(fn,ms);guestIntervals.push({fn,ms});return id};
   const failures=[];w.console.error=(...args)=>failures.push(args.map(a=>a?.stack||String(a)).join(' '));
   await w.startSpectatorMode();
+  assert.equal(guestIntervals.filter(t=>t.ms===60000).length,1,'One guest refresh timer per minute');
+  assert.equal(guestIntervals.filter(t=>t.ms===2000||t.ms===4000||t.ms===12000).length,0,'No rapid guest background polls: '+guestIntervals.filter(t=>t.ms===2000||t.ms===4000||t.ms===12000).map(t=>t.ms+': '+t.fn.toString()).join('\n'));
+  const beforeRefresh=fetched.length;
+  await guestIntervals.find(t=>t.ms===60000).fn();
+  assert.deepEqual(fetched.slice(beforeRefresh).filter(p=>p.startsWith('/api/')),['/api/spectator/sync']);
+  w.setInterval=realInterval;
   assert.equal(w.document.getElementById('game-screen').style.display,'flex',failures.join('\n'));
   assert.equal(w.document.getElementById('auth-overlay').style.display,'none',failures.join('\n'));
   await w.startGame(fixtures['/api/me']);
@@ -310,6 +446,9 @@ test('full guest map and signed-in startup complete with local terrain and API f
   assert.ok(w.document.querySelector('.ownership-canvas').parentElement.classList.contains('leaflet-overlay-pane'));
   assert.equal(vm.runInContext('Object.keys(tlayers).length',dom.getInternalVMContext()),0);
   assert.ok(w.WCMap.lastFrame);
+  vm.runInContext('territories["200,200"].capital=true;renderTerritories();map.setZoom(3,{animate:false});drawCaps()',dom.getInternalVMContext());
+  assert.ok(w.document.querySelector('.cap-star'),'Capital stars remain visible on the simplified map');
+  assert.ok(w.document.querySelector('.map-tile-finder form'));
   const originalLoad=w.fetch;let regionRequests=0;
   w.fetch=async(...args)=>{if(String(args[0]).includes('/islands-'))regionRequests++;return originalLoad(...args);};
   const index=JSON.parse(fs.readFileSync(path.join(__dirname,'../static/map/manifest.json'),'utf8'));
@@ -319,6 +458,9 @@ test('full guest map and signed-in startup complete with local terrain and API f
   const unclaimed=fixtures['/api/territory/200,201'];
   assert.ok(unclaimed,'Real unclaimed-territory response is required');
   w.api=async(method,url)=>structuredClone(url==='/api/territory/200,201'?unclaimed:fixtures[url.split('?')[0]]??{});
+  const finder=w.document.querySelector('.map-tile-finder');finder.querySelector('input').value='200,201';finder.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));await pause();
+  assert.equal(vm.runInContext('selectedKey',dom.getInternalVMContext()),'200,201');
+  vm.runInContext('selectedKey=null',dom.getInternalVMContext());
   const mapElement=w.document.getElementById('map');
   Object.defineProperty(mapElement,'offsetWidth',{get:()=>1000});
   Object.defineProperty(mapElement,'offsetHeight',{get:()=>600});

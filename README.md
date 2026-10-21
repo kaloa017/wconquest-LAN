@@ -1,10 +1,25 @@
-# World Conquest LAN — v6.9.0
+# World Conquest LAN — v6.13.0
 
 Link to the game: https://world-conquest.lol
 
 Persistent multiplayer strategy on a real-world grid: claim tiles, recruit armies,
 build an economy, research technology, form factions and fight for territory.
 Flask serves the game; SQLite stores accounts and saves. The browser uses Leaflet.
+
+Version 6.13 adds six capital district buildings with ten levels each, stronger
+capital production/recruitment/defense, and a searchable offline registry of
+1,766 major cities mapped to 1,734 bonus tiles. City bonuses apply once per tile.
+See [capital and city mechanics](docs/CITIES.md) for stacking, captures and data.
+
+Version 6.12 refreshes the shared interface with adaptive glass surfaces, readable
+cards, reduced-effects controls, clearer connection feedback and first-country
+objectives. It also hardens admin request checks and rejects stale map updates.
+See the [audit and verification report](docs/AUDIT_6_12.md) for coverage and limits.
+
+Version 6.10 adds compact menus, a tile-coordinate finder, country statistics,
+12 production buildings and 24 achievements. Capital stars remain visible on the
+world overview. Return summaries acknowledge an absence only once. Existing
+player progress is retained; see [migration notes](docs/MIGRATIONS.md) before updating.
 
 Version 6.9 adds a private server health dashboard, account lifecycle tools,
 consistent game.db downloads, CSV/JSON user exports and public last-seen indicators.
@@ -526,3 +541,5 @@ when ready. No live world was used to develop or test this update.
 ### Cloudflare login fix (6.6.1)
 
 The Python entrypoint preserves proxy headers through Waitress so the application can validate them against `TRUSTED_PROXIES`. Untrusted connections have forwarding headers removed. Set the proxy variables in the terminal that starts the **game server**, then restart Python. Setting them only in the Cloudflare terminal does not configure the game. See [tunnel troubleshooting](docs/DOMAIN_HOSTING.md#login-origin-troubleshooting).
+
+Optional free verification email: see [EMAIL_SETUP.md](docs/EMAIL_SETUP.md).

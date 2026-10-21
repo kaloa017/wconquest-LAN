@@ -6,12 +6,21 @@ import json
 import secrets
 import threading
 import time
+import re
 from flask import request, session, jsonify
 import features
 
 core=None
 _prune_lock=threading.Lock()
 _last_pruned={}
+
+def crawler_kind(agent):
+    """A declared user-agent hint, never proof of identity or an access control."""
+    agent=(agent or '')[:1000].lower()
+    for token,name in [('googlebot','Google'),('bingbot','Bing'),('duckduckbot','DuckDuckGo'),('yandexbot','Yandex'),('baiduspider','Baidu'),('gptbot','OpenAI'),('oai-searchbot','OpenAI search'),('chatgpt-user','ChatGPT fetch'),('claudebot','Anthropic'),('claude-user','Claude fetch'),('discordbot','Discord preview'),('facebookexternalhit','Facebook preview'),('twitterbot','Social preview'),('telegrambot','Telegram preview'),('applebot','Apple'),('bytespider','ByteDance')]:
+        if token in agent:return 1,name
+    if re.search(r'bot\b|crawler|spider|slurp|headlesschrome',agent):return 1,'Other declared crawler'
+    return (0,'') if agent else (None,'')
 
 
 def migrate(get_db):
@@ -61,10 +70,11 @@ def record():
     stamp=int(time.time());country=request.environ.get('wconquest.country')
     old=conn.execute('SELECT id,last_seen,country_code FROM guest_visits WHERE visitor_hash=? AND ip=?',(digest,ip)).fetchone()
     pageview=int(request.path=='/')
+    crawler,label=crawler_kind(request.headers.get('User-Agent'))
     if not old:
-        conn.execute('INSERT INTO guest_visits(visitor_hash,ip,country_code,first_seen,last_seen,pageviews) VALUES(?,?,?,?,?,?)',(digest,ip,country,stamp,stamp,pageview))
+        conn.execute('INSERT INTO guest_visits(visitor_hash,ip,country_code,first_seen,last_seen,pageviews,is_crawler,crawler_name) VALUES(?,?,?,?,?,?,?,?)',(digest,ip,country,stamp,stamp,pageview,crawler,label))
     elif pageview or stamp-old['last_seen']>=60 or country!=old['country_code']:
-        conn.execute('UPDATE guest_visits SET last_seen=?,country_code=COALESCE(?,country_code),pageviews=pageviews+? WHERE id=?',(stamp,country,pageview,old['id']))
+        conn.execute('UPDATE guest_visits SET last_seen=?,country_code=COALESCE(?,country_code),pageviews=pageviews+?,is_crawler=?,crawler_name=? WHERE id=?',(stamp,country,pageview,crawler,label,old['id']))
     prune(conn)
 
 
@@ -72,17 +82,22 @@ def analytics():
     conn=core['get_db']();state=settings(conn);cutoff=int(time.time())-state['retention_days']*86400
     page=features.integer(request.args.get('page',1),1,100000)
     query=request.args.get('q','')[:80].replace('!','!!').replace('%','!%').replace('_','!_')
-    condition="last_seen>=? AND (ip LIKE ? ESCAPE '!' OR country_code LIKE ? ESCAPE '!')"
+    kind=request.args.get('traffic','all')
+    filters={'all':'','human':' AND is_crawler=0','crawler':' AND is_crawler=1','unknown':' AND is_crawler IS NULL'}
+    if kind not in filters:raise ValueError('Choose all, human, crawler or unknown traffic')
+    condition="last_seen>=? AND (ip LIKE ? ESCAPE '!' OR country_code LIKE ? ESCAPE '!')"+filters[kind]
     values=(cutoff,'%'+query+'%','%'+query+'%')
     count=conn.execute('SELECT COUNT(*) FROM guest_visits WHERE '+condition,values).fetchone()[0]
-    rows=[dict(row) for row in conn.execute('SELECT id,ip,country_code,first_seen,last_seen,pageviews FROM guest_visits WHERE '+condition+' ORDER BY last_seen DESC,id DESC LIMIT 50 OFFSET ?',(*values,(page-1)*50))]
-    summary=dict(conn.execute('SELECT COUNT(*) guest_sessions,COUNT(DISTINCT ip) unique_ips,COALESCE(SUM(pageviews),0) pageviews FROM guest_visits WHERE last_seen>=?',(cutoff,)).fetchone())
-    summary['recent_sessions']=conn.execute('SELECT COUNT(*) FROM guest_visits WHERE last_seen>=?',(max(cutoff,int(time.time())-86400),)).fetchone()[0]
-    countries=[dict(row) for row in conn.execute('SELECT country_code,COUNT(*) sessions FROM guest_visits WHERE last_seen>=? GROUP BY country_code ORDER BY sessions DESC LIMIT 20',(cutoff,))]
-    days=[dict(row) for row in conn.execute("SELECT strftime('%Y-%m-%d',first_seen,'unixepoch') day,COUNT(*) sessions FROM guest_visits WHERE last_seen>=? GROUP BY day ORDER BY day DESC LIMIT 30",(cutoff,))]
+    rows=[dict(row) for row in conn.execute('SELECT id,ip,country_code,first_seen,last_seen,pageviews,is_crawler,crawler_name FROM guest_visits WHERE '+condition+' ORDER BY last_seen DESC,id DESC LIMIT 50 OFFSET ?',(*values,(page-1)*50))]
+    totals={r['ip']:dict(r) for r in conn.execute('SELECT ip,COUNT(*) ip_records,SUM(pageviews) ip_visits FROM guest_visits WHERE '+condition+' GROUP BY ip',values)}
+    for row in rows:row.update(totals[row['ip']])
+    summary=dict(conn.execute('SELECT COUNT(*) guest_sessions,COUNT(DISTINCT ip) unique_ips,COALESCE(SUM(pageviews),0) pageviews FROM guest_visits WHERE '+condition,values).fetchone())
+    summary['recent_sessions']=conn.execute('SELECT COUNT(*) FROM guest_visits WHERE '+condition+' AND last_seen>=?',(*values,int(time.time())-86400)).fetchone()[0]
+    countries=[dict(row) for row in conn.execute('SELECT country_code,COUNT(*) sessions FROM guest_visits WHERE '+condition+' GROUP BY country_code ORDER BY sessions DESC LIMIT 20',values)]
+    days=[dict(row) for row in conn.execute("SELECT strftime('%Y-%m-%d',first_seen,'unixepoch') day,COUNT(*) sessions FROM guest_visits WHERE "+condition+' GROUP BY day ORDER BY day DESC LIMIT 30',values)]
     features.audit(conn,'guest_analytics_viewed',details={'page':page})
     response=jsonify(visits=rows,summary=summary,countries=countries,days=days,settings=state,
-        page=page,pages=max(1,(count+49)//50),total=count,maximum_records=20000)
+        page=page,pages=max(1,(count+49)//50),total=count,maximum_records=20000,traffic=kind)
     response.headers['Cache-Control']='private, no-store'
     return response
 

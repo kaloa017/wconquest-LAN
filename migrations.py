@@ -9,10 +9,34 @@ def backup_before_upgrade(path):
     if not p.exists(): return
     with closing(sqlite3.connect(path)) as conn:
         if conn.execute("SELECT 1 FROM sqlite_master WHERE name='schema_migrations'").fetchone():
-            if conn.execute('SELECT 1 FROM schema_migrations WHERE version=20').fetchone(): return
-        backup=p.parent/'backups'/f'{p.stem}-before-v20-{time.time_ns()}.db'
+            if conn.execute('SELECT 1 FROM schema_migrations WHERE version=23').fetchone(): return
+        backup=p.parent/'backups'/f'{p.stem}-before-v23-{time.time_ns()}.db'
         backup.parent.mkdir(exist_ok=True)
         with closing(sqlite3.connect(backup)) as dest: conn.backup(dest)
+
+def migrate_v21(get_db):
+    """Acknowledge each absence once and retire the legacy default administrator."""
+    c=get_db()
+    try:
+        c.execute('BEGIN IMMEDIATE')
+        if c.execute('SELECT 1 FROM schema_migrations WHERE version=21').fetchone():c.commit();return
+        if 'away_ack_activity' not in {row['name'] for row in c.execute('PRAGMA table_info(player_activity)')}:
+            c.execute('ALTER TABLE player_activity ADD COLUMN away_ack_activity INTEGER NOT NULL DEFAULT -1')
+        c.execute('CREATE INDEX IF NOT EXISTS exchange_sender_status ON exchanges(sender,status)')
+        target=c.execute('SELECT id FROM users WHERE username="admin" COLLATE NOCASE').fetchone()
+        if target:
+            others=c.execute('SELECT COUNT(*) FROM users WHERE is_admin=1 AND is_banned=0 AND id!=?',(target['id'],)).fetchone()[0]
+            if others:
+                from admin_dashboard import deletion_plan,erase_account
+                erase_account(c,deletion_plan(c,target['id']),'Retire legacy default admin account; named administrators retain access')
+            else:
+                # A sole owner must not be silently locked out. A named owner can
+                # remove this account with the dashboard's existing protections.
+                c.execute('INSERT INTO audit_log(ts,actor,action,details) VALUES(?,?,?,?)',(int(time.time()),'System upgrade','default_admin_retirement_deferred','{"reason":"Create a named administrator before deleting the sole owner"}'))
+        c.execute('INSERT INTO schema_migrations VALUES(21,?)',(int(time.time()),));c.commit()
+    except Exception:c.rollback();raise
+    finally:c.close()
+
 
 def migrate_v19(get_db):
     """Keep sub-unit recruitment between collections without changing balances."""

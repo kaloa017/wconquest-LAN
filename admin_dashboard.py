@@ -13,7 +13,7 @@ from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from contextlib import closing
-from flask import jsonify, request, session, send_file, Response, abort
+from flask import jsonify, request, session, send_file, Response, abort, has_request_context
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import features
 import server_health
@@ -182,7 +182,7 @@ def account_action():
 def deletion_plan(conn,uid):
     target=conn.execute('SELECT id,username,is_admin,faction_id FROM users WHERE id=?',(uid,)).fetchone()
     if not target:abort(404)
-    if uid==session['user_id']:raise ValueError('You cannot delete your own account from the dashboard')
+    if has_request_context() and uid==session.get('user_id'):raise ValueError('You cannot delete your own account from the dashboard')
     if target['is_admin'] and conn.execute('SELECT COUNT(*) FROM users WHERE is_admin=1 AND is_banned=0').fetchone()[0]<=1:raise ValueError('Keep at least one active administrator')
     counts={'territories':conn.execute('SELECT COUNT(*) FROM territories WHERE owner_id=?',(uid,)).fetchone()[0],
             'buildings':conn.execute('SELECT COUNT(*) FROM buildings b JOIN territories t USING(grid_key) WHERE t.owner_id=?',(uid,)).fetchone()[0],
@@ -211,6 +211,12 @@ def delete_account():
     try:token=signer().loads(data.get('token',''),max_age=300)
     except (BadSignature,SignatureExpired):raise ValueError('Deletion review expired; review the account again')
     if token.get('actor')!=session['user_id'] or token.get('digest')!=plan_digest(plan):raise ValueError('Account changed; review deletion again')
+    return jsonify(erase_account(conn,plan,reason.strip()))
+
+
+def erase_account(conn,plan,reason):
+    """Shared cleanup for confirmed deletion and retirement of the default login."""
+    uid=plan['user_id']
     from expansion import finish_campaign
     for campaign in conn.execute("SELECT * FROM campaigns WHERE status='active' AND (attacker=? OR defender=?)",(uid,uid)).fetchall():
         finish_campaign(conn,campaign,'ended','Offensive ended because an account was deleted by an administrator')
@@ -234,11 +240,13 @@ def delete_account():
             conn.execute('UPDATE users SET money=money+? WHERE id=?',(holding['quantity']*quote['price']*(1-core['STOCK_FEE']),holding['user_id']))
         for table in ('stock_prices','stock_history','stock_holdings'):conn.execute(f'DELETE FROM {table} WHERE symbol=?',(quote['symbol'],))
     conn.execute('DELETE FROM users WHERE id=?',(uid,))
-    features.audit(conn,'account_deleted',details={'former_id':uid,'counts':plan['counts'],'reason':reason.strip()})
+    details={'former_id':uid,'counts':plan['counts'],'reason':reason}
+    if has_request_context():features.audit(conn,'account_deleted',details=details)
+    else:conn.execute('INSERT INTO audit_log(ts,actor,action,details) VALUES(?,?,?,?)',(int(time.time()),'System upgrade','default_admin_retired',json.dumps(details)))
     # Avoid resurrecting private presence data when scheduler flushes its in-memory cache.
     with features._lock:
         for key in [key for key,value in features._stats.items() if value['user_id']==uid]:features._stats.pop(key,None)
-    return jsonify(success=True,message='Account deleted; land released. Backups, ideas and free-text records require separate privacy review.')
+    return dict(success=True,message='Account deleted; land released. Backups, ideas and free-text records require separate privacy review.')
 
 
 def export_users():

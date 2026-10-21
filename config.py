@@ -524,7 +524,7 @@ CLAIM_METAL_RATIO = 0.02
 NUKE_MONEY = 100000000
 
 # Request counters/presence are batched; purchases/combat commit immediately.
-VERSION = '6.9.0'
+VERSION = '6.13.0'
 SAVE_INTERVAL = 30
 SCHEDULER_INTERVAL = 30
 REQUESTS_PER_MINUTE = 0  # 0 = unlimited, until changed in the admin panel.
@@ -699,3 +699,5 @@ MEGAPROJECTS.update({
  'quantum_relay':{'name':'Quantum Trade Relay','icon':'📡','requires':'antimatter_forge','research':'advanced_orbital_3','cost':{'money':250000000000,'steel':5000000,'gems':1000000},'production':{'money':300000000,'gems':10000},'duration_seconds':28800},
  'colony_fleet':{'name':'Interstellar Colony Fleet','icon':'🚀','requires':'quantum_relay','research':'advanced_propulsion_4','cost':{'money':1000000000000,'steel':20000000,'uranium':5000000},'production':{'money':1200000000,'uranium':20000},'duration_seconds':57600}
 })
+from progression_content import expand as expand_progression
+expand_progression(BUILDINGS,ACHIEVEMENTS)

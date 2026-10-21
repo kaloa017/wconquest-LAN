@@ -119,9 +119,11 @@
       }
     });
     const caps=drawCaps;
-    drawCaps=function(){if(!map)return;if(map.getZoom()<5){if(capLayer)map.removeLayer(capLayer);return;}caps();};
+    let capitalsDirty=true;
+    drawCaps=function(){if(map&&(capitalsDirty||capLayer?._map!==map)){capitalsDirty=false;caps();}};
     renderTerritories=function(){
       if(!map)return;
+      capitalsDirty=true;
       if(ownershipDirty||indexSource!==territories){gridRuns=runs(territories);indexSource=territories;ownershipDirty=false;}
       for(const layer of Object.values(tlayers))map.removeLayer(layer);tlayers={};
       if(!gridLayer||gridLayer._map!==map)gridLayer=new Grid().addTo(map);else gridLayer.redraw();

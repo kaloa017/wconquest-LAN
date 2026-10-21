@@ -8,6 +8,7 @@ Host setup: python manage.py create-admin --username USERNAME
 from flask import Flask, request, jsonify, session, send_file, has_request_context
 from config import *
 from runtime import connect_db, initialize_security
+from cities import capital_context, bonuses as urban_bonuses, production as urban_production, troops as tile_troops, DISTRICTS
 from werkzeug.security import generate_password_hash, check_password_hash
 import hmac
 import sqlite3, hashlib, random, time, os, json, math
@@ -882,6 +883,7 @@ def chat_send():
 @app.route('/api/achievements')
 @require_login
 def achievements_list():
+    award_achievements(get_db(),session['user_id'])
     conn = get_db(); have = {r['key'] for r in conn.execute('SELECT key FROM achievements WHERE user_id=?', (session['user_id'],))}
     conn.close()
     return jsonify([{'key': k, **v, 'done': k in have} for k, v in ACHIEVEMENTS.items()])
@@ -1480,7 +1482,7 @@ def yield_ctx(conn, uid):
     if 'automation' in rs: base *= 1.10
     for key in w: base *= WONDERS.get(key, {}).get('yield', 1)
     base *= religion_for(conn, uid).get('yield', 1)
-    return {'rs': rs, 'ft': ft, 'ide': ide, 'w': w, 'ev': ev_type(conn), 'base': base, 'religion': religion_for(conn, uid), 'advanced':research_effects(rs)}
+    return {'rs': rs, 'ft': ft, 'ide': ide, 'w': w, 'ev': ev_type(conn), 'base': base, 'religion': religion_for(conn, uid), 'advanced':research_effects(rs), 'capital':capital_context(conn,uid)}
 def res_mult2(rt, c):
     rs = c['rs']; m = c['base'] * c.get('religion', {}).get(rt, 1); ev = c['ev']
     advanced=c.get('advanced',{});m *= (1+advanced.get('production',0))*(1+advanced.get(rt,0))
@@ -1493,19 +1495,25 @@ def res_mult2(rt, c):
     if rt == 'metal': m *= (1.25 if 'industry' in rs else 1) * (1.2 if 'metallurgy' in rs else 1) * (1.15 if 'mining' in rs else 1) * (1.5 if ev == 'mining' else 1)
     if rt == 'oil': m *= (1.25 if 'industry' in rs else 1) * (1.2 if 'refining' in rs else 1) * (1.5 if ev == 'mining' else 1)
     return m
-def tile_yield(c, terrain, bt, bl):
+def tile_yield(c, terrain, bt, bl, grid_key=None):
     rt, rate = TERRAIN_RES[terrain]; bl = bl or 0
     info = BUILDINGS.get(bt, {})
     m = res_mult2(rt, c) * (1 + info.get('yield_per_level', 0)*bl)
     out = {rt: rate*m}
     for resource, amount in info.get('production', {}).items():
         out[resource] = out.get(resource, 0) + amount*bl*res_mult2(resource, c)
+    if grid_key is not None:
+        urban=urban_production(c,grid_key)
+        for kind,level in urban['districts'].items():
+            for resource,amount in DISTRICTS.get(kind,{}).get('production',{}).items():
+                out[resource]=out.get(resource,0)+amount*level*res_mult2(resource,c)
+        out={resource:amount*urban['production'] for resource,amount in out.items()}
     return out
 def income_rates(conn, uid):
     c = yield_ctx(conn, uid); rates = {k: 0.0 for k in RATE_VAL}; troops = 0
-    for r in conn.execute('SELECT t.terrain,b.type bt,b.level bl FROM territories t LEFT JOIN buildings b ON b.grid_key=t.grid_key WHERE t.owner_id=?', (uid,)):
-        for k, v in tile_yield(c, r['terrain'], r['bt'], r['bl']).items(): rates[k] += v
-        troops += BUILDINGS.get(r['bt'], {}).get('troops_per_level', 0)*(r['bl'] or 0)
+    for r in conn.execute('SELECT t.grid_key,t.terrain,b.type bt,b.level bl FROM territories t LEFT JOIN buildings b ON b.grid_key=t.grid_key WHERE t.owner_id=?', (uid,)):
+        for k, v in tile_yield(c, r['terrain'], r['bt'], r['bl'], r['grid_key']).items(): rates[k] += v
+        troops += tile_troops(c,r['grid_key'],r['bt'],r['bl'],BUILDINGS)
     return rates, troops, c
 def claim_price(conn, uid, terrain):
     mc = conn.execute('SELECT COUNT(*) c FROM territories WHERE owner_id=?', (uid,)).fetchone()['c']
@@ -1560,8 +1568,8 @@ def auto_collect(uid, conn, force=False):
         if not force and el < AUTO_COLLECT_CD and now==wall_now: continue
         if el<=0:continue
         mins = min(el/60., MAX_ACCUM_MINS)
-        for k, v in tile_yield(c, r['terrain'], r['bt'], r['bl']).items(): totals[k] += v*mins
-        if r['bt'] == 'barracks': troops += 3*r['bl']*mins
+        for k, v in tile_yield(c, r['terrain'], r['bt'], r['bl'], r['grid_key']).items(): totals[k] += v*mins
+        troops += tile_troops(c,r['grid_key'],r['bt'],r['bl'],BUILDINGS)*mins
         if r['bt'] == 'nuclear_plant': plants.append((r['grid_key'], r['bl'], mins))
         upd.append(r['grid_key'])
     if upd:
@@ -1702,8 +1710,8 @@ def defense_of(conn, owner_id, gk, terrain):
     add('Religion', religion_for(conn, owner_id).get('def', 1))
     add('Radar stations', 1 + min(.09, BUILDINGS['radar_station']['def_per_level']*sum_levels(conn, owner_id, 'radar_station')))
     add('Ideology', ide.get('def', 1.0))
-    cap = conn.execute('SELECT 1 FROM users WHERE id=? AND capital_key=?', (owner_id, gk)).fetchone()
-    if cap: add('Capital', 1.15)
+    urban=urban_bonuses(gk,capital_context(conn,owner_id))
+    add('City / capital stronghold',urban['defense'])
     mult = 1.0
     for _, m in mods: mult *= m
     return {'base': base, 'mods': mods, 'mult': mult, 'owner_army': army}
@@ -1844,10 +1852,13 @@ def award_achievements(conn, uid):
               'daily_7': u['daily_streak'] >= 7, 'daily_30': u['daily_streak'] >= 30, 'capital': bool(u['capital_key']),
               'ideology': bool(u['ideology']), 'embassy': emb > 0, 'trader': trd > 0, 'wonder': wonder > 0, 'nuke': nukes > 0,
               'war_hero': False}
+    from progression_content import achievement_checks
+    checks.update(achievement_checks(conn,u,tc,nb,nr,have))
     new = []
     for k, ok in checks.items():
         if ok and k not in have and k in ACHIEVEMENTS:
-            conn.execute('INSERT OR IGNORE INTO achievements(user_id,key,ts) VALUES(?,?,?)', (uid, k, int(time.time())))
+            inserted=conn.execute('INSERT OR IGNORE INTO achievements(user_id,key,ts) VALUES(?,?,?)', (uid, k, int(time.time())))
+            if not inserted.rowcount:continue
             conn.execute('UPDATE users SET money=money+? WHERE id=?', (ACHIEVEMENTS[k]['reward'], uid))
             create_notification(conn, uid, 'info', f'🏅 Achievement: {ACHIEVEMENTS[k]["name"]} (+{ACHIEVEMENTS[k]["reward"]}💰)')
             new.append({'key': k, **ACHIEVEMENTS[k]})
@@ -2087,9 +2098,11 @@ def capital_set():
     if not conn.execute('SELECT 1 FROM territories WHERE grid_key=? AND owner_id=?', (gk, uid)).fetchone(): conn.close(); return jsonify({'error': 'Not your territory'}), 403
     u = conn.execute('SELECT capital_key,capital_ts FROM users WHERE id=?', (uid,)).fetchone()
     if u['capital_key'] and time.time() - (u['capital_ts'] or 0) < 86400: conn.close(); return jsonify({'error': 'You can move your capital once per day'}), 400
+    auto_collect(uid,conn,force=True)
+    if not conn.execute('SELECT 1 FROM territories WHERE grid_key=? AND owner_id=?',(gk,uid)).fetchone():conn.close();return jsonify(error='Territory changed during collection; refresh'),409
     conn.execute('UPDATE users SET capital_key=?,capital_ts=? WHERE id=?', (gk, int(time.time()), uid))
     ach = award_achievements(conn, uid); conn.commit(); conn.close()
-    return jsonify({'success': True, 'message': '⭐ Capital established! +15% defense there; embassies will gather here.', 'achievements': ach})
+    return jsonify({'success': True, 'message': '⭐ Capital established! 2× local production and recruitment, 1.75× defense, plus 12 base troops/min before multipliers. Add capital districts in Country.', 'achievements': ach})
 
 # ── buildings ─────────────────────────────────────────────────────────────────
 @app.route('/api/building/build', methods=['POST'])
@@ -2745,6 +2758,12 @@ def me_extra(conn, u, uid):
 
 def detail_extra(conn, grid_key, row):
     out = {'fallout': fallout_active(conn, grid_key)}
+    from cities import city_index
+    out['cities']=city_index().get(grid_key,[])
+    owner=row['owner_id'] if row else None
+    context=capital_context(conn,owner) if owner else None
+    out['urban_bonuses']=urban_bonuses(grid_key,context)
+    out['capital_districts']=[dict(key=r['type'],name=DISTRICTS[r['type']]['name'],level=r['level'],active=bool(context and context['key']==grid_key)) for r in conn.execute('SELECT type,level FROM capital_districts WHERE grid_key=?',(grid_key,)) if r['type'] in DISTRICTS]
     if row and row['owner_id']:
         c = conn.execute('SELECT capital_key FROM users WHERE id=?', (row['owner_id'],)).fetchone()
         out['capital'] = bool(c and c['capital_key'] == grid_key); out['invested'] = round(row['invested'] or 0)
@@ -2756,7 +2775,7 @@ def detail_extra(conn, grid_key, row):
     return out
 
 from features import install_features, religion_for
-from migrations import migrate_v6, migrate_v7, migrate_v8, migrate_v9, migrate_v10, migrate_v11, migrate_v19, backup_before_upgrade
+from migrations import migrate_v6, migrate_v7, migrate_v8, migrate_v9, migrate_v10, migrate_v11, migrate_v19, migrate_v21, backup_before_upgrade
 from expansion import migrate as migrate_v12
 from economy import migrate as migrate_v13
 from expansion import migrate_orders as migrate_v14
@@ -2765,9 +2784,20 @@ from activity import migrate as migrate_v16
 from playtime import migrate as migrate_v17
 from experience import migrate as migrate_v18
 from guest_analytics import migrate as migrate_v20
+from communications_schema import migrate as migrate_v22
+from cities import migrate as migrate_v23, install as install_cities
 backup_before_upgrade(DB_PATH)
 init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db); migrate_v12(get_db); migrate_v13(get_db); migrate_v14(get_db); migrate_v15(get_db);migrate_v16(get_db);migrate_v17(get_db);migrate_v18(get_db);migrate_v19(get_db);migrate_v20(get_db)
 install_features(globals())
+migrate_v21(get_db)
+migrate_v22(get_db)
+migrate_v23(get_db)
+install_cities(globals())
+if os.getenv('DISABLE_SCHEDULER')!='1':
+    from features import scheduler_loop
+    threading.Thread(target=scheduler_loop,name='game-scheduler',daemon=True).start()
+    from email_verification import run as deliver_email,configured as email_configured
+    if email_configured():threading.Thread(target=deliver_email,name='email-delivery',daemon=True).start()
 
 if __name__ == '__main__':
     from runtime import serve_game

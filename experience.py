@@ -28,7 +28,10 @@ def migrate(get_db):
 def away():
     conn=core['get_db']();uid=session['user_id']
     if request.method=='POST':
-        conn.execute('DELETE FROM away_earnings WHERE user_id=?',(uid,));return jsonify(success=True)
+        data=features.body();saved=conn.execute('SELECT since FROM away_earnings WHERE user_id=?',(uid,)).fetchone()
+        since=features.integer(data.get('since',saved['since'] if saved else 0),0,int(time.time()))
+        conn.execute('UPDATE player_activity SET away_ack_activity=MAX(away_ack_activity,?) WHERE user_id=?',(since,uid))
+        conn.execute('DELETE FROM away_earnings WHERE user_id=? AND since<=?',(uid,since));return jsonify(success=True)
     core['auto_collect'](uid,conn)
     row=conn.execute('SELECT * FROM away_earnings WHERE user_id=?',(uid,)).fetchone()
     return jsonify(summary={**dict(row),'resources':json.loads(row['resources'])} if row else None,maximum_hours=2)
@@ -117,7 +120,7 @@ def install(namespace):
         if before:
             after=conn.execute('SELECT '+','.join(RESOURCES)+' FROM users WHERE id=?',(uid,)).fetchone()
             gains={key:after[key]-before[key] for key in RESOURCES if after[key]>before[key]+.000001}
-            if gains:
+            if gains and row['last_activity']>row['away_ack_activity']:
                 saved=conn.execute('SELECT * FROM away_earnings WHERE user_id=?',(uid,)).fetchone();resources=json.loads(saved['resources']) if saved else {}
                 for key,value in gains.items():resources[key]=resources.get(key,0)+value
                 conn.execute('INSERT INTO away_earnings VALUES(?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET resources=excluded.resources,until=excluded.until',(uid,json.dumps(resources),saved['since'] if saved else row['last_activity'],stamp))

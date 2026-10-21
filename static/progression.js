@@ -176,10 +176,12 @@ startSession=async function(user){
   cancelBattlePlan();clearPrivateBattles();spaceSnapshot=null;spaceTutorialOpen=false;
   const result=await progressionSession(user);if(result===false||!currentUser)return result;
   const generation=sessionGeneration,uid=currentUser.id;
+  let nextCampaignPoll=0;
   const poll=async()=>{
     if(document.hidden||progressionBusy||generation!==sessionGeneration||uid!==currentUser?.id)return;
     progressionBusy=true;
-    try{const battles=await api('GET','/api/campaigns');if(generation!==sessionGeneration)return;if(battles.error){clearPrivateBattles();return}drawPrivateBattles(battles.campaigns);if(document.getElementById('operations-content')?.getClientRects().length)renderOperations(battles);
+    try{const operationsVisible=document.getElementById('operations-content')?.getClientRects().length;
+      if(Date.now()>=nextCampaignPoll||operationsVisible){const battles=await api('GET','/api/campaigns');if(generation!==sessionGeneration)return;if(battles.error){clearPrivateBattles();return}drawPrivateBattles(battles.campaigns);nextCampaignPoll=Date.now()+(battles.campaigns?.length||operationsVisible?4000:12000);if(operationsVisible)renderOperations(battles);}
       const visible=document.getElementById('space-content')?.getClientRects().length,unlock=(currentUser?.building_counts?.space_agency?.count||0)>0;
       if(visible||unlock&&!spaceSnapshot){const space=await api('GET','/api/space');if(generation!==sessionGeneration||space.error)return;const changed=spaceSnapshot?.program?.state!==space.program?.state;spaceSnapshot=space;if(visible&&(changed||!document.getElementById('space-content').contains(document.activeElement)))renderSpace(space);maybeSpaceTutorial(space)}else if(spaceSnapshot)maybeSpaceTutorial(spaceSnapshot);
     }finally{progressionBusy=false}

@@ -10,7 +10,7 @@ def private_path(name):
     path=Path(name);parts={part.lower() for part in path.parts};base=path.name.lower()
     return (bool(parts & {'backups','admin-backups','media','.cloudflared','terrain-source','eva_images'}) or
             base in {'.session-secret','ideas.txt'} or
-            (base.startswith('.env') and base!='.env.example') or
+            ((base.startswith('.env') or base.endswith('.env')) and base!='.env.example') or
             base.startswith('credentials') or path.suffix.lower() in {'.db','.sqlite','.sqlite3','.pem','.key','.mp3'} or
             base.endswith(('-wal','-shm','-journal')) or
             ('static' in parts and 'eva' in parts and path.suffix.lower() in {'.jpg','.jpeg','.png'}))
@@ -25,6 +25,7 @@ def check_files(root,names):
         except UnicodeDecodeError:continue
         if re.search(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----',text):errors.append(f'{name}: private key material')
         if re.search(r'\bgh[pousr]_[A-Za-z0-9]{30,}\b|\bgithub_pat_[A-Za-z0-9_]{40,}\b',text):errors.append(f'{name}: GitHub credential')
+        if re.search(r'\bxkeysib-[A-Za-z0-9-]{40,}\b',text):errors.append(f'{name}: Brevo credential')
     return errors
 
 def public_files(root,archive=False):

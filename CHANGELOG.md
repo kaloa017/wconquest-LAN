@@ -1,22 +1,61 @@
-# 6.9.0 — server dashboard and account administration
+# 6.13.0 — capital strongholds and major cities
 
-- Add private Pi/host health: uptime, load/CPU, memory, disk, temperature, power
-  warnings, available fan/clock sensors, network counters, service/tunnel status,
-  database/game statistics and bounded request timings. No extra runtime dependency.
-- Centralize existing tools, add searchable accounts, staff roles, session
-  revocation, research grants, registration/maintenance controls and DB checks.
-- Add reviewed, typed-confirmation account deletion with battle/faction/trade
-  cleanup and self/last-admin protections. Preserve the existing save.
-- Download a consistent private game.db snapshot and audited CSV/JSON user
-  exports without authentication secrets or IPs. Add private manual snapshots.
-- Show public last-seen indicators in Ranks, and raw Unix timestamps to admins.
-- Fix guest country flags using trusted Cloudflare country headers and readable
-  country names, without leaking guest IP/city or enabling an external lookup.
-- Update Privacy Policy and Terms for school hosting, exports, deletion, backups,
-  public last seen and maintenance. Email verification remains a future option.
-- Add an admin-only guest analytics page with IP/country history, page counts,
-  retention controls and a 20,000-record cap. Schema 20 adds only guest history,
-  after a consistent pre-upgrade backup; existing progress is preserved.
+- Capitals now grant 2× local production/recruitment, 1.75× local defense and
+  12 base troops/min before multipliers.
+- Construct six additional capital buildings, each with ten levels, alongside
+  the normal tile building: civic centre, treasury, military academy, strategic
+  industry, command bunker and capital guard headquarters.
+- Major-city tiles grant 1.5× local production/recruitment and 1.25× defense.
+  Capital and city bonuses multiply; several cities on one tile do not stack.
+- Browse/search 1,766 saved cities by name, country or tile, filter owned city
+  tiles, jump to the map, and download the full JSON/CSV registry.
+- Show bounded city markers by zoom and explain bonuses in territory panels.
+
+# 6.12.0 — clearer controls and adaptive glass
+
+- Refresh the shared game, sign-in, settings and policy pages with consistent
+  typography, readable cards, responsive layouts and restrained glass surfaces.
+- Add browser-local display options for reduced effects and disabled motion;
+  honor system accessibility preferences and reduce glass on mobile.
+- Show connection recovery feedback using existing requests, without more polling.
+- Add progress-based first-country objectives and explicit recovery-code copying.
+- Ignore older map responses and fingerprint local assets to avoid stale updates.
+- Present privacy and terms as accessible headings and paragraphs.
+
+# 6.11.1 — project link
+
+- Add an accessible GitHub repository link to the shared sign-in, registration
+  and account-recovery footer.
+
+# 6.11.0 — smoother spectating and optional account email
+
+- Refresh guest game state once per minute with one combined request.
+- Reuse unchanged capital markers and fallout overlays instead of rebuilding
+  them, and reduce idle campaign polling while preserving active battle updates.
+- Reuse army totals across large incremental map batches.
+- Offer optional verification and sign-in email codes when the host enables
+  sending. Add resend limits, account-email settings and an add-email reminder.
+- Keep password registration available, including during the host's configured
+  daily-email-quota fallback. Existing authenticator requirements still apply.
+- Guard away summaries against responses from a previous login session.
+
+# 6.10.0 — more to build, clearer menus
+
+- Add 12 production buildings, from hydroponics and recycling to fusion energy
+  and colony supply, with real yields and research prerequisites.
+- Add 24 achievements for building, territory, research, wealth, trade and space.
+- Keep capital stars visible on the simplified world map.
+- Add Find tile: enter a tile ID, island ID or latitude / longitude.
+- Make desktop menus compact and keep Discard changes only for real settings
+  and editors. Keep action inputs and searches out of draft prompts.
+- Add a country Statistics page with resource, unit, building and progression data.
+- Fix repeated While you were away summaries for the same acknowledged absence.
+
+# 6.9.0 — player presence
+
+- Add readable player last-seen indicators to Ranks.
+- Improve approximate guest country flags and names without exposing IPs publicly.
+- Update the Privacy Policy and Terms for the current hosting setup.
 
 # 6.8.0 — lighter maps, moderation filters and late-game progression
 

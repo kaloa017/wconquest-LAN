@@ -1,5 +1,5 @@
 # World Conquest — Privacy policy
-Updated 20 October 2026
+Updated 21 October 2026
 
 ## Who handles your data
 The operator of the server you joined handles its player data. For the
@@ -45,7 +45,9 @@ backup access can access stored game data. Do not submit sensitive information.
 
 ## Cookies, browser storage and external services
 A session cookie supports login and request security. Browser storage remembers
-tutorial completion. The game does not include advertising analytics.
+  tutorial completion. Display preferences (`wc-visual-effects` and
+  `wc-visual-motion`) stay in this browser and are not sent to the server.
+  The game does not include advertising analytics.
 When guest history is enabled, the existing signed session cookie also holds a
 random guest-session marker. The server stores a keyed hash of that marker with
 the guest IP, approximate country if available, first/last contact and landing
@@ -126,13 +128,35 @@ in chat or ideas. Players can ask the operator for help understanding this notic
 School-managed networks or devices may have their own logging and policies,
 which are outside this game's dashboard.
 
-The current game does not collect email addresses or send verification emails.
-Before introducing email verification or email recovery, the operator must
-update this notice with the provider, purposes, stored email/token data,
-retention and any relevant international transfers. Existing accounts are not
-required to provide an email address by this update.
+Email verification is optional and disabled until the host configures a provider.
+The host must disclose its actual sending provider and assess any relevant
+international transfers before enabling delivery. Existing accounts are not
+required to provide an email address by this update. The optional Brevo
+integration and stored information are described below.
+
+The Statistics page shows a signed-in player's own inventory and progress.
+Administrators can also view world totals aggregated across accounts. No guest
+IP history or account credentials are included in player statistics. Browser
+storage remembers which away-summary episode you acknowledged, and the server
+stores that acknowledgement to avoid repeated popups for the same absence.
 
 ## Your choices and rights
+When enabled by the host, account email addresses are stored privately for
+verification and login codes. Brevo receives the recipient address, email
+content and delivery metadata to send these messages. Codes expire after ten
+minutes; verification hashes and encrypted pending delivery content are not
+shown to admins. Delivery metadata is retained for seven days. Admins can see
+addresses, verification state and sending status. Email is optional; the host
+may allow temporary password-only login when the daily email allowance runs out.
+
+Guest analytics additionally stores a likely-crawler label inferred from the
+declared User-Agent, without retaining the raw header. It can be inaccurate or
+spoofed; old records remain unknown. IP visit totals count landing page loads
+across matching guest records, not unique people. IP restrictions store the
+address, private moderation reason, timestamps and acting administrator. Shared
+school/home/VPN networks may share one address. These admin tools are not shown
+in arrival dialogs; this policy continues to disclose collection.
+
 You can change available account preferences and mute shared music. Ask the host
 to access, correct, export or delete personal data, restrict processing, or object
 to processing where applicable. Some security records may need lawful retention.

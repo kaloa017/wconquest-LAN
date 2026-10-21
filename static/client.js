@@ -31,11 +31,18 @@ function installScrollButtons(){
 }
 refreshTerritories=async function(){
   const r=await api('GET','/api/map/sync'+(mapVersion?'?since='+encodeURIComponent(mapVersion):''));if(r.error)return;
+  applyTerritoryDelta(r);
+};
+function applyTerritoryDelta(r){
+  if(!r||r.error)return;
+  const current=mapVersion.split(':').map(Number),incoming=String(r.version).split(':').map(Number);
+  if(current.length===2&&incoming.length===2&&[...current,...incoming].every(Number.isFinite)&&
+    (incoming[0]<current[0]||incoming[0]===current[0]&&incoming[1]<current[1]))return;
   if(r.reset){territories={};for(const k of Object.keys(tlayers)){map.removeLayer(tlayers[k]);delete tlayers[k]}}
   for(const k of r.removed||[]){window.WCMap?.invalidateOwnership();delete territories[k];if(tlayers[k]){map.removeLayer(tlayers[k]);delete tlayers[k]}}
   for(const t of r.changed||[]){t.color=currentUser?.display_faction_colors!==false&&currentUser?.display_faction_colors!==0?(t.faction_color||t.base_color):t.base_color;const previous=territories[t.grid_key];if(previous?.owner_id!==t.owner_id||previous?.color!==t.color)window.WCMap?.invalidateOwnership();for(const flag of ['coastal','water','weather'])if(previous?.[flag]!==undefined)t[flag]=previous[flag];if(t.owner_id)t.water=false;territories[t.grid_key]=t;if(tlayers[t.grid_key]){map.removeLayer(tlayers[t.grid_key]);delete tlayers[t.grid_key]}}
   mapVersion=r.version;if(r.reset||r.changed?.length||r.removed?.length)renderTerritories();
-};
+}
 function stopPolling(){sharedAudio.pause();for(const t of pollHandles)clearInterval(t);pollHandles=[];clearInterval(refreshTimer);clearInterval(spectatorTimer)}
 async function startSession(user){
   sessionGeneration++;pollBusy=false;selectedKey=null;myAlliances=[];chatLastId={global:0,faction:0};chatCh='global';selectedStock='';seenNotifIds.clear();notifPopupQueue=[];notifShowing=false;document.getElementById('notif-container').replaceChildren();
@@ -46,12 +53,13 @@ async function startSession(user){
   await loadLandGeoJSON();
   let secondaryPoll=0;
   pollHandles.push(setInterval(async()=>{if(document.hidden||pollBusy)return;pollBusy=true;try{
+    if(!currentUser){const r=await api('GET','/api/spectator/sync?since='+encodeURIComponent(mapVersion));if(r.error)return;if(r.map)applyTerritoryDelta(r.map);await refreshOnline(r.online);await drawFallout(r.fallout);if(r.advertisement)renderAdvertisement(r.advertisement);updateHud();return}
     if(currentUser)await refreshUser();await refreshTerritories();updateHud();
     const secondary=++secondaryPoll%3===0;
     if(secondary){await refreshOnline();pollAnnouncements();await drawEva();}
     if(currentUser){pollNotifications();pollChat();if(secondary)await refreshMusic()}else await api('POST','/api/spectate',{});
-  }finally{pollBusy=false}},12000));
-  pollHandles.push(setInterval(()=>{if(!document.hidden)drawFallout()},60000));
+  }finally{pollBusy=false}},user?12000:60000));
+  if(user)pollHandles.push(setInterval(()=>{if(!document.hidden)drawFallout()},60000));
   if(user){await refreshMusic();const c=await api('GET','/api/changelog');if(c.show)showTextModal('What changed — '+c.version,c.text,async()=>{await api('POST','/api/changelog/seen',{version:c.version})},'Don’t show again until the next update')}
   else api('POST','/api/spectate',{});
 }

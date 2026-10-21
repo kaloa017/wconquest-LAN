@@ -52,7 +52,8 @@ def index():
     description='Build a country, trade with players, research advanced technology and conquer a persistent multiplayer world.'
     tags={'description':description,'og:type':'website','og:title':'World Conquest','og:description':description,'og:url':url,'og:image':url+'static/share-card.png','og:image:width':'1200','og:image:height':'630','og:image:alt':'World Conquest — build, trade, conquer','twitter:card':'summary_large_image','twitter:title':'World Conquest','twitter:description':description,'twitter:image':url+'static/share-card.png'}
     metadata='\n'.join(f'<meta {"property" if key.startswith("og:") else "name"}="{key}" content="{html.escape(value,quote=True)}">' for key,value in tags.items())
-    source=re.sub(r'((?:src|href)="/static/[^"?]+\.(?:js|css))"',lambda match:match[1]+'?v='+core['VERSION']+'"',source)
+    from asset_versions import asset_version
+    source=re.sub(r'((?:src|href)=")(/static/[^"?]+\.(?:js|css))"',lambda match:match[1]+match[2]+'?v='+html.escape(asset_version(app.root_path,match[2],core['VERSION']),quote=True)+'"',source)
     return core['app'].response_class(source.replace('</head>',metadata+'\n</head>'),mimetype='text/html')
 
 

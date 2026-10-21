@@ -62,6 +62,10 @@ jobs:
           node --check static/community-upgrades.js
           node --check static/research-upgrades.js
           node --check static/admin-dashboard.js
+          node --check static/game-polish.js
+          node --check static/communications.js
+          node --check static/product-ui.js
+          node --check static/cities.js
           node tests/client_audit.cjs
       - name: Test interface in offline DOMs
         run: npm run test:ui

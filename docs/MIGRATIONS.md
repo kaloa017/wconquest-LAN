@@ -1,9 +1,9 @@
-# Save upgrades through schema v20 and rollback
+# Save upgrades through schema v22 and rollback
 
 Stop the old game, copy the project folder and make a consistent SQLite backup.
-Starting the current version creates `backups/game-before-v20-<timestamp>.db` before changing an
+Starting the current version creates `backups/game-before-v22-<timestamp>.db` before changing an
 existing database. `DB_PATH` can select another location; backups go beside it.
-Migrations v6–v20 are transactional and marked in `schema_migrations`; each runs once.
+Migrations v6–v22 are transactional and marked in `schema_migrations`; each runs once.
 Legacy v4/v5 schema upgrades are retained for older saves. Do not remove backups.
 
 ## Changes
@@ -245,3 +245,39 @@ An idempotent migration adds only guest_visits, its last-seen index and a
 research and factions are preserved. Guest history begins on deployment;
 old visits are not backfilled. The pre-upgrade snapshot is separate from
 scheduled backups and requires host retention review. See ADMIN_DASHBOARD.md.
+
+## 6.10.0 — return-summary acknowledgement and default-login retirement (schema 21)
+
+The migration adds away_ack_activity to player_activity. It prevents later
+collection from recreating a summary for an already acknowledged absence.
+Existing production, resources and research continue unchanged.
+
+When another active named administrator exists, the literal admin account is
+deleted through the same cleanup path as dashboard deletion. Only that default
+account's associated data are removed. Other player data remain unchanged. If it
+is the sole administrator, removal is deferred and audited so the owner can create
+a named administrator first with manage.py. Startup runs the migration before
+starting the scheduler. The default admin name is reserved against recreation.
+The before-v22 backup allows recovery; keep it private and review its retention.
+
+Schema v22 adds separate email, quota/outbox, IP restriction and crawler columns.
+Existing guest records remain unknown; no historical user-agent guesses are made.
+Email tables reference accounts with cascading cleanup and keep world progress intact.
+
+## Schema 23 — capital districts (6.13)
+
+Adds `capital_districts(grid_key,type,level)` with a compound primary key and a
+level 1–10 constraint. No existing users, buildings, troops, territory ownership
+or research are replaced. The major-city registry is a bundled static JSON/CSV
+snapshot, not rows inserted into the player save. The startup backup target is
+now `before-v23`; the migration runs once inside an immediate transaction.
+
+Territory deletion and unownership clean up districts. Capture transfers them
+with the tile, dormant unless it becomes the new owner's capital. Moving a
+capital settles production before switching bonuses and leaves old districts
+dormant. District upgrades settle old production before spending/applying levels.
+
+Back up before deployment. Capital/city modifiers are a deliberate gameplay
+buff and apply to existing capitals/city tiles when this version starts. Normal
+offline production limits still apply. Rollback across schema changes requires
+a matching code version and private backup; do not overwrite the active save.

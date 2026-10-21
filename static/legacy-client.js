@@ -627,8 +627,8 @@ function updateNavbar(u){
   if(u.is_admin)document.getElementById('admin-btn').style.display='inline-block';
 }
 
-async function refreshOnline(){
-  const list=await api('GET','/api/online');
+async function refreshOnline(snapshot){
+  const list=snapshot??await api('GET','/api/online');
   if(!Array.isArray(list))return;
   document.getElementById('online-count').textContent=list.length;
   if(onlineCollapsed){document.getElementById('online-list').style.display='none';return;}
@@ -1924,10 +1924,12 @@ function drawCaps(){
   capLayer.addTo(map);
 }
 const _rtr=renderTerritories;renderTerritories=function(){_rtr();drawCaps()};
-async function drawFallout(){
-  const list=await api('GET','/api/fallout');if(!Array.isArray(list)||!map)return;
+async function drawFallout(snapshot){
+  const list=snapshot??await api('GET','/api/fallout');if(!Array.isArray(list)||!map)return;
+  const signature=Object.keys(pacificIslands).length+':'+list.join('|');if(foLayer?._map===map&&foLayer._wcSignature===signature)return;
   if(foLayer)map.removeLayer(foLayer);foLayer=L.layerGroup();
-  for(const k of list){const island=pacificIslands[k];if(island){L.geoJSON(island,{style:{renderer:canvasR,color:'#b6ff00',weight:1,fillColor:'#201f00',fillOpacity:.6},interactive:false}).addTo(foLayer);continue}const[gl,gg]=parseKey(k);L.rectangle([[gl*GRID,gg*GRID],[(gl+1)*GRID,(gg+1)*GRID]],{renderer:canvasR,color:'#b6ff00',weight:1,fillColor:'#201f00',fillOpacity:.6,interactive:false}).addTo(foLayer)}
+  foLayer._wcSignature=signature;
+  for(const k of list){const island=pacificIslands[k];if(island){L.geoJSON(island,{style:{renderer:canvasR,color:'#b6ff00',weight:1,fillColor:'#201f00',fillOpacity:.6},interactive:false}).addTo(foLayer);continue}if(typeof k!=='string'||! /^-?\d+,-?\d+$/.test(k))continue;const[gl,gg]=parseKey(k);if(!Number.isFinite(gl)||!Number.isFinite(gg)||gl < -473||gl > 472||gg < -1000||gg > 999)continue;L.rectangle([[gl*GRID,gg*GRID],[(gl+1)*GRID,(gg+1)*GRID]],{renderer:canvasR,color:'#b6ff00',weight:1,fillColor:'#201f00',fillOpacity:.6,interactive:false}).addTo(foLayer)}
   foLayer.addTo(map);
 }
 
