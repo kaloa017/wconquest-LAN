@@ -210,6 +210,10 @@ def before_request():
 def after_request(response):
     conn=g.get('db')
     if response.status_code<400 and request.method=='POST' and conn:
+        if request.path=='/api/admin/account/action':
+            data=request.get_json(silent=True) or {};target=data.get('user_id');labels={'role':'changed your staff role','revoke_sessions':'signed out your sessions','clear_timeout':'cleared your timeout','unmute':'removed your chat mute','research':'granted research to your account'}
+            if data.get('action') in labels and target and conn.execute('SELECT 1 FROM users WHERE id=?',(target,)).fetchone():
+                core['create_notification'](conn,target,'moderation',session.get('username','Host')+' '+labels[data['action']]+'.')
         if request.path.startswith('/api/admin/'):
             d=request.get_json(silent=True) or {}
             safe={k:v for k,v in d.items() if k in ('user_id','resource','amount','grid_key','type','ban','promote','minutes','faction_id','key','value','action')}

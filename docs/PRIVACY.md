@@ -1,11 +1,11 @@
 # World Conquest — Privacy policy
-Updated 21 October 2026
+Updated 22 October 2026
 
 ## Who handles your data
 The operator of the server you joined handles its player data. For the
 world-conquest.lol community, contact Kasper or a server administrator directly
-for privacy questions, access requests or deletion requests. No support email
-address has been configured yet. Hosting on a Raspberry Pi at school does not
+for privacy questions, access requests or deletion requests. Once support mail
+is activated, you can also contact support@world-conquest.lol. Hosting on a Raspberry Pi at school does not
 by itself make this an official school service. The operator must identify the
 responsible organisation and contact if the school operates the service.
 
@@ -72,6 +72,14 @@ Clicking its optional link opens the chosen site under that site's privacy polic
 The game does not add advertisement click tracking or third-party advertising scripts.
 
 ## Storage and retention
+The game keeps the latest 500 notification/activity events per account, including
+read messages, for recent history. Events include the action, relevant actor or
+tile and server timestamps. Away earnings and presentation claims prevent repeat
+popups across tabs and sessions; the latest 100 away-presentation identifiers per
+account are retained. Claiming a presentation does not prove you read the popup.
+Read state and presentation state are separate. Older downloaded/backed-up data
+remains subject to the host's backup retention described below.
+
 Data is stored on the host's server in the game database, ideas file and backups.
 Request caches and some game histories have count limits. There is no general
 automatic age-based deletion of accounts, chat, ideas, audit records or backups.
@@ -131,7 +139,7 @@ which are outside this game's dashboard.
 Email verification is optional and disabled until the host configures a provider.
 The host must disclose its actual sending provider and assess any relevant
 international transfers before enabling delivery. Existing accounts are not
-required to provide an email address by this update. The optional Brevo
+required to provide an email address by this update. The optional Resend or Brevo
 integration and stored information are described below.
 
 The Statistics page shows a signed-in player's own inventory and progress.
@@ -142,7 +150,7 @@ stores that acknowledgement to avoid repeated popups for the same absence.
 
 ## Your choices and rights
 When enabled by the host, account email addresses are stored privately for
-verification and login codes. Brevo receives the recipient address, email
+verification and login codes. The configured provider (Resend or Brevo) receives the recipient address, email
 content and delivery metadata to send these messages. Codes expire after ten
 minutes; verification hashes and encrypted pending delivery content are not
 shown to admins. Delivery metadata is retained for seven days. Admins can see
@@ -177,3 +185,15 @@ Authenticator setup keys are stored in the private database so the server can
 verify time-based codes. They are never public or sent to an external QR provider.
 Keep the database and backups private. Return summaries store aggregate positive
 resource gains/deliveries while away and are cleared when acknowledged.
+
+Support messages may be received by Resend and forwarded to the host's private
+mailbox. Resend and the destination mailbox provider process the original
+message and attachments. The game stores only inbound message IDs, timestamps,
+forwarding status and generic errors for seven days (at most 200 records),
+with cleanup performed while the email worker is configured and running.
+Pending forwarding content and temporary attachment URLs are encrypted using
+the session secret and cleared after completion/failure/expiry within an hour.
+Attachment files are not stored on the Pi. Email quota totals are retained for 35 days to
+enforce monthly limits. Replying from a personal mailbox can reveal that address
+to the correspondent. The forwarding destination and API/webhook keys remain
+in private host configuration, outside the game database.

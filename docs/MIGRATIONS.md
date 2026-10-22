@@ -281,3 +281,22 @@ Back up before deployment. Capital/city modifiers are a deliberate gameplay
 buff and apply to existing capitals/city tiles when this version starts. Normal
 offline production limits still apply. Rollback across schema changes requires
 a matching code version and private backup; do not overwrite the active save.
+
+## Schema 24 — persistent activity presentation (6.14)
+
+Adds notification priority, optional recipient-scoped event keys, presentation
+timestamps and indexes. Adds an account-linked `away_presentations` table to
+serialize away-summary delivery across browser tabs and reconnects. Existing
+notifications stay unread/read as before but are marked already presented during
+the migration so the update does not replay old alerts. New retention is 500
+notification rows and 100 away claims per account. Account deletion cascades claim
+cleanup. No ownership, balances or saved research are rewritten by this migration.
+
+Startup takes a private before-v24 backup before applying schema changes. The
+daily reward formula is a deliberate user-requested balance change: current
+production × 1,008 minutes, with starter floors, rather than actual seven-day
+earnings. Money and the three-resource alternative share `last_daily`; existing
+claims/streaks are preserved. Follow the existing stop/backup/update/install/start
+Pi procedure and verify login, one away summary, the bell and both daily choices
+on a staging copy first. Roll back code and the matching backup together while
+stopped if required; a restore discards later progress.

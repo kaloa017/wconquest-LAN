@@ -1,10 +1,15 @@
-# World Conquest LAN — v6.13.0
+# World Conquest LAN — v6.14.0
 
 Link to the game: https://world-conquest.lol
 
 Persistent multiplayer strategy on a real-world grid: claim tiles, recruit armies,
 build an economy, research technology, form factions and fight for territory.
 Flask serves the game; SQLite stores accounts and saves. The browser uses Leaflet.
+
+Version 6.14 adds durable away-summary delivery, tiered activity feedback and
+notification history, a more detailed tutorial, and daily reward choices scaled
+to current production. See the [audit report](docs/AUDIT_6_14.md) for fixes,
+verification, migrations and remaining limits.
 
 Version 6.13 adds six capital district buildings with ten levels each, stronger
 capital production/recruitment/defense, and a searchable offline registry of
@@ -542,4 +547,5 @@ when ready. No live world was used to develop or test this update.
 
 The Python entrypoint preserves proxy headers through Waitress so the application can validate them against `TRUSTED_PROXIES`. Untrusted connections have forwarding headers removed. Set the proxy variables in the terminal that starts the **game server**, then restart Python. Setting them only in the Cloudflare terminal does not configure the game. See [tunnel troubleshooting](docs/DOMAIN_HOSTING.md#login-origin-troubleshooting).
 
-Optional free verification email: see [EMAIL_SETUP.md](docs/EMAIL_SETUP.md).
+Optional Resend verification email and signed support-email forwarding: see
+[EMAIL_SETUP.md](docs/EMAIL_SETUP.md). Brevo remains supported for sending.

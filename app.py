@@ -1802,8 +1802,8 @@ def do_assault(conn, uid, uname_, fk, tk, force, kind, units_label, committed_tr
     morale_update(conn, uid, win)
     conn.execute('INSERT INTO battle_log (attacker,defender,grid_key,result,mode,details) VALUES (?,?,?,?,?,?)',
                  (uname_, def_name, tk, 'victory' if win else 'defeat', kind, f'{units_label}: {round(r["A"])} vs {round(r["D"])} · {r["weather"]} · {r["terrain"]}'))
-    if r['def_oid']:
-        create_notification(conn, r['def_oid'], 'attack', f'⚔ {uname_} {"captured" if win else "attacked"} your {r["terrain"]} tile ({tk}) by {kind} — {"you lost it!" if win else "you held!"}')
+    if r['def_oid'] and not win:
+        create_notification(conn, r['def_oid'], 'major_battle' if committed_troops>=1000 else 'battle_started', f'⚔ {uname_} {"captured" if win else "attacked"} your {r["terrain"]} tile ({tk}) by {kind} — {"you lost it!" if win else "you held!"}')
     r.update({'win': win, 'msg': msg, 'lost': lost}); return r
 
 def do_game_reset(conn):
@@ -1837,7 +1837,7 @@ def award_achievements(conn, uid):
     tc = conn.execute('SELECT COUNT(*) c FROM territories WHERE owner_id=?', (uid,)).fetchone()['c']
     nb = conn.execute('SELECT COUNT(*) c FROM buildings b JOIN territories t ON t.grid_key=b.grid_key WHERE t.owner_id=?', (uid,)).fetchone()['c']
     nr = len(json.loads(u['research'] or '[]'))
-    last = conn.execute("SELECT mode FROM battle_log WHERE attacker=? AND result='victory' ORDER BY id DESC LIMIT 1", (u['username'],)).fetchone()
+    victory_modes={r[0] for r in conn.execute("SELECT DISTINCT mode FROM battle_log WHERE attacker=? AND result='victory'",(u['username'],))}
     nukes = conn.execute("SELECT COUNT(*) c FROM battle_log WHERE attacker=? AND mode='nuke'", (u['username'],)).fetchone()['c']
     wonder = conn.execute('SELECT COUNT(*) c FROM wonders WHERE owner_id=?', (uid,)).fetchone()['c']
     emb = conn.execute('SELECT COUNT(*) c FROM embassies WHERE owner_id=?', (uid,)).fetchone()['c']
@@ -1846,8 +1846,8 @@ def award_achievements(conn, uid):
     m = u['money']
     checks = {'first_blood': u['wins'] >= 1, 'wins_10': u['wins'] >= 10, 'wins_50': u['wins'] >= 50, 'wins_100': u['wins'] >= 100,
               'land_10': tc >= 10, 'land_30': tc >= 30, 'land_75': tc >= 75, 'land_150': tc >= 150, 'builder': nb >= 5, 'builder_20': nb >= 20,
-              'scholar': nr >= 6, 'scholar_15': nr >= 15, 'scholar_25': nr >= 25, 'admiral': bool(last and last['mode'] == 'naval'),
-              'ace': bool(last and last['mode'] == 'air'), 'rich': m >= 10000, 'rich_100k': m >= 100000, 'rich_1m': m >= 1000000,
+              'scholar': nr >= 6, 'scholar_15': nr >= 15, 'scholar_25': nr >= 25, 'admiral': 'naval' in victory_modes,
+              'ace': 'air' in victory_modes, 'rich': m >= 10000, 'rich_100k': m >= 100000, 'rich_1m': m >= 1000000,
               'faction': bool(u['faction_id']), 'chatty': u['chat_count'] >= 10, 'chat_100': u['chat_count'] >= 100,
               'daily_7': u['daily_streak'] >= 7, 'daily_30': u['daily_streak'] >= 30, 'capital': bool(u['capital_key']),
               'ideology': bool(u['ideology']), 'embassy': emb > 0, 'trader': trd > 0, 'wonder': wonder > 0, 'nuke': nukes > 0,
@@ -2313,7 +2313,7 @@ def faction_kick():
     uid = session['user_id']; tid = int((request.json or {}).get('user_id', 0)); conn = get_db(); f, err = _my_fac(conn, uid, True)
     if err: conn.close(); return jsonify({'error': err[0]}), err[1]
     if tid == uid or fac_id(conn, tid) != f['id']: conn.close(); return jsonify({'error': 'Invalid member'}), 400
-    _leave_faction(conn, tid, ban=True); create_notification(conn, tid, 'info', f'You were kicked from [{f["tag"]}]. You can rejoin tomorrow.')
+    _leave_faction(conn, tid, ban=True); create_notification(conn, tid, 'faction_kicked', f'You were kicked from [{f["tag"]}]. You can rejoin tomorrow.')
     conn.commit(); conn.close(); return jsonify({'success': True, 'message': 'Member kicked (banned until tomorrow)'})
 
 @app.route('/api/faction/donate', methods=['POST'])
@@ -2379,7 +2379,8 @@ def war_declare():
     if protection:conn.close();return jsonify(error=protection),400
     conn.execute("INSERT INTO faction_rel(a,b,kind,status,ts) VALUES(?,?,'war','active',?)", (f['id'], tid, int(time.time())))
     announce(conn, f'⚔ WAR! [{f["tag"]}] {f["name"]} has declared war on [{t["tag"]}] {t["name"]}!')
-    _notify_faction(conn, tid, f'⚔ [{f["tag"]}] declared WAR on your faction! No time or capture limit. Either side can end the war or surrender.'); _notify_faction(conn, f['id'], f'⚔ We are at war with [{t["tag"]}]! No time or capture limit. Either side can end the war or surrender.')
+    for target in conn.execute('SELECT id FROM users WHERE faction_id IN (?,?)',(tid,f['id'])).fetchall():
+        create_notification(conn,target['id'],'war_declared',f'⚔ [{f["tag"]}] declared war on [{t["tag"]}]. Open Operations to respond.',{'actor_id':session['user_id'],'actor_name':session['username'],'panel':'operations'})
     conn.commit(); conn.close(); return jsonify({'success': True, 'message': f'War declared on {t["name"]}!'})
 
 @app.route('/api/faction/war/end', methods=['POST'])
@@ -2786,6 +2787,7 @@ from experience import migrate as migrate_v18
 from guest_analytics import migrate as migrate_v20
 from communications_schema import migrate as migrate_v22
 from cities import migrate as migrate_v23, install as install_cities
+from player_events import migrate as migrate_v24, install as install_player_events
 backup_before_upgrade(DB_PATH)
 init_db(); migrate_v4(); migrate_v5(); migrate_v6(get_db); migrate_v7(get_db); migrate_v8(get_db); migrate_v9(get_db); migrate_v10(get_db); migrate_v11(get_db); migrate_v12(get_db); migrate_v13(get_db); migrate_v14(get_db); migrate_v15(get_db);migrate_v16(get_db);migrate_v17(get_db);migrate_v18(get_db);migrate_v19(get_db);migrate_v20(get_db)
 install_features(globals())
@@ -2793,6 +2795,10 @@ migrate_v21(get_db)
 migrate_v22(get_db)
 migrate_v23(get_db)
 install_cities(globals())
+migrate_v24(get_db)
+install_player_events(globals())
+from daily_rewards import install as install_daily_rewards
+install_daily_rewards(globals())
 if os.getenv('DISABLE_SCHEDULER')!='1':
     from features import scheduler_loop
     threading.Thread(target=scheduler_loop,name='game-scheduler',daemon=True).start()

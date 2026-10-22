@@ -42,6 +42,7 @@ jobs:
         run: |
           bash -n deploy/raspberry-pi/install.sh
           bash -n deploy/raspberry-pi/set-tunnel-token.sh
+          bash -n deploy/raspberry-pi/set-email.sh
       - name: Install offline UI test dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Check publishable files
@@ -66,6 +67,8 @@ jobs:
           node --check static/communications.js
           node --check static/product-ui.js
           node --check static/cities.js
+          node --check static/player-events.js
+          node --check static/guided-help.js
           node tests/client_audit.cjs
       - name: Test interface in offline DOMs
         run: npm run test:ui

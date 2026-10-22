@@ -150,12 +150,12 @@ class AuditFixTests(unittest.TestCase):
             with closing(sqlite3.connect(target)) as dest, dest:
                 self.conn.backup(dest)
                 dest.execute('DROP TABLE recruitment_progress')
-                dest.execute('DELETE FROM schema_migrations WHERE version IN (19,20,21,22,23)')
+                dest.execute('DELETE FROM schema_migrations WHERE version IN (19,20,21,22,23,24)')
             backup_before_upgrade(target)
-            backups=list((target.parent/'backups').glob('*before-v23*.db'));self.assertEqual(len(backups),1)
+            backups=list((target.parent/'backups').glob('*before-v24*.db'));self.assertEqual(len(backups),1)
             def connect():
                 conn=sqlite3.connect(target);conn.row_factory=sqlite3.Row;return conn
-            app.migrate_v19(connect);app.migrate_v20(connect);app.migrate_v21(connect);app.migrate_v22(connect);app.migrate_v23(connect);backup_before_upgrade(target)
+            app.migrate_v19(connect);app.migrate_v20(connect);app.migrate_v21(connect);app.migrate_v22(connect);app.migrate_v23(connect);app.migrate_v24(connect);backup_before_upgrade(target)
             self.assertEqual(len(list((target.parent/'backups').glob('*.db'))),1)
             with closing(connect()) as check:
                 self.assertEqual(check.execute('SELECT money FROM users WHERE id=?',(self.a,)).fetchone()[0],self.balance(self.a,'money'))

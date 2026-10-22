@@ -91,7 +91,7 @@
     const user = () => typeof currentUser === 'undefined' ? null : currentUser;
     const panels = () => typeof PANELS === 'undefined' ? {} : PANELS;
     const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const state = { group: 'country', query: '', active: 'territory', trigger: null, nextId: 0, queued: false,
+    const state = { query: '', active: 'territory', trigger: null, nextId: 0, queued: false,
       drafts: new Map(), baseline: new Map(), pending: new Map(), inert: new Map(), dialogs: [], bypass: false };
     const scopeSelector = '.panel-content,.admin-panel,.modal-body,.v6-dialog,.trade-room,.auth-form';
     const scopeOf = node => node?.closest?.(scopeSelector);
@@ -107,12 +107,26 @@
       && !/(?:sort|filter|path|nav-|research-path)/.test(input.id || '')
       && !input.hasAttribute('data-ui-filter');
 
+    const feedbackTimers = new WeakMap(), actionVersions = new WeakMap();
+    function clearFeedback(scope) {
+      if (!scope) return;
+      w.clearTimeout(feedbackTimers.get(scope));
+      scope.querySelectorAll(':scope > .ui-feedback').forEach(node => node.remove());
+      actionVersions.set(scope, (actionVersions.get(scope) || 0) + 1);
+    }
     function feedback(scope, message, kind = 'status') {
       if (!scope) return;
       let node = [...scope.children].find(child => child.classList?.contains('ui-feedback'));
       if (!node) { node = doc.createElement('div'); node.className = 'ui-feedback'; scope.prepend(node); }
       node.dataset.kind = kind; node.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+      w.clearTimeout(feedbackTimers.get(scope));
       node.textContent = message; node.hidden = !message;
+      if (message && kind !== 'status') {
+        const close = doc.createElement('button'); close.type = 'button'; close.className = 'ui-feedback-close';
+        close.textContent = '×'; close.setAttribute('aria-label', 'Dismiss message');
+        close.onclick = () => clearFeedback(scope); node.appendChild(close);
+        feedbackTimers.set(scope, w.setTimeout(() => clearFeedback(scope), kind === 'error' ? 12000 : 5000));
+      }
     }
     function dirtyStatus(scope) {
       if (!scope) return;
@@ -155,18 +169,10 @@
 
     function updateNavigation() {
       const tabs = doc.querySelector('.sidebar-tabs'); if (!tabs) return;
-      tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Features in this group');
+      tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Game menus');
       const available = Object.keys(panels());
       const visible = visibleGroups(user(), available, state.query);
-      const allVisible = visibleGroups(user(), available);
-      if (!allVisible.some(group => group.id === state.group)) state.group = allVisible[0]?.id || 'country';
-      const select = doc.getElementById('ui-nav-group');
-      if (select) {
-        const options = allVisible.map(group => `<option value="${group.id}">${group.name}</option>`).join('');
-        if (select.innerHTML !== options) select.innerHTML = options;
-        select.value = state.group;
-      }
-      const shown = new Set(visible.filter(group => state.query || group.id === state.group).flatMap(group => group.routes));
+      const shown = new Set(visible.flatMap(group => group.routes));
       for (const button of tabs.querySelectorAll('[data-panel]')) {
         const id = button.dataset.panel, item = routes[id];
         button.hidden = !shown.has(id); if (!item) continue;
@@ -188,13 +194,12 @@
       if (first && !tabs.querySelector('[tabindex="0"]:not([hidden])')) first.tabIndex = 0;
       doc.getElementById('ui-nav-empty').hidden = shown.size > 0;
       doc.getElementById('ui-nav-context').textContent = state.query ? `${shown.size} matching destinations` : `Current section: ${routes[state.active]?.name || 'Territory'}`;
-      const summary=doc.getElementById('ui-nav-summary');if(summary)summary.textContent='☰ Menus · '+(routes[state.active]?.name||'Territory');
       for (const [id, item] of Object.entries(routes)) {
         const panel = doc.getElementById('panel-' + id); if (!panel) continue;
         let heading = panel.querySelector('.panel-heading');
         if (!heading) { heading = doc.createElement('header'); heading.className = 'panel-heading'; panel.prepend(heading); }
         if (heading.dataset.uiLabel !== item.name) {
-          heading.innerHTML = `<span class="eyebrow">${groups.find(g => g.routes.includes(id))?.name || 'World Conquest'}</span><h2>${item.name}</h2><p>${item.description}</p>`;
+          heading.innerHTML = `<h2>${item.name}</h2><p>${item.description}</p>`;
           heading.dataset.uiLabel = item.name;
         }
         panel.setAttribute('aria-labelledby', 'nav-' + id);
@@ -206,11 +211,10 @@
       const scrollWrapper = tabs.closest('.scroll-controls');
       if (scrollWrapper) { scrollWrapper.before(tabs); scrollWrapper.remove(); }
       const nav = doc.createElement('nav'); nav.id = 'ui-navigation'; nav.setAttribute('aria-label', 'Game sections');
-      nav.innerHTML = '<details id="ui-menu-picker"><summary id="ui-nav-summary">☰ Menus · Territory</summary><div class="ui-menu-controls"><label class="ui-sr-only" for="ui-nav-search">Find a feature</label><input id="ui-nav-search" data-ui-filter type="search" class="form-input" placeholder="Find a menu…" autocomplete="off"><label class="ui-sr-only" for="ui-nav-group">Feature group</label><select id="ui-nav-group" class="form-input" data-ui-filter></select></div><p id="ui-nav-context" class="ui-nav-context"></p></details>';
-      tabs.before(nav); nav.querySelector('details').appendChild(tabs);
-      const empty = doc.createElement('p'); empty.id = 'ui-nav-empty'; empty.className = 'ui-empty'; empty.hidden = true; empty.textContent = 'No matching menu. Try another name.'; nav.querySelector('details').appendChild(empty);
+      nav.innerHTML = '<label class="ui-sr-only" for="ui-nav-search">Find a feature</label><input id="ui-nav-search" data-ui-filter type="search" class="form-input" placeholder="Find a menu…" autocomplete="off"><p id="ui-nav-context" class="ui-sr-only"></p>';
+      tabs.before(nav); nav.appendChild(tabs);
+      const empty = doc.createElement('p'); empty.id = 'ui-nav-empty'; empty.className = 'ui-empty'; empty.hidden = true; empty.textContent = 'No matching menu. Try another name.'; nav.appendChild(empty);
       doc.getElementById('ui-nav-search').addEventListener('input', event => { state.query = event.target.value; updateNavigation(); });
-      doc.getElementById('ui-nav-group').addEventListener('change', event => { state.group = event.target.value; state.query = ''; doc.getElementById('ui-nav-search').value = ''; updateNavigation(); });
       tabs.addEventListener('keydown', event => {
         if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
         const items = [...tabs.querySelectorAll('[data-panel]')].filter(button => !button.hidden && !button.disabled);
@@ -221,15 +225,15 @@
       if (typeof menuItems !== 'undefined') for (const [id, item] of Object.entries(routes)) if (menuItems[id]) Object.assign(menuItems[id], { name: item.name, desc: item.description });
       w.menuHome = function () {
         return '<label for="ui-mobile-search">Find a feature</label><input class="form-input" id="ui-mobile-search" data-ui-filter type="search" placeholder="Search menus…"><p id="ui-mobile-empty" class="ui-empty" hidden>No matching menu.</p>'
-          + visibleGroups(user(), Object.keys(panels())).map(group => `<section class="ui-menu-group"><h3>${group.name}</h3><div class="more-grid">${group.routes.map(id => `<button data-ui-route="${id}" data-ui-search="${escape((routes[id].name + ' ' + routes[id].description).toLowerCase())}" onclick="openExpansionPanel('${id}')"><span aria-hidden="true">${typeof menuItems !== 'undefined' ? menuItems[id]?.icon || '' : ''}</span><strong>${routes[id].name}</strong><small>${routes[id].description}</small></button>`).join('')}</div></section>`).join('');
+          + '<div class="more-grid">' + visibleGroups(user(), Object.keys(panels())).flatMap(group => group.routes).map(id => `<button data-ui-route="${id}" data-ui-search="${escape((routes[id].name + ' ' + routes[id].description).toLowerCase())}" onclick="openExpansionPanel('${id}')"><span aria-hidden="true">${typeof menuItems !== 'undefined' ? menuItems[id]?.icon || '' : ''}</span><strong>${routes[id].name}</strong><small>${routes[id].description}</small></button>`).join('') + '</div>';
       };
       const oldShow = w.showPanel;
       w.showPanel = function (id) {
         if (!canVisit(id, user())) { w.toast?.(user() ? 'You do not have access to this section.' : 'Sign in to use this section.', 'error'); return; }
         const current = doc.getElementById('panel-' + state.active);
         const navigate = () => {
-          state.active = id; state.group = groups.find(group => group.routes.includes(id))?.id || state.group; state.query = '';
-          doc.getElementById('ui-menu-picker').open=false;
+          state.active = id; state.query = '';
+          clearFeedback(current);
           doc.getElementById('ui-nav-search').value = ''; const result = oldShow(id); updateNavigation(); queueEnhance(); return result;
         };
         if (id !== state.active && current && state.drafts.has(scopeKey(current))) return confirmLeave(current, navigate);
@@ -241,6 +245,7 @@
         if (!['map', 'more'].includes(id) && !canVisit(id, user())) { w.toast?.('Sign in or ask the host for access.', 'error'); return; }
         const current = doc.getElementById('panel-' + state.active);
         const navigate = () => {
+          clearFeedback(current);
           const result = oldMobile(tab, panel);
           if (!['map', 'more'].includes(id)) { state.active = id; updateNavigation(); }
           const title = doc.getElementById('sheet-title'); if (title) title.textContent = id === 'more' ? 'All features' : routes[id]?.name || title.textContent;
@@ -416,6 +421,9 @@
         if (state.pending.has(key)) return state.pending.get(key);
         const trigger = state.trigger && Date.now() - state.trigger.at < 2000 ? state.trigger.node : null;
         const scope = scopeOf(trigger), saved = scope ? inputValues(scope) : [], revision = scope ? JSON.stringify(saved) : '';
+        clearFeedback(scope);
+        const actionVersion = scope ? actionVersions.get(scope) : 0;
+        const isCurrent = () => !scope || actionVersions.get(scope) === actionVersion;
         const originalInputs = scope ? [...scope.querySelectorAll('input,textarea,select')] : [];
         const wasDisabled = trigger?.disabled;
         if (trigger) { trigger.disabled = true; trigger.setAttribute('aria-busy', 'true'); }
@@ -424,6 +432,7 @@
           try {
             const result = await oldApi(method, path, data);
             if (generation !== (typeof sessionGeneration === 'undefined' ? 0 : sessionGeneration)) return result;
+            if (!isCurrent()) return result;
             if (result?.error) {
               feedback(scope, result.error + ' ' + errorHint(result.error), 'error');
               // Keep an in-memory copy even if a legacy handler redraws after failure.
@@ -431,7 +440,7 @@
               w.setTimeout(() => {
                 if (generation !== (typeof sessionGeneration === 'undefined' ? 0 : sessionGeneration)) return;
                 const current = scope?.id ? doc.getElementById(scope.id) : scope;
-                if (current?.isConnected) {
+                if (isCurrent() && current?.isConnected) {
                   const latest = state.drafts.get(scopeKey(scope)) || saved;
                   const replaced = originalInputs.some(input => !current.contains(input));
                   if (replaced || current !== scope || JSON.stringify(inputValues(current)) === revision) restoreValues(current, latest);
@@ -470,7 +479,7 @@
         doc.querySelectorAll('.ui-menu-group').forEach(group => { group.hidden = ![...group.querySelectorAll('[data-ui-route]')].some(button => !button.hidden); });
         doc.getElementById('ui-mobile-empty').hidden = count > 0; return;
       }
-      if (input.matches?.('input,select,textarea')) { markDraft(input); input.removeAttribute('aria-invalid'); doc.getElementById(input.id + '-error')?.remove(); }
+      if (input.matches?.('input,select,textarea')) { clearFeedback(scopeOf(input)); markDraft(input); input.removeAttribute('aria-invalid'); doc.getElementById(input.id + '-error')?.remove(); }
     });
     doc.addEventListener('change', event => { if (event.target.matches?.('input,select,textarea')) markDraft(event.target); });
     doc.addEventListener('focusout', event => {
@@ -508,7 +517,7 @@
           if (select && active >= 0) select.value = String(active);
           return confirmLeave(current, () => { old(event, id); queueEnhance(); });
         }
-        const result = old(event, id); queueEnhance(); return result;
+        clearFeedback(current); const result = old(event, id); queueEnhance(); return result;
       };
     }
     for (const [name, id] of [['buildAdvertisementEditor', 'admin-advertisements'], ['buildCatalogEditor', 'panel-catalog'], ['buildBanks', 'panel-banks']]) {

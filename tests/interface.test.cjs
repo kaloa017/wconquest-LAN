@@ -91,13 +91,13 @@ test('map animation mutations do not schedule a whole-interface scan',async t=>{
   await pause();assert.equal(input.labels.length,1);
 });
 
-test('desktop grouping, search and roving keyboard focus',t=>{
+test('desktop direct menus, search and roving keyboard focus',t=>{
   const w=fixture(t),doc=w.document;
   assert.equal(doc.querySelector('.scroll-controls'),null);
-  assert.equal(doc.getElementById('ui-menu-picker').open,false);
-  const select=doc.getElementById('ui-nav-group');select.value='economy';select.dispatchEvent(new w.Event('change',{bubbles:true}));
+  assert.equal(doc.getElementById('ui-menu-picker'),null);
+  assert.equal(doc.getElementById('ui-nav-group'),null);
   const visible=[...doc.querySelectorAll('.stab')].filter(b=>!b.hidden);
-  assert.deepEqual(visible.map(b=>b.dataset.panel),['market','trading','banks','stocks']);
+  assert.deepEqual(visible.map(b=>b.dataset.panel),Object.keys(ui.routes));
   visible[0].focus();visible[0].dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));assert.equal(doc.activeElement,visible[1]);
   const search=doc.getElementById('ui-nav-search');search.value='loan';search.dispatchEvent(new w.Event('input',{bubbles:true}));
   assert.deepEqual([...doc.querySelectorAll('.stab')].filter(b=>!b.hidden).map(b=>b.dataset.panel),['banks']);
@@ -139,6 +139,7 @@ test('action quantities and searches never create discard controls, editors stil
 test('mobile menu uses the same role-filtered routes and searches locally',t=>{
   const w=fixture(t,{user:{id:1}}),doc=w.document;w.mobileNav('more');
   assert.equal(doc.querySelector('[data-ui-route="catalog"]'),null);
+  assert.equal(doc.querySelector('.ui-menu-group'),null);
   const input=doc.getElementById('ui-mobile-search');input.value='stock';input.dispatchEvent(new w.Event('input',{bubbles:true}));
   assert.deepEqual([...doc.querySelectorAll('[data-ui-route]')].filter(b=>!b.hidden).map(b=>b.dataset.uiRoute),['stocks']);
 });
@@ -171,11 +172,11 @@ test('identical pending mutations make one request and expose a busy button',asy
   assert.equal(button.disabled,false);assert.equal(button.hasAttribute('aria-busy'),false);assert.match(doc.querySelector('.ui-feedback').textContent,/Definition saved/);
 });
 
-test('late failures keep newer edits and announce actionable errors',async t=>{
+test('late failures keep newer edits without restoring obsolete feedback',async t=>{
   let resolve;const w=fixture(t,{api:()=>new Promise(r=>resolve=r)}),doc=w.document;
   const scope=doc.getElementById('panel-catalog');scope.insertAdjacentHTML('beforeend','<input id="draft" value="First"><button id="save">Save</button>');w.WCInterface.runtime.enhance();
   doc.getElementById('save').click();const pending=w.api('POST','/api/admin/catalog',{});const input=doc.getElementById('draft');input.value='Newer draft';input.dispatchEvent(new w.Event('input',{bubbles:true}));
-  resolve({error:'Connection interrupted'});await pending;await pause();assert.equal(input.value,'Newer draft');assert.match(scope.querySelector('[role="alert"]').textContent,/input is kept/);
+  resolve({error:'Connection interrupted'});await pending;await pause();assert.equal(input.value,'Newer draft');assert.equal(scope.querySelector('[role="alert"]'),null);
 });
 
 test('settings are grouped and the account controls remain accessible',t=>{
@@ -286,15 +287,14 @@ test('major feature renderers use real API-shaped fixtures without network acces
   await vm.runInContext('PANELS.empire.f()',dom.getInternalVMContext());
   assert.ok(w.document.querySelector('#country-first-steps'),'Country navigation uses the final objectives renderer');
   assert.ok(w.document.querySelector('#capital-development'),'Country navigation includes real capital development status');
+  assert.equal(w.document.querySelectorAll('[data-daily-choice]').length,2,'Daily reward offers both server-backed choices');
   assert.ok(w.document.querySelector('#guest-analytics-retention'));
   assert.equal(w.document.querySelectorAll('#guest-analytics-traffic').length,1,'Crawler filter belongs only to guest analytics');
   await Promise.all([w.buildServerDashboard(),w.buildServerDashboard()]);
   assert.equal([...w.document.querySelectorAll('#admin-server h3')].filter(e=>e.textContent==='Administration').length,1,'Concurrent dashboard renders do not duplicate cards');
-  assert.equal(w.document.querySelectorAll('.admin-group-tabs [role="tab"]').length,5);
-  assert.equal(w.document.querySelector('.admin-tabs').hidden,true);
-  assert.equal(w.document.querySelectorAll('#admin-section-select option').length,5);
-  assert.ok([...w.document.querySelectorAll('#admin-tool-select option')].some(o=>o.textContent==='Server dashboard'));
-  assert.ok([...w.document.querySelectorAll('#admin-section-select option')].some(o=>o.textContent==='Analytics'));
+  assert.equal(w.document.querySelector('.admin-group-tabs'),null);
+  assert.equal(w.document.querySelector('.admin-tabs').hidden,false);
+  assert.equal(w.document.querySelector('#admin-tool-select'),null);
   await assert.doesNotReject(()=>w.inspectAdminAccount(fixtures['/api/me'].id));
   assert.ok(w.document.querySelector('#dashboard-account-role'));
   assert.ok(w.document.querySelector('#dashboard-account-research option'));
@@ -307,14 +307,44 @@ test('major feature renderers use real API-shaped fixtures without network acces
   await w.buildServerDashboard();assert.equal(w.document.getElementById('admin-server').textContent,before);
 });
 
-test('away summary acknowledges an episode once across repeated calls and rapid clicks',async t=>{
+test('away summary is claimed before display and survives refresh without another popup',async t=>{
   const {w,dom}=productionDOM(t);Object.defineProperty(w.document,'hidden',{configurable:true,value:false});
   vm.runInContext('currentUser={id:55};',dom.getInternalVMContext());
-  let acknowledgements=0,resolveAck;const response=new Promise(resolve=>resolveAck=resolve);
-  w.api=async(method,path)=>{if(path==='/api/away')return method==='POST'?(acknowledgements++,response):{summary:{since:123,resources:{money:12}}};return {wars:[]}};
+  let claims=0,accepted=false;const summary={since:123,resources:{money:12}};
+  w.api=async(method,path)=>{if(path==='/api/away')return {summary};if(path==='/api/away/claim'){claims++;if(accepted)return {summary:null};accepted=true;return {summary}}return {wars:[]}};
   await Promise.all([w.showReturnSummary(),w.showReturnSummary()]);assert.equal(w.document.querySelectorAll('#away-ack').length,1);
-  w.document.getElementById('away-ack').click();w.document.querySelector('#expansion-dialog [data-close]').click();assert.equal(acknowledgements,1);
-  resolveAck({success:true});await pause();await w.showReturnSummary();assert.equal(w.document.getElementById('away-ack'),null);
+  assert.equal(claims,1);w.document.getElementById('expansion-dialog').remove();
+  await w.showReturnSummary();assert.equal(w.document.getElementById('away-ack'),null);assert.equal(claims,2);
+});
+
+test('player events aggregate only one actor and keep critical events separate',t=>{
+  const {w}=productionDOM(t),base={type:'territory_lost',priority:2,created_at:'2026-10-22 10:00:01',data:{actor_id:1,actor_name:'One'}};
+  const grouped=w.WCPlayerEvents.grouped([{...base,id:1},{...base,id:2},{...base,id:3,data:{actor_id:2,actor_name:'Two'}},{...base,id:4,type:'capital_lost',priority:1}]);
+  assert.equal(grouped.length,3);assert.equal(grouped[0].type,'capital_lost');assert.equal(grouped[1].members.length,2);assert.match(w.WCPlayerEvents.text(grouped[1]),/One captured 2/);
+  assert.equal(w.WCPlayerEvents.grouped([{...base,id:1,is_read:1},{...base,id:2,is_read:0}])[0].is_read,0,'Mixed groups remain unread');
+});
+
+test('notifications use server presentation claims, limit visible cards and escape content',async t=>{
+  const {w,dom}=productionDOM(t);Object.defineProperty(w.document,'hidden',{configurable:true,value:false});vm.runInContext('currentUser={id:99}',dom.getInternalVMContext());let presented=false;
+  const events=[1,2,3,4].map(id=>({id,type:'war_declared',message:'<img src=x onerror=alert(1)>',priority:1,presented_at:0,created_at:'2026-10-22 10:00:00',data:{}}));
+  w.api=async(method,url)=>url==='/api/notifications'?events:url==='/api/notifications/present'?{events:presented?[]:(presented=true,events)}:{events:[],next_before:null};
+  await w.pollNotifications();assert.equal(w.document.querySelectorAll('.player-event-toast').length,2);assert.equal(w.document.querySelectorAll('.player-event-toast img').length,0);
+  await w.pollNotifications();assert.equal(w.document.querySelectorAll('.player-event-toast').length,2);
+  await w.openNotificationInbox('history');assert.match(w.document.getElementById('v6-dialog').textContent,/Recent history/);
+});
+
+test('detailed tutorial has working topic navigation and keyboard access',t=>{
+  const {w}=productionDOM(t);w.showTutorial(0);const select=w.document.querySelector('[aria-label="Tutorial topic"]');assert.ok(select.options.length>=20);
+  const capital=[...select.options].find(o=>o.textContent.includes('Develop your capital'));select.value=capital.value;select.dispatchEvent(new w.Event('change',{bubbles:true}));assert.match(w.document.getElementById('tutorial-title').textContent,/capital/);
+  const next=w.document.getElementById('tutorial-next');next.focus();next.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));assert.equal(w.document.activeElement.tagName,'SELECT');
+});
+
+test('release notes wait for inactivity confirmation instead of stacking dialogs',t=>{
+  const {w,dom}=productionDOM(t);vm.runInContext('currentUser={id:45}',dom.getInternalVMContext());
+  w.requestAnimationFrame=cb=>w.setTimeout(cb,0);
+  const paused=w.document.createElement('div');paused.id='activity-paused';w.document.body.appendChild(paused);
+  w.showTextModal('What changed — test','Test release');assert.equal(w.document.getElementById('v6-dialog'),null);
+  w.clearActivityPause();assert.match(w.document.getElementById('v6-dialog').textContent,/Test release/);
 });
 
 test('axe checks navigation, settings and auth semantics in offline DOMs',async t=>{
@@ -492,4 +522,25 @@ test('full guest map and signed-in startup complete with local terrain and API f
   assert.ok(w.document.querySelector('#mobile-sheet-content .claim-btn'));
   assert.equal(failures.length,1);assert.match(failures[0],/Territory panel failed:.*Renderer unavailable/s);
   vm.runInContext('stopPolling()',dom.getInternalVMContext());
+});
+
+
+test('old action errors cannot return after a newer successful action',async t=>{
+  let resolve;const w=fixture(t,{api:()=>new Promise(r=>resolve=r)}),doc=w.document;
+  const scope=doc.getElementById('panel-territory');scope.insertAdjacentHTML('beforeend','<button id="attack">Attack</button>');
+  doc.getElementById('attack').click();const first=w.api('POST','/api/attack',{tile:'1,1'});
+  resolve({error:'Cannot attack an ally'});await first;
+  const second=w.api('POST','/api/claim',{tile:'2,2'});resolve({success:true,message:'Claimed'});await second;await pause();
+  assert.doesNotMatch(scope.textContent,/Cannot attack an ally/);assert.match(scope.textContent,/Claimed/);
+  scope.querySelector('[aria-label="Dismiss message"]').click();assert.equal(scope.querySelector('.ui-feedback'),null);
+});
+
+test('leaving a panel and editing a field clear obsolete action errors',async t=>{
+  const w=fixture(t,{api:async()=>({error:'Cannot attack an ally'})}),doc=w.document;
+  const scope=doc.getElementById('panel-territory');scope.insertAdjacentHTML('beforeend','<input id="target"><button id="attack">Attack</button>');
+  doc.getElementById('attack').click();await w.api('POST','/api/attack',{});await pause();
+  const input=doc.getElementById('target');input.value='2,2';input.dispatchEvent(new w.Event('input',{bubbles:true}));
+  assert.equal(scope.querySelector('.ui-feedback'),null);
+  doc.getElementById('attack').click();await w.api('POST','/api/attack',{});w.showPanel('banks');await pause();
+  assert.equal(scope.querySelector('.ui-feedback'),null);
 });

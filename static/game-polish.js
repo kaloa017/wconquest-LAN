@@ -35,37 +35,13 @@
       const select=doc.getElementById('statistics-scope');if(select){select.value=scope;select.onchange=()=>w.buildStatistics(select.value)}doc.getElementById('refresh-statistics').onclick=()=>w.buildStatistics(statsScope);
     };
     menuItems.stats={icon:'📊',name:'Statistics',desc:'Your country and private world totals'};addNavigation('stats','📊 Statistics',w.buildStatistics);WCInterface.runtime.updateNavigation();
-    const groups=[
-      {id:'overview',name:'Overview',leaves:[['server','Server dashboard'],['host','Host operations']]},
-      {id:'people',name:'Players',leaves:[['accounts','Account directory'],['players','Player actions'],['control','Country controls'],['email','Email & verification']]},
-      {id:'world',name:'World',leaves:[['world','Events & balance'],['editor','Game editor'],['tools','Advanced tools']]},
-      {id:'community',name:'Community',leaves:[['social','Factions & chat'],['announce','Announcements'],['advertisements','Advertisements']]},
-      {id:'analytics',name:'Analytics',leaves:[['analytics','Guest history'],['ip-bans','IP restrictions']]}
-    ];
-    const labels={server:'Server dashboard',host:'Host tools',accounts:'Accounts',players:'Players',control:'Control center',world:'World',editor:'Game editor',tools:'Tools',social:'Factions & Chat',announce:'Announcements',advertisements:'Advertisements',analytics:'Analytics'};
     const leafButtons=[...doc.querySelectorAll('.admin-tabs .atab')];
-    function buttonFor(id){return leafButtons.find(button=>button.dataset.admin===id||button.getAttribute('onclick')?.includes("'"+id+"'")||button.onclick?.toString().includes("'"+id+"'")||button.textContent.includes(labels[id]))}
-    const controls=doc.querySelector('.admin-mobile-nav'),select=doc.getElementById('admin-section-select');
-    controls.classList.add('admin-group-controls');select.innerHTML=groups.map(g=>`<option value="${g.id}">${g.name}</option>`).join('');select.setAttribute('data-ui-filter','');
-    const toolLabel=doc.createElement('label');toolLabel.className='admin-tool-label';toolLabel.innerHTML='<span>Tool</span><select id="admin-tool-select" class="form-input" data-ui-filter></select>';controls.after(toolLabel);
-    const tools=toolLabel.querySelector('select'),bar=doc.createElement('div');bar.className='admin-group-tabs';bar.setAttribute('role','tablist');bar.setAttribute('aria-label','Administration categories');
-    bar.innerHTML=groups.map(g=>`<button class="btn btn-ghost" role="tab" data-admin-group="${g.id}">${g.name}</button>`).join('');controls.before(bar);doc.querySelector('.admin-tabs').hidden=true;
-    let activeGroup='overview',activeLeaf='server';
-    function sync(id){
-      const group=groups.find(g=>g.leaves.some(([leaf])=>leaf===id));if(!group)return;activeGroup=group.id;activeLeaf=id;select.value=group.id;
-      tools.innerHTML=group.leaves.map(([key,label])=>`<option value="${key}">${label}</option>`).join('');tools.value=id;toolLabel.hidden=group.leaves.length===1;
-      for(const b of bar.querySelectorAll('button')){const active=b.dataset.adminGroup===group.id;b.classList.toggle('active',active);b.setAttribute('aria-selected',String(active));b.tabIndex=active?0:-1;b.setAttribute('aria-controls','admin-'+id)}
-    }
-    const previous=adminTab;adminTab=function(event,id){previous(event,id);const current=doc.querySelector('.admin-panel.active');if(current)sync(current.id.slice(6))};
-    const navigationObserver=new MutationObserver(records=>{if(records.some(record=>record.target.classList?.contains('admin-panel'))){const current=doc.querySelector('.admin-panel.active');if(current&&current.id.slice(6)!==activeLeaf)sync(current.id.slice(6))}});
-    navigationObserver.observe(doc.querySelector('.admin-tabs').parentElement,{subtree:true,attributes:true,attributeFilter:['class']});
-    select.onchange=()=>buttonFor(groups.find(g=>g.id===select.value).leaves[0][0])?.click();tools.onchange=()=>buttonFor(tools.value)?.click();
-    for(const b of bar.querySelectorAll('button'))b.onclick=()=>buttonFor(groups.find(g=>g.id===b.dataset.adminGroup).leaves[0][0])?.click();
-    bar.onkeydown=event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;const items=[...bar.querySelectorAll('button')],index=items.indexOf(doc.activeElement);if(index<0)return;event.preventDefault();items[event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowRight'?1:-1)+items.length)%items.length].focus()};
-    sync(activeLeaf);
+    function buttonFor(id){return leafButtons.find(button=>button.dataset.admin===id||button.getAttribute('onclick')?.includes("'"+id+"'")||button.onclick?.toString().includes("'"+id+"'"))}
+    doc.querySelector('.admin-tabs').hidden=false;
+    const controls=doc.querySelector('.admin-mobile-nav');if(controls)controls.hidden=true;
     const dashboard=buildServerDashboard;let dashboardWork=null;buildServerDashboard=function(){if(dashboardWork)return dashboardWork;dashboardWork=(async()=>{await dashboard();const el=doc.getElementById('admin-server');if(!el||!currentUser?.is_admin)return;const r=await api('GET','/api/admin/release_notes');el.insertAdjacentHTML('beforeend',card('Administration',`<button class="btn btn-ghost" onclick="closeAdmin();openExpansionPanel('stats')">Open statistics · choose World totals</button><button class="btn btn-ghost" onclick="closeAdmin();openExpansionPanel('moderation')">Moderation & filters</button><details><summary>Admin release notes</summary><pre class="admin-release-notes">${esc(r.text||r.error||'No notes')}</pre></details>`))})().finally(()=>{dashboardWork=null});return dashboardWork};
     // addHostTab captured its original renderer; replace only this tab's callback.
-    const server=buttonFor('server');server.onclick=event=>{adminTab(event,'server');buildServerDashboard()};
+    const server=buttonFor('server')||leafButtons.find(button=>button.textContent.includes('Server dashboard'));server.onclick=event=>{adminTab(event,'server');buildServerDashboard()};
     const open=openAdmin;openAdmin=async function(){await open();if(currentUser?.is_admin)server.click()};
     const close=closeAdmin;closeAdmin=function(){statsScope='country';close()};
     const stop=stopPolling;stopPolling=function(){statsScope='country';const el=doc.getElementById('stats-content');if(el)el.replaceChildren();stop()};

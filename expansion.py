@@ -116,7 +116,7 @@ def moderation_action():
                      (until,now(),session['username'],message.strip(),uid))
     else: raise ValueError('Choose mute or timeout')
     features.audit(conn,'moderator_'+action,uid,dict(minutes=minutes,reason=message))
-    note(conn,uid,f'{session["username"]}: {action} for {minutes} minutes. {message}')
+    core['create_notification'](conn,uid,'moderation',f'{session["username"]}: {action} for {minutes} minutes. {message}')
     return jsonify(success=True,message=f'{action.title()} updated for {target["username"]}')
 
 def set_role():
@@ -215,19 +215,23 @@ def start_campaign():
     target=conn.execute('SELECT owner_id FROM territories WHERE grid_key=?',(tk,)).fetchone(); defender=target['owner_id'] if target else None
     cur=conn.execute('INSERT INTO campaigns(attacker,defender,from_key,target_key,troops,initial_troops,tactic,started,last_tick,route_json,origin_faction) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
                      (uid,defender,fk,tk,troops,troops,tactic,now(),now(),json.dumps(route[1:]),core['fac_id'](conn,uid)))
-    if defender: note(conn,defender,f'{session["username"]} started an offensive at {tk}. Open Operations to choose a defensive stance.')
+    if defender: core['create_notification'](conn,defender,'major_battle' if troops>=1000 else 'battle_started',f'{session["username"]} started an offensive at {tk} with {troops:,} troops. Open Operations to choose a defensive stance.',{'actor_id':uid,'actor_name':session['username'],'grid_key':tk,'panel':'operations'},'offensive:'+str(cur.lastrowid))
     return jsonify(success=True,campaign_id=cur.lastrowid,message='Offensive started. Manage tactics, organization and retreat in Operations.')
 
 def finish_campaign(conn,campaign,status,message):
+    current=conn.execute("SELECT * FROM campaigns WHERE id=? AND status='active'",(campaign['id'],)).fetchone()
+    if not current:return
+    campaign=dict(current)
+    updated=conn.execute("UPDATE campaigns SET status=?,summary=?,route_json='[]' WHERE id=? AND status='active'",(status,message,campaign['id']))
+    if not updated.rowcount:return
     if campaign['troops']:
         # Refund a committed force without counting it as new faction contributions.
         fid=campaign['origin_faction']
         if fid and not conn.execute('SELECT 1 FROM factions WHERE id=?',(fid,)).fetchone():fid=None
         if fid: conn.execute('UPDATE factions SET army=army+? WHERE id=?',(campaign['troops'],fid))
         elif user(conn,campaign['attacker']): conn.execute('UPDATE users SET army=army+? WHERE id=?',(campaign['troops'],campaign['attacker']))
-    conn.execute("UPDATE campaigns SET status=?,summary=?,route_json='[]' WHERE id=?",(status,message,campaign['id']))
     if user(conn,campaign['attacker']): note(conn,campaign['attacker'],message)
-    if campaign['defender'] and user(conn,campaign['defender']): note(conn,campaign['defender'],message)
+    if campaign['defender'] and user(conn,campaign['defender']): core['create_notification'](conn,campaign['defender'],'major_battle' if campaign['initial_troops']>=1000 else 'info',message,{'grid_key':campaign['target_key'],'panel':'battles'},'battle-ended:'+str(campaign['id']))
 
 def settle_tile_campaigns(conn,key,message):
     for campaign in conn.execute("SELECT * FROM campaigns WHERE status='active' AND (target_key=? OR from_key=?)",(key,key)).fetchall(): finish_campaign(conn,campaign,'ended',message)
@@ -402,7 +406,7 @@ def exchange_send():
     status='pending' if want else 'completed'
     if not want: transfer(conn,uid,recipient,give)
     conn.execute('INSERT INTO exchanges(sender,recipient,give_json,want_json,status,created) VALUES(?,?,?,?,?,?)',(uid,recipient,json.dumps(give),json.dumps(want),status,now()))
-    note(conn,recipient,f'{session["username"]} sent you '+('an exchange offer. Open Trading to review it.' if want else 'a gift: '+json.dumps(give)))
+    core['create_notification'](conn,recipient,'exchange_offer' if want else 'gift',f'{session["username"]} sent you '+('an exchange offer. Open Trading to review it.' if want else 'a gift: '+json.dumps(give)),{'panel':'trading','actor_id':uid,'actor_name':session['username']})
     return jsonify(success=True,message='Offer sent; items transfer when accepted' if want else 'Gift delivered')
 
 def exchange_respond():
@@ -417,7 +421,7 @@ def exchange_respond():
     elif action in ('decline','cancel'): status='cancelled'
     else: raise ValueError('Unknown response')
     conn.execute('UPDATE exchanges SET status=? WHERE id=?',(status,offer['id']))
-    note(conn,offer['sender'],f'Exchange #{offer["id"]}: {status}')
+    core['create_notification'](conn,offer['sender'],'exchange_result',f'Exchange #{offer["id"]}: {status}',{'panel':'trading'})
     return jsonify(success=True,message='Exchange '+status)
 
 def trade_propose():
@@ -481,7 +485,7 @@ def rocket_launch():
     for owner in owners:
         damage=min(core['pool_get'](conn,owner,'army'),max(1,int(core['pool_get'](conn,owner,'army')*.05)))
         core['pool_add'](conn,owner,'army',-damage)
-        note(conn,owner,f'{session["username"]} launched a rocket at {tk}. Radius 2: land and buildings cleared, {damage} troops lost. Land can be claimed immediately unless older fallout remains.')
+        core['create_notification'](conn,owner,'rocket_strike',f'{session["username"]} launched a rocket at {tk}. Radius 2: land and buildings cleared, {damage} troops lost. Land can be claimed immediately unless older fallout remains.',{'grid_key':tk,'actor_id':session['user_id'],'actor_name':session['username']})
     conn.execute(f'UPDATE territories SET owner_id=NULL,garrison=0,boats=0,planes=0 WHERE grid_key IN ({marks})',keys)
     conn.execute(f'DELETE FROM buildings WHERE grid_key IN ({marks})',keys)
     conn.execute(f'UPDATE users SET capital_key=NULL WHERE capital_key IN ({marks})',keys)

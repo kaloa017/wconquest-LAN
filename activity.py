@@ -119,10 +119,10 @@ def install(namespace):
             uid=session.get('user_id')
             if uid:
                 conn=core['get_db']();row=state(conn,uid);stamp=int(time.time())
-                conn.execute('UPDATE player_activity SET last_login=?,heartbeat=? WHERE user_id=?',(stamp,0 if row['inactive'] else stamp,uid))
                 if not row['inactive']:
                     core['auto_collect'](uid,conn)
                     conn.execute('UPDATE player_activity SET last_activity=? WHERE user_id=?',(stamp,uid))
+                conn.execute('UPDATE player_activity SET last_login=?,heartbeat=? WHERE user_id=?',(stamp,0 if row['inactive'] else stamp,uid))
         if request.path=='/api/logout' and response.status_code==200 and getattr(request,'activity_logout_uid',None):
             from playtime import record
             conn=core['get_db']();uid=request.activity_logout_uid

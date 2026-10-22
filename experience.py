@@ -30,8 +30,10 @@ def away():
     if request.method=='POST':
         data=features.body();saved=conn.execute('SELECT since FROM away_earnings WHERE user_id=?',(uid,)).fetchone()
         since=features.integer(data.get('since',saved['since'] if saved else 0),0,int(time.time()))
-        conn.execute('UPDATE player_activity SET away_ack_activity=MAX(away_ack_activity,?) WHERE user_id=?',(since,uid))
-        conn.execute('DELETE FROM away_earnings WHERE user_id=? AND since<=?',(uid,since));return jsonify(success=True)
+        if saved and since!=saved['since']:return jsonify(error='Away summary changed; refresh before acknowledging it'),409
+        from player_events import claim_away
+        claim_away(conn,uid,since)
+        return jsonify(success=True)
     core['auto_collect'](uid,conn)
     row=conn.execute('SELECT * FROM away_earnings WHERE user_id=?',(uid,)).fetchone()
     return jsonify(summary={**dict(row),'resources':json.loads(row['resources'])} if row else None,maximum_hours=2)

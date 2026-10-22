@@ -192,3 +192,13 @@ progress { width: 100%; height: 12px; accent-color: var(--accent); }
 #auth-box .auth-project-link svg{flex-shrink:0}
 #auth-box .auth-project-link:hover{color:var(--accent2);background:var(--panel)}
 #auth-box .auth-project-link:focus-visible{outline:2px solid var(--accent2);outline-offset:3px;color:var(--text)}
+
+/* Direct navigation: every destination is one click away, with no category step. */
+#ui-navigation .sidebar-tabs { grid-template-columns: repeat(3,minmax(0,1fr)); max-height: 132px; gap: 4px; margin: 0; }
+#ui-navigation .stab { min-height: 38px; padding: 6px; font-size: 12px; gap: 4px; }
+#ui-navigation #ui-nav-search { min-height: 34px; padding: 5px 9px; margin-bottom: 6px; }
+#admin-modal .admin-tabs { display: flex; flex: none; max-height: 112px; flex-wrap: wrap; overflow: auto; gap: 4px; padding: 8px 12px; }
+#admin-modal .admin-tabs .atab { min-height: 36px; padding: 6px 9px; }
+#admin-modal .admin-mobile-nav[hidden] { display: none !important; }
+.ui-feedback { position: relative; padding-right: 46px; }
+.ui-feedback-close { position: absolute; top: 2px; right: 2px; width: 38px; height: 38px; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; font-size: 22px; }

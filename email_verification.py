@@ -1,4 +1,4 @@
-"""Optional Brevo verification with bounded sending and private durable delivery.
+"""Optional transactional verification with bounded sending and private delivery.
 
 Passwords remain required. Quota-only password fallback is an explicit host
 setting; provider/network failures never silently turn off authentication.
@@ -16,6 +16,7 @@ import time
 import urllib.request
 import urllib.error
 from datetime import datetime,timezone
+from email.utils import formataddr
 from flask import request,session,jsonify
 from cryptography.fernet import Fernet
 import features
@@ -28,16 +29,53 @@ DEFAULT=dict(enabled=False,daily_limit=250,quota_fallback=True,subject='Your Wor
 def state(conn):
     try:saved=json.loads(core['get_setting'](conn,'email_verification','{}'))
     except (ValueError,TypeError):saved={}
-    return {**DEFAULT,**saved}
+    result={**DEFAULT,**saved}
+    result['daily_limit']=min(result['daily_limit'],90 if provider()=='resend' else 250)
+    return result
 
-def configured():return bool(os.getenv('BREVO_API_KEY') and os.getenv('EMAIL_FROM'))
+def provider():return os.getenv('EMAIL_PROVIDER', 'resend' if os.getenv('RESEND_API_KEY') else 'brevo').lower()
+
+def configured():return provider() in ('resend','brevo') and bool(os.getenv('RESEND_API_KEY' if provider()=='resend' else 'BREVO_API_KEY') and os.getenv('EMAIL_FROM'))
+
+def exhausted(conn,s=None):
+    s=s or state(conn)
+    if used(conn)>=s['daily_limit']:return True
+    if provider()=='resend':
+        month=day()[:7]+'%'
+        if conn.execute('SELECT COALESCE(SUM(used),0) FROM email_budget WHERE day LIKE ?',(month,)).fetchone()[0]>=2700:return True
+        try:pause=json.loads(core['get_setting'](conn,'email_provider_pause','{}'))
+        except (ValueError,TypeError):pause={}
+        if pause.get('provider')=='resend' and pause.get('until',0)>time.time():return True
+    return False
+
+def quota_error(conn,name):
+    if provider()=='resend' and name in ('daily_quota_exceeded','monthly_quota_exceeded'):
+        now=datetime.now(timezone.utc)
+        if name=='daily_quota_exceeded':until=(int(now.timestamp())//86400+1)*86400
+        else:until=int(datetime(now.year+(now.month==12),now.month%12+1,1,tzinfo=timezone.utc).timestamp())
+        core['set_setting'](conn,'email_provider_pause',json.dumps(dict(provider='resend',until=until)))
+        return True
+    if provider()=='brevo' and name=='not_enough_credits':
+        conn.execute('INSERT INTO email_budget VALUES(?,?) ON CONFLICT(day) DO UPDATE SET used=MAX(used,excluded.used)',(day(),state(conn)['daily_limit']))
+        return True
+    return False
+
+def send_request(recipient,subject,text,body,key,**extra):
+    sender=normalized(os.environ['EMAIL_FROM']);name=os.getenv('EMAIL_FROM_NAME','World Conquest')
+    reply=normalized(os.getenv('EMAIL_REPLY_TO',sender))
+    if provider()=='resend':
+        message=dict(to=[recipient],subject=subject,text=text,html=body,reply_to=reply,**extra)
+        message['from']=formataddr((name,sender))
+        return urllib.request.Request('https://api.resend.com/emails',data=json.dumps(message).encode(),headers={'Authorization':'Bearer '+os.environ['RESEND_API_KEY'],'Content-Type':'application/json','Idempotency-Key':key,'User-Agent':'WorldConquest/Email'},method='POST')
+    message=dict(sender=dict(name=name,email=sender),to=[dict(email=recipient)],subject=subject,textContent=text,htmlContent=body,replyTo=dict(email=reply),headers={'IdempotencyKey':key})
+    return urllib.request.Request('https://api.brevo.com/v3/smtp/email',data=json.dumps(message).encode(),headers={'api-key':os.environ['BREVO_API_KEY'],'Content-Type':'application/json'},method='POST')
 def day():return datetime.now(timezone.utc).strftime('%Y-%m-%d')
 def used(conn):
     row=conn.execute('SELECT used FROM email_budget WHERE day=?',(day(),)).fetchone()
     return row[0] if row else 0
 def available(conn,s=None):
     s=s or state(conn)
-    return s['enabled'] and configured() and used(conn)<s['daily_limit']
+    return s['enabled'] and configured() and not exhausted(conn,s)
 def normalized(value):
     if not isinstance(value,str) or len(value)>254 or not re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}",value.strip()):raise ValueError('Enter a valid email address')
     return value.strip().lower()
@@ -75,7 +113,7 @@ def enqueue(conn,user,email,resend=False):
     if previous and previous['email']==email and previous['expires_at']>now and previous['auth_version']==user['auth_version']:
         if not resend:return dict(email_required=True,message='Enter your eight-digit email code.',retry_after=max(0,60-(now-previous['created_at'])))
         if now-previous['created_at']<60:return dict(error='Please wait before requesting another email.',email_required=True,retry_after=60-(now-previous['created_at']))
-    if used(conn)>=s['daily_limit']:return dict(error='The daily email allowance is exhausted.',quota_exhausted=True)
+    if exhausted(conn,s):return dict(error='The email allowance is exhausted. Try again after it resets.',quota_exhausted=True)
     # Enforced in the database transaction, so simultaneous requests cannot race.
     for key,seconds,maximum in [(f'user:{user["id"]}',86400,10),(f'email:{email}',86400,10),(f'ip:{request.remote_addr}',3600,60)]:
         if limited(conn,key,seconds,maximum):return dict(error='Email request limit reached. Please try again later.',email_required=True)
@@ -96,7 +134,7 @@ def login_challenge(conn,user,data):
     if data.get('email_code'):
         ok,message=consume(conn,user,row['email'],data['email_code'])
         return None if ok else jsonify(error=message,email_required=True)
-    if used(conn)>=s['daily_limit'] and s['quota_fallback']:
+    if exhausted(conn,s) and s['quota_fallback']:
         # TOTP, passwords and account bans still apply in the normal login path.
         features.audit(conn,'email_quota_password_fallback',user['id'])
         from flask import g
@@ -107,7 +145,7 @@ def login_challenge(conn,user,data):
 def account():
     conn=core['get_db']();uid=session['user_id'];s=state(conn)
     row=conn.execute('SELECT email,verified_at FROM account_emails WHERE user_id=?',(uid,)).fetchone()
-    if request.method=='GET':return jsonify(available=bool(s['enabled'] and configured()),email=dict(row) if row else None,quota_exhausted=used(conn)>=s['daily_limit'],quota_fallback=s['quota_fallback'])
+    if request.method=='GET':return jsonify(available=bool(s['enabled'] and configured()),email=dict(row) if row else None,quota_exhausted=exhausted(conn,s),quota_fallback=s['quota_fallback'])
     d=features.body();user=conn.execute('SELECT * FROM users WHERE id=?',(uid,)).fetchone()
     if d.get('action')=='verify':
         if not row:raise ValueError('Add an email first')
@@ -138,8 +176,8 @@ def admin():
         for key in ('enabled','quota_fallback'):
             if not isinstance(d.get(key),bool):raise ValueError('Choose email and quota fallback settings')
             s[key]=d[key]
-        if s['enabled'] and not configured():raise ValueError('Configure BREVO_API_KEY and EMAIL_FROM privately on the server first')
-        s['daily_limit']=features.integer(d.get('daily_limit',250),1,250)
+        if s['enabled'] and not configured():raise ValueError('Configure the provider API key and EMAIL_FROM privately on the server first')
+        s['daily_limit']=features.integer(d.get('daily_limit',s['daily_limit']),1,90 if provider()=='resend' else 250)
         for key in ('subject','heading','intro','footer'):
             value=d.get(key,s[key])
             if not isinstance(value,str) or not value.strip() or len(value)>1000:raise ValueError('Enter template text below 1,000 characters')
@@ -151,8 +189,9 @@ def admin():
     queued=conn.execute("SELECT COUNT(*) FROM email_outbox WHERE status IN ('queued','sending')").fetchone()[0]
     logs=[dict(r) for r in conn.execute('SELECT id,user_id,recipient,created_at,status,attempts,error FROM email_outbox ORDER BY id DESC LIMIT 50')]
     accounts=[dict(r) for r in conn.execute('SELECT u.id,u.username,e.email,e.verified_at FROM users u LEFT JOIN account_emails e ON e.user_id=u.id ORDER BY u.username LIMIT 1000')]
-    return jsonify(settings=s,configured=configured(),used=used(conn),remaining=max(0,s['daily_limit']-used(conn)),queued=queued,logs=logs,accounts=accounts,
-        fallback_active=bool(s['enabled'] and s['quota_fallback'] and used(conn)>=s['daily_limit']))
+    from email_inbound import admin_status
+    return jsonify(settings=s,provider=provider(),sender=os.getenv('EMAIL_FROM',''),daily_max=90 if provider()=='resend' else 250,inbound=admin_status(conn),configured=configured(),used=used(conn),remaining=max(0,s['daily_limit']-used(conn)),queued=queued,logs=logs,accounts=accounts,
+        fallback_active=bool(s['enabled'] and s['quota_fallback'] and exhausted(conn,s)))
 
 def render(payload):
     s=payload['settings'];code=payload['code'];name=payload['username'];escape=html.escape
@@ -169,7 +208,7 @@ def deliver_once():
         conn.execute('DELETE FROM email_challenges WHERE expires_at<?',(now,))
         conn.execute('DELETE FROM email_request_limits WHERE expires_at<?',(now,))
         conn.execute('DELETE FROM email_outbox WHERE created_at<?',(now-7*86400,))
-        conn.execute('DELETE FROM email_budget WHERE day<?',(datetime.fromtimestamp(now-7*86400,timezone.utc).strftime('%Y-%m-%d'),))
+        conn.execute('DELETE FROM email_budget WHERE day<?',(datetime.fromtimestamp(now-35*86400,timezone.utc).strftime('%Y-%m-%d'),))
         if state(conn)['enabled'] and configured():
             row=conn.execute("SELECT * FROM email_outbox WHERE (status='queued' OR status='sending') AND next_attempt<=? AND expires_at>? AND attempts<3 ORDER BY id LIMIT 1",(now,now)).fetchone()
             if row:conn.execute("UPDATE email_outbox SET status='sending',attempts=attempts+1,next_attempt=? WHERE id=?",(now+60,row['id']))
@@ -179,22 +218,20 @@ def deliver_once():
     status='accepted';error='';provider_id=''
     try:
         payload=json.loads(cipher().decrypt(row['payload'].encode(),ttl=600));text,body=render(payload)
-        message=dict(sender=dict(name=os.getenv('EMAIL_FROM_NAME','World Conquest'),email=normalized(os.environ['EMAIL_FROM'])),to=[dict(email=row['recipient'])],subject=row['subject'],textContent=text,htmlContent=body,
-            headers={'IdempotencyKey':'wc-email-'+str(row['id'])+'-'+digest(core['DB_PATH'])[:12]})
-        req=urllib.request.Request('https://api.brevo.com/v3/smtp/email',data=json.dumps(message).encode(),headers={'api-key':os.environ['BREVO_API_KEY'],'Content-Type':'application/json'},method='POST')
-        with urllib.request.urlopen(req,timeout=8) as response:provider_id=json.load(response).get('messageId','')[:200]
+        req=send_request(row['recipient'],row['subject'],text,body,'wc-email-'+str(row['id'])+'-'+digest(core['DB_PATH'])[:12])
+        with urllib.request.urlopen(req,timeout=8) as response:provider_id=json.load(response).get('id' if provider()=='resend' else 'messageId','')[:200]
     except urllib.error.HTTPError as exc:
         status='failed' if exc.code in (400,401,403) or row['attempts']>=2 else 'queued'
         error='Provider HTTP '+str(exc.code)
         # A confirmed exhausted-credit response activates the host's explicit
         # quota fallback. Generic 429/rate errors do not bypass verification.
-        try:credit_error=json.loads(exc.read(4096)).get('code')=='not_enough_credits'
-        except (ValueError,AttributeError):credit_error=False
-        if credit_error:
-            status='failed';error='Provider daily credits exhausted'
-            conn=core['get_db']()
-            try:conn.execute('INSERT INTO email_budget VALUES(?,?) ON CONFLICT(day) DO UPDATE SET used=MAX(used,excluded.used)',(day(),state(conn)['daily_limit']));conn.commit()
-            finally:conn.close()
+        try:details=json.loads(exc.read(4096));error_name=details.get('name' if provider()=='resend' else 'code')
+        except (ValueError,AttributeError):error_name=None
+        conn=core['get_db']()
+        try:
+            if quota_error(conn,error_name):status='failed';error='Provider email allowance exhausted'
+            conn.commit()
+        finally:conn.close()
     except Exception:
         status='failed' if row['attempts']>=2 else 'queued';error='Delivery unavailable; check provider settings or connection'
     conn=core['get_db']()
@@ -204,7 +241,10 @@ def deliver_once():
 
 def run():
     while True:
-        try:deliver_once()
+        try:
+            deliver_once()
+            from email_inbound import deliver_once as forward_once
+            forward_once()
         except Exception:core['app'].logger.warning('Email queue temporarily unavailable')
         time.sleep(5)
 
@@ -213,3 +253,5 @@ def install(namespace):
     core=namespace;app=core['app']
     app.add_url_rule('/api/profile/email','account_email',core['require_login'](account),methods=['GET','POST'])
     app.add_url_rule('/api/admin/email','admin_email',core['require_admin'](admin),methods=['GET','POST'])
+    from email_inbound import webhook
+    app.add_url_rule('/integrations/resend/inbound','resend_inbound',webhook,methods=['POST'])

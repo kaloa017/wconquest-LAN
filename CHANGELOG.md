@@ -1,3 +1,23 @@
+# 6.14.0 — reliable activity and meaningful daily rewards
+
+- Claim each away summary once across tabs and refreshes; keep its earnings in
+  notification history. Returning logins settle income before advancing activity.
+- Add compact important-event toasts, routine capture grouping, unread state and
+  paginated recent history. Activity no longer needs to block the map.
+- Daily rewards now offer 10% of projected weekly money production or three
+  distinct production-scaled resources, with starter minimums and one shared
+  claim each UTC day. Existing streak troop bonuses remain.
+- Expand the tutorial with topic navigation, capital/city development, trading,
+  research, notifications, offline production and late-game goals.
+- Prevent repeated campaign settlement from refunding troops twice and award
+  naval/air achievements from historical victories.
+- Show release notes after inactivity confirmation instead of stacking dialogs.
+- Replace category selectors with direct game menus and a flat mobile menu.
+- Clear obsolete action messages on retry, editing or navigation; add dismissal
+  and expiry, and prevent delayed failures from replacing newer results.
+- Support Resend verification emails with daily/monthly quota handling and
+  customizable messages from the community domain.
+
 # 6.13.0 — capital strongholds and major cities
 
 - Capitals now grant 2× local production/recruitment, 1.75× local defense and

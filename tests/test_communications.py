@@ -27,8 +27,9 @@ class CommunicationTests(unittest.TestCase):
         self.conn.execute('UPDATE users SET password=? WHERE id=?',(generate_password_hash('friend-password'),self.a));self.conn.commit()
         self.username=self.conn.execute('SELECT username FROM users WHERE id=?',(self.a,)).fetchone()[0]
         self.admin_client=self.login(self.admin)
-        self.env=patch.dict('os.environ',{'BREVO_API_KEY':'disposable-test-key','EMAIL_FROM':'accounts@example.org'})
+        self.env=patch.dict('os.environ',{'EMAIL_PROVIDER':'brevo','BREVO_API_KEY':'disposable-test-key','EMAIL_FROM':'accounts@example.org','EMAIL_REPLY_TO':'accounts@example.org','RESEND_API_KEY':'','RESEND_WEBHOOK_SECRET':'','EMAIL_FORWARD_TO':''})
         self.env.start();self.addCleanup(self.env.stop)
+        app.set_setting(self.conn,'email_provider_pause','{}');app.set_setting(self.conn,'email_inbound_queue','[]');self.conn.commit()
     def enable(self,**changes):
         s={**mail.DEFAULT,'enabled':True,**changes};app.set_setting(self.conn,'email_verification',json.dumps(s));self.conn.commit()
         self.conn.execute('INSERT OR IGNORE INTO account_emails(user_id,email) VALUES(?,?)',(self.a,'friend@example.org'));self.conn.commit()
