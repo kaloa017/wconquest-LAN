@@ -2,6 +2,8 @@
 
 Link to the game: https://world-conquest.lol
 
+Temporary shut down due to the school network likely blocking Cloudflare's port. Fix coming in the next week, or its permanently shut down.
+
 Persistent multiplayer strategy on a real-world grid: claim tiles, recruit armies,
 build an economy, research technology, form factions and fight for territory.
 Flask serves the game; SQLite stores accounts and saves. The browser uses Leaflet.
